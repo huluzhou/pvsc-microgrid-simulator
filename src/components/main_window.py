@@ -100,7 +100,19 @@ class MainWindow(QMainWindow):
         edit_menu.addAction("撤销")
         edit_menu.addAction("重做")
         edit_menu.addSeparator()
-        edit_menu.addAction("删除所选")
+        
+        # 断开连接动作
+        disconnect_action = QAction("断开连接", self)
+        disconnect_action.setShortcut("Ctrl+D")
+        disconnect_action.triggered.connect(self.disconnect_selected)
+        edit_menu.addAction(disconnect_action)
+        
+        # 删除动作
+        delete_action = QAction("删除所选", self)
+        delete_action.setShortcut("Delete")
+        delete_action.triggered.connect(self.delete_selected)
+        edit_menu.addAction(delete_action)
+        
         edit_menu.addAction("全选")
         
         # 视图菜单
@@ -118,6 +130,16 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
+    def disconnect_selected(self):
+        """断开选中设备的连接"""
+        self.canvas.disconnect_all_from_selected()
+        self.statusBar().showMessage("已断开选中设备的连接")
+    
+    def delete_selected(self):
+        """删除选中的项目"""
+        self.canvas.delete_selected_items()
+        self.statusBar().showMessage("已删除选中项目")
+    
     def show_about_dialog(self):
         """显示关于对话框"""
         QMessageBox.about(

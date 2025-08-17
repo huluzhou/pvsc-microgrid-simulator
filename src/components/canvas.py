@@ -242,7 +242,15 @@ class NetworkCanvas(QGraphicsView):
         # 创建右键菜单
         menu = QMenu(self)
         
+        # 检查是否有选中的项目
+        selected_items = self.scene.selectedItems()
+        has_selection = len(selected_items) > 0
+        
         # 添加菜单项
+        if has_selection:
+            disconnect_action = menu.addAction("断开连接")
+            menu.addSeparator()
+        
         delete_action = menu.addAction("删除所选")
         clear_action = menu.addAction("清空画布")
         menu.addSeparator()
@@ -250,11 +258,17 @@ class NetworkCanvas(QGraphicsView):
         zoom_out_action = menu.addAction("缩小")
         zoom_fit_action = menu.addAction("适应视图")
         
+        # 如果没有选中项目，禁用删除选项
+        if not has_selection:
+            delete_action.setEnabled(False)
+        
         # 显示菜单并获取选择的动作
         action = menu.exec_(self.mapToGlobal(event.pos()))
         
         # 处理菜单动作
-        if action == delete_action:
+        if has_selection and action == disconnect_action:
+            self.disconnect_all_from_selected()
+        elif action == delete_action:
             self.delete_selected_items()
         elif action == clear_action:
             self.clear_canvas()
@@ -267,8 +281,85 @@ class NetworkCanvas(QGraphicsView):
 
     def delete_selected_items(self):
         """删除选中的项目"""
-        for item in self.scene.selectedItems():
+        selected_items = self.scene.selectedItems()
+        
+        # 删除与选中项目相关的连接
+        self.disconnect_selected_items(selected_items)
+        
+        # 删除选中的项目
+        for item in selected_items:
             self.scene.removeItem(item)
+    
+    def disconnect_selected_items(self, items=None):
+        """断开选中项目的连接"""
+        if items is None:
+            items = self.scene.selectedItems()
+        
+        if not hasattr(self, 'connections'):
+            return
+        
+        # 找到需要删除的连接
+        connections_to_remove = []
+        for conn in self.connections:
+            # 如果连接的任一端点在选中项目中，则删除该连接
+            if conn['item1'] in items or conn['item2'] in items:
+                connections_to_remove.append(conn)
+        
+        # 删除连接线和连接信息
+        for conn in connections_to_remove:
+            self.scene.removeItem(conn['line'])
+            self.connections.remove(conn)
+    
+    def disconnect_all_from_selected(self):
+        """断开选中设备的所有连接"""
+        selected_items = self.scene.selectedItems()
+        if not selected_items:
+            return
+        
+        self.disconnect_selected_items(selected_items)
+    
+    def disconnect_items(self, item1, item2):
+        """断开两个特定设备之间的连接"""
+        if not hasattr(self, 'connections'):
+            return False
+        
+        # 找到两个设备之间的连接
+        connections_to_remove = []
+        for conn in self.connections:
+            if (conn['item1'] == item1 and conn['item2'] == item2) or \
+               (conn['item1'] == item2 and conn['item2'] == item1):
+                connections_to_remove.append(conn)
+        
+        # 删除找到的连接
+        for conn in connections_to_remove:
+            self.scene.removeItem(conn['line'])
+            self.connections.remove(conn)
+        
+        return len(connections_to_remove) > 0
+    
+    def get_connections_for_item(self, item):
+        """获取指定设备的所有连接"""
+        if not hasattr(self, 'connections'):
+            return []
+        
+        item_connections = []
+        for conn in self.connections:
+            if conn['item1'] == item or conn['item2'] == item:
+                item_connections.append(conn)
+        
+        return item_connections
+    
+    def is_connected(self, item1, item2):
+        """检查两个设备是否已连接"""
+        if not hasattr(self, 'connections'):
+            return False
+        
+        for conn in self.connections:
+            if (conn['item1'] == item1 and conn['item2'] == item2) or \
+               (conn['item1'] == item2 and conn['item2'] == item1):
+                return True
+        
+        return False
 
     def clear_canvas(self):
         """清空画布"""
