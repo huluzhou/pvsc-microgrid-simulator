@@ -1,0 +1,15 @@
+name: pandapower_sim
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pyqt=5.15
+  - pandapower=2.13
+  - numpy=1.20
+  - pandas=1.3
+  - matplotlib=3.5
+  - pip
+  - pip:
+    - pytest>=7.0.0
+    - black>=22.0.0

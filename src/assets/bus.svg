@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <rect x="12" y="22" width="40" height="20" fill="#FFFFCC" stroke="#000000" stroke-width="2" />
+  <text x="32" y="36" font-family="Arial" font-size="12" text-anchor="middle" fill="#000000">母线</text>
+</svg>

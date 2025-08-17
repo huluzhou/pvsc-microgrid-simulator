@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <path d="M32,12 L12,52 L52,52 Z" fill="#FFCCCC" stroke="#000000" stroke-width="2" />
+  <text x="32" y="60" font-family="Arial" font-size="10" text-anchor="middle" fill="#000000">负载</text>
+</svg>
