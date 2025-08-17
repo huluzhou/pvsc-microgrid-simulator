@@ -1,4 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <path d="M32,12 L12,52 L52,52 Z" fill="#FFCCCC" stroke="#000000" stroke-width="2" />
-  <text x="32" y="60" font-family="Arial" font-size="10" text-anchor="middle" fill="#000000">负载</text>
+  <!-- 负载 - 三角形 -->
+  <path d="M32,16 L20,44 L44,44 Z" fill="none" stroke="#000000" stroke-width="2" />
+  <!-- 连接线 -->
+  <line x1="32" y1="16" x2="32" y2="4" stroke="#000000" stroke-width="2" />
+  <!-- 标签 -->
+  <text x="32" y="58" font-family="Arial" font-size="10" text-anchor="middle" fill="#000000">Load</text>
 </svg>

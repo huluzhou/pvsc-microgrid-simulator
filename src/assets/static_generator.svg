@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- 静态发电机 - 矩形 -->
+  <rect x="20" y="24" width="24" height="16" fill="none" stroke="#000000" stroke-width="2" />
+  <!-- 连接线 -->
+  <line x1="44" y1="32" x2="60" y2="32" stroke="#000000" stroke-width="2" />
+  <!-- 标识 -->
+  <text x="32" y="36" font-family="Arial" font-size="10" font-weight="bold" text-anchor="middle" fill="#000000">SG</text>
+  <!-- 标签 -->
+  <text x="32" y="56" font-family="Arial" font-size="10" text-anchor="middle" fill="#000000">Static Gen</text>
+</svg>

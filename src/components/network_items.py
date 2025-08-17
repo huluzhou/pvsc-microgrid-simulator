@@ -8,6 +8,8 @@
 from PyQt5.QtWidgets import QGraphicsItem, QGraphicsTextItem
 from PyQt5.QtCore import Qt, QPointF, pyqtSignal, QObject, QRectF
 from PyQt5.QtGui import QPen, QBrush, QColor, QFont, QPainterPath
+from PyQt5.QtSvg import QSvgRenderer
+import os
 
 
 class ItemSignals(QObject):
@@ -33,9 +35,13 @@ class BaseNetworkItem(QGraphicsItem):
         # 创建信号对象
         self.signals = ItemSignals()
         
+        # SVG渲染器
+        self.svg_renderer = None
+        self.svg_size = 64  # SVG图标大小
+        
         # 添加标签
         self.label = QGraphicsTextItem(self.component_name, self)
-        self.label.setPos(0, 40)  # 标签位置在组件下方
+        self.label.setPos(-20, 35)  # 标签位置在组件下方
         self.label.setDefaultTextColor(QColor(0, 0, 0))  # 黑色
         
         # 设置Z值，确保组件在网格之上
@@ -44,14 +50,34 @@ class BaseNetworkItem(QGraphicsItem):
         # 连接点位置
         self.connection_points = []
 
+    def load_svg(self, svg_filename):
+        """加载SVG文件"""
+        svg_path = os.path.join("src", "assets", svg_filename)
+        if os.path.exists(svg_path):
+            self.svg_renderer = QSvgRenderer(svg_path)
+        else:
+            print(f"SVG文件不存在: {svg_path}")
+
     def boundingRect(self):
         """返回边界矩形"""
-        return QRectF(-25, -25, 50, 50)
+        return QRectF(-32, -32, 64, 64)
 
     def paint(self, painter, option, widget):
         """绘制组件"""
-        # 基类不实现具体绘制，由子类实现
-        pass
+        if self.svg_renderer and self.svg_renderer.isValid():
+            # 使用SVG渲染
+            rect = QRectF(-32, -32, 64, 64)
+            self.svg_renderer.render(painter, rect)
+            
+            # 如果选中，绘制选中框
+            if self.isSelected():
+                pen = QPen(QColor(0, 0, 255), 2)  # 蓝色
+                painter.setPen(pen)
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(rect)
+        else:
+            # 基类不实现具体绘制，由子类实现
+            pass
 
     def itemChange(self, change, value):
         """项目变化事件"""
@@ -118,10 +144,13 @@ class BusItem(BaseNetworkItem):
         self.component_type = "bus"
         self.component_name = "母线"
         self.properties = {
-            "vn_kv": 10.0,  # 额定电压
+            "vn_kv": 110.0,  # 额定电压
             "name": "Bus 1",  # 名称
         }
         self.label.setPlainText(self.properties["name"])
+        
+        # 加载SVG图标
+        self.load_svg("bus.svg")
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
@@ -130,21 +159,6 @@ class BusItem(BaseNetworkItem):
             QPointF(0, -10),  # 上侧
             QPointF(0, 10)    # 下侧
         ]
-
-    def paint(self, painter, option, widget):
-        """绘制母线"""
-        # 设置画笔和画刷
-        if self.isSelected():
-            pen = QPen(QColor(0, 0, 255), 2)  # 蓝色
-        else:
-            pen = QPen(QColor(0, 0, 0), 2)  # 黑色
-        brush = QBrush(QColor(255, 255, 200))
-        
-        painter.setPen(pen)
-        painter.setBrush(brush)
-        
-        # 绘制母线（矩形）
-        painter.drawRect(-20, -10, 40, 20)
 
 
 class LineItem(BaseNetworkItem):
@@ -163,29 +177,14 @@ class LineItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 加载SVG图标
+        self.load_svg("line.svg")
+        
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
             QPointF(-25, 0),  # 左侧
             QPointF(25, 0)    # 右侧
         ]
-
-    def paint(self, painter, option, widget):
-        """绘制线路"""
-        # 设置画笔
-        if self.isSelected():
-            pen = QPen(QColor(0, 0, 255), 2)  # 蓝色
-        else:
-            pen = QPen(QColor(0, 0, 0), 2)  # 黑色
-        
-        painter.setPen(pen)
-        
-        # 绘制线路（直线）
-        painter.drawLine(-25, 0, 25, 0)
-        
-        # 绘制小圆表示连接点
-        painter.setBrush(QBrush(QColor(255, 255, 255)))  # 白色
-        painter.drawEllipse(-25, -5, 10, 10)
-        painter.drawEllipse(15, -5, 10, 10)
 
 
 class TransformerItem(BaseNetworkItem):
@@ -205,27 +204,14 @@ class TransformerItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 加载SVG图标
+        self.load_svg("transformer.svg")
+        
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
             QPointF(-20, -10),  # 左侧圆
             QPointF(20, -10)    # 右侧圆
         ]
-
-    def paint(self, painter, option, widget):
-        """绘制变压器"""
-        # 设置画笔和画刷
-        if self.isSelected():
-            pen = QPen(QColor(0, 0, 255), 2)  # 蓝色
-        else:
-            pen = QPen(QColor(0, 0, 0), 2)  # 黑色
-        brush = QBrush(QColor(200, 200, 255))
-        
-        painter.setPen(pen)
-        painter.setBrush(brush)
-        
-        # 绘制变压器（两个圆）
-        painter.drawEllipse(-20, -20, 20, 20)  # 左侧圆
-        painter.drawEllipse(0, -20, 20, 20)  # 右侧圆
 
 
 class GeneratorItem(BaseNetworkItem):
@@ -242,32 +228,14 @@ class GeneratorItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 加载SVG图标
+        self.load_svg("generator.svg")
+        
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
             QPointF(0, -20),  # 上侧
             QPointF(0, 20)    # 下侧
         ]
-
-    def paint(self, painter, option, widget):
-        """绘制发电机"""
-        # 设置画笔和画刷
-        if self.isSelected():
-            pen = QPen(QColor(0, 0, 255), 2)  # 蓝色
-        else:
-            pen = QPen(QColor(0, 0, 0), 2)  # 黑色
-        brush = QBrush(QColor(200, 255, 200))
-        
-        painter.setPen(pen)
-        painter.setBrush(brush)
-        
-        # 绘制发电机（圆形）
-        painter.drawEllipse(-20, -20, 40, 40)
-        
-        # 绘制发电机符号（G）
-        font = QFont("Arial", 16)
-        font.setBold(True)
-        painter.setFont(font)
-        painter.drawText(-10, 8, "G")
 
 
 class LoadItem(BaseNetworkItem):
@@ -284,33 +252,15 @@ class LoadItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 加载SVG图标
+        self.load_svg("load.svg")
+        
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
             QPointF(0, -20),  # 上侧（三角形顶点）
             QPointF(-20, 20), # 左下角
             QPointF(20, 20)   # 右下角
         ]
-
-    def paint(self, painter, option, widget):
-        """绘制负载"""
-        # 设置画笔和画刷
-        if self.isSelected():
-            pen = QPen(QColor(0, 0, 255), 2)  # 蓝色
-        else:
-            pen = QPen(QColor(0, 0, 0), 2)  # 黑色
-        brush = QBrush(QColor(255, 200, 200))
-        
-        painter.setPen(pen)
-        painter.setBrush(brush)
-        
-        # 绘制负载（三角形）
-        path = QPainterPath()
-        path.moveTo(0, -20)
-        path.lineTo(-20, 20)
-        path.lineTo(20, 20)
-        path.lineTo(0, -20)
-        
-        painter.drawPath(path)
 
 
 class SwitchItem(BaseNetworkItem):
@@ -326,35 +276,11 @@ class SwitchItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 加载SVG图标
+        self.load_svg("switch.svg")
+        
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
             QPointF(-25, 0),  # 左侧
             QPointF(25, 0)    # 右侧
         ]
-
-    def paint(self, painter, option, widget):
-        """绘制开关"""
-        # 设置画笔
-        if self.isSelected():
-            pen = QPen(QColor(0, 0, 255), 2)  # 蓝色
-        else:
-            pen = QPen(QColor(0, 0, 0), 2)  # 黑色
-        
-        painter.setPen(pen)
-        
-        # 绘制开关基础线
-        painter.drawLine(-25, 0, -5, 0)
-        painter.drawLine(5, 0, 25, 0)
-        
-        # 根据开关状态绘制
-        if self.properties["closed"]:
-            # 闭合状态
-            painter.drawLine(-5, 0, 5, 0)
-        else:
-            # 断开状态
-            painter.drawLine(-5, 0, 5, -10)
-        
-        # 绘制小圆表示连接点
-        painter.setBrush(QBrush(QColor(255, 255, 255)))  # 白色
-        painter.drawEllipse(-25, -5, 10, 10)
-        painter.drawEllipse(15, -5, 10, 10)

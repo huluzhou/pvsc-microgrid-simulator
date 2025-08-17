@@ -1,4 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <rect x="12" y="22" width="40" height="20" fill="#FFFFCC" stroke="#000000" stroke-width="2" />
-  <text x="32" y="36" font-family="Arial" font-size="12" text-anchor="middle" fill="#000000">母线</text>
+  <!-- 母线 - 粗黑线 -->
+  <line x1="8" y1="32" x2="56" y2="32" stroke="#000000" stroke-width="4" />
+  <!-- 连接点 -->
+  <circle cx="16" cy="32" r="2" fill="#000000" />
+  <circle cx="32" cy="32" r="2" fill="#000000" />
+  <circle cx="48" cy="32" r="2" fill="#000000" />
+  <!-- 标签 -->
+  <text x="32" y="50" font-family="Arial" font-size="10" text-anchor="middle" fill="#000000">Bus</text>
 </svg>
