@@ -5,9 +5,9 @@
 网络画布组件，用于绘制和编辑电网拓扑图
 """
 
-from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMenu
-from PyQt5.QtCore import Qt, QPointF, QRectF
-from PyQt5.QtGui import QPen, QBrush, QColor, QPainter
+from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMenu
+from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtGui import QPen, QBrush, QColor, QPainter
 
 from components.network_items import BusItem, LineItem, TransformerItem, GeneratorItem, LoadItem, SwitchItem
 
@@ -129,49 +129,88 @@ class NetworkCanvas(QGraphicsView):
     
     def can_connect(self, item1, item2):
         """检查两个组件是否可以连接"""
+        # 检查是否已经连接
+        if self.is_connected(item1, item2):
+            return False
+            
+        # 检查连接数量约束
+        if not item1.can_connect() or not item2.can_connect():
+            return False
+            
         # 检查组件类型是否允许连接
-        # 相同类型的组件不能相互连接
+        # 相同类型的组件不能相互连接（包括母线）
         if item1.component_type == item2.component_type:
             return False
             
         # 特定组件类型的连接规则
-        # 母线可以连接到任何其他类型的组件
-        if item1.component_type == "bus" or item2.component_type == "bus":
+        # 母线可以连接到任何其他类型的组件（但不能连接到母线）
+        if item1.component_type == "bus" and item2.component_type != "bus":
+            return True
+        if item2.component_type == "bus" and item1.component_type != "bus":
             return True
             
-        # 线路可以连接到变压器
-        if (item1.component_type == "line" and item2.component_type == "transformer") or \
-           (item1.component_type == "transformer" and item2.component_type == "line"):
-            return True
+        # 变压器和线路必须连接到母线
+        if item1.component_type in ["transformer", "line"] and item2.component_type != "bus":
+            return False
+        if item2.component_type in ["transformer", "line"] and item1.component_type != "bus":
+            return False
             
-        # 发电机可以连接到负载
-        if (item1.component_type == "generator" and item2.component_type == "load") or \
-           (item1.component_type == "load" and item2.component_type == "generator"):
-            return True
+        # 发电机和负载必须连接到母线
+        if item1.component_type in ["generator", "load"] and item2.component_type != "bus":
+            return False
+        if item2.component_type in ["generator", "load"] and item1.component_type != "bus":
+            return False
             
-        # 线路可以连接到负载
-        if (item1.component_type == "line" and item2.component_type == "load") or \
-           (item1.component_type == "load" and item2.component_type == "line"):
+        # 开关可以连接到母线
+        if item1.component_type == "switch" and item2.component_type == "bus":
             return True
-            
-        # 变压器可以连接到负载
-        if (item1.component_type == "transformer" and item2.component_type == "load") or \
-           (item1.component_type == "load" and item2.component_type == "transformer"):
-            return True
-            
-        # 开关可以连接到线路、变压器或负载
-        if item1.component_type == "switch" and (item2.component_type == "line" or item2.component_type == "transformer" or item2.component_type == "load"):
-            return True
-        if item2.component_type == "switch" and (item1.component_type == "line" or item1.component_type == "transformer" or item1.component_type == "load"):
+        if item2.component_type == "switch" and item1.component_type == "bus":
             return True
         
         return False
     
     def connect_items(self, item1, item2):
         """连接两个组件"""
-        # 找到最近的连接点
-        connection_point1 = self.find_nearest_connection_point(item1, item2)
-        connection_point2 = self.find_nearest_connection_point(item2, item1)
+        # 检查对象是否有效
+        try:
+            if not item1 or not item2:
+                return False
+            # 测试访问对象属性以确保对象未被删除
+            _ = item1.component_name
+            _ = item2.component_name
+        except (RuntimeError, AttributeError):
+            print("连接失败: 组件对象已被删除")
+            return False
+            
+        # 检查是否可以连接
+        if not self.can_connect(item1, item2):
+            # 显示错误信息
+            valid1, msg1 = item1.validate_connections()
+            valid2, msg2 = item2.validate_connections()
+            if not valid1:
+                print(f"连接失败: {msg1}")
+            elif not valid2:
+                print(f"连接失败: {msg2}")
+            else:
+                print(f"连接失败: {item1.component_name}和{item2.component_name}不能连接")
+            return False
+            
+        # 找到最近的可用连接点
+        connection_point1, point_index1 = self.find_nearest_connection_point(item1, item2)
+        connection_point2, point_index2 = self.find_nearest_connection_point(item2, item1)
+        
+        # 检查是否找到了有效的连接点
+        if point_index1 == -1 or point_index2 == -1:
+            print("连接失败: 没有可用的连接点")
+            return False
+        
+        # 添加连接，总线组件不标记连接点为已占用
+        point_idx1 = point_index1 if item1.component_type != 'bus' else None
+        point_idx2 = point_index2 if item2.component_type != 'bus' else None
+        
+        if not item1.add_connection(item2, point_idx1) or not item2.add_connection(item1, point_idx2):
+            print("连接失败: 超出连接数限制")
+            return False
         
         # 转换为场景坐标
         scene_point1 = item1.mapToScene(connection_point1)
@@ -193,37 +232,62 @@ class NetworkCanvas(QGraphicsView):
             'item1': item1,
             'item2': item2,
             'point1': connection_point1,
-            'point2': connection_point2
+            'point2': connection_point2,
+            'point_index1': point_index1,
+            'point_index2': point_index2
         })
         
+        return True
+        
     def find_nearest_connection_point(self, source_item, target_item):
-        """找到最近的连接点"""
-        # 获取目标项的场景位置
-        target_pos = target_item.scenePos()
-        
-        # 如果源项没有定义连接点，使用中心点
-        if not hasattr(source_item, 'connection_points') or not source_item.connection_points:
-            return QPointF(0, 0)
-        
-        # 计算每个连接点到目标的距离
-        min_distance = float('inf')
-        nearest_point = source_item.connection_points[0]
-        
-        for point in source_item.connection_points:
-            # 转换为场景坐标
-            scene_point = source_item.mapToScene(point)
+        """找到最近的可用连接点"""
+        # 检查对象是否有效
+        try:
+            if not source_item or not target_item:
+                return QPointF(0, 0), -1
             
-            # 计算距离
-            dx = scene_point.x() - target_pos.x()
-            dy = scene_point.y() - target_pos.y()
-            distance = (dx * dx + dy * dy) ** 0.5
+            # 获取目标项的场景位置
+            target_pos = target_item.scenePos()
             
-            # 更新最近点
-            if distance < min_distance:
-                min_distance = distance
-                nearest_point = point
-        
-        return nearest_point
+            # 如果源项没有定义连接点，使用中心点
+            if not hasattr(source_item, 'connection_points') or not source_item.connection_points:
+                return QPointF(0, 0), -1
+            
+            # 获取可用的连接点
+            # 对于总线组件，允许所有连接点（不限制连接数量）
+            if hasattr(source_item, 'component_type') and source_item.component_type == 'bus':
+                available_points = list(range(len(source_item.connection_points)))
+            else:
+                available_points = source_item.get_available_connection_points()
+            
+            if not available_points:
+                return QPointF(0, 0), -1  # 没有可用连接点
+            
+            # 计算每个可用连接点到目标的距离
+            min_distance = float('inf')
+            nearest_point = source_item.connection_points[available_points[0]]
+            nearest_index = available_points[0]
+            
+            for point_index in available_points:
+                point = source_item.connection_points[point_index]
+                # 转换为场景坐标
+                scene_point = source_item.mapToScene(point)
+                
+                # 计算距离
+                dx = scene_point.x() - target_pos.x()
+                dy = scene_point.y() - target_pos.y()
+                distance = (dx * dx + dy * dy) ** 0.5
+                
+                # 更新最近点
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_point = point
+                    nearest_index = point_index
+            
+            return nearest_point, nearest_index
+        except RuntimeError:
+            # 对象已被删除
+            return QPointF(0, 0), -1
 
     def wheelEvent(self, event):
         """鼠标滚轮事件，用于缩放"""
@@ -239,6 +303,21 @@ class NetworkCanvas(QGraphicsView):
 
     def contextMenuEvent(self, event):
         """右键菜单事件"""
+        # 检查右键点击位置是否有组件
+        scene_pos = self.mapToScene(event.pos())
+        item_at_pos = self.scene.itemAt(scene_pos, self.transform())
+        
+        # 如果点击在组件上，让组件处理右键菜单
+        if item_at_pos and hasattr(item_at_pos, 'contextMenuEvent'):
+            # 创建场景右键菜单事件
+            from PySide6.QtWidgets import QGraphicsSceneContextMenuEvent
+            scene_event = QGraphicsSceneContextMenuEvent()
+            scene_event.setPos(scene_pos)
+            scene_event.setScenePos(scene_pos)
+            scene_event.setScreenPos(event.globalPos())
+            item_at_pos.contextMenuEvent(scene_event)
+            return
+        
         # 创建右键菜单
         menu = QMenu(self)
         
@@ -247,28 +326,31 @@ class NetworkCanvas(QGraphicsView):
         has_selection = len(selected_items) > 0
         
         # 添加菜单项
+        disconnect_action = None
+        delete_action = None
+        
         if has_selection:
-            disconnect_action = menu.addAction("断开连接")
+            # 选中项目相关操作
+            disconnect_action = menu.addAction("断开所选连接")
+            delete_action = menu.addAction("删除所选")
             menu.addSeparator()
         
-        delete_action = menu.addAction("删除所选")
+        # 画布操作
         clear_action = menu.addAction("清空画布")
         menu.addSeparator()
+        
+        # 视图操作
         zoom_in_action = menu.addAction("放大")
         zoom_out_action = menu.addAction("缩小")
         zoom_fit_action = menu.addAction("适应视图")
-        
-        # 如果没有选中项目，禁用删除选项
-        if not has_selection:
-            delete_action.setEnabled(False)
         
         # 显示菜单并获取选择的动作
         action = menu.exec_(self.mapToGlobal(event.pos()))
         
         # 处理菜单动作
-        if has_selection and action == disconnect_action:
+        if action == disconnect_action and has_selection:
             self.disconnect_all_from_selected()
-        elif action == delete_action:
+        elif action == delete_action and has_selection:
             self.delete_selected_items()
         elif action == clear_action:
             self.clear_canvas()
@@ -291,11 +373,11 @@ class NetworkCanvas(QGraphicsView):
             self.scene.removeItem(item)
     
     def disconnect_selected_items(self, items=None):
-        """断开选中项目的连接"""
+        """断开选中设备的所有连接"""
         if items is None:
             items = self.scene.selectedItems()
         
-        if not hasattr(self, 'connections'):
+        if not items or not hasattr(self, 'connections'):
             return
         
         # 找到需要删除的连接
@@ -305,10 +387,17 @@ class NetworkCanvas(QGraphicsView):
             if conn['item1'] in items or conn['item2'] in items:
                 connections_to_remove.append(conn)
         
-        # 删除连接线和连接信息
+        # 删除连接线和连接信息，并更新连接计数
         for conn in connections_to_remove:
             self.scene.removeItem(conn['line'])
             self.connections.remove(conn)
+            # 更新连接计数和连接点状态
+            if hasattr(conn['item1'], 'remove_connection'):
+                point_index1 = conn.get('point_index1', None) if conn['item1'].component_type != 'bus' else None
+                conn['item1'].remove_connection(conn['item2'], point_index1)
+            if hasattr(conn['item2'], 'remove_connection'):
+                point_index2 = conn.get('point_index2', None) if conn['item2'].component_type != 'bus' else None
+                conn['item2'].remove_connection(conn['item1'], point_index2)
     
     def disconnect_all_from_selected(self):
         """断开选中设备的所有连接"""
@@ -317,6 +406,31 @@ class NetworkCanvas(QGraphicsView):
             return
         
         self.disconnect_selected_items(selected_items)
+    
+    def disconnect_all_from_item(self, item):
+        """断开指定组件的所有连接"""
+        if not hasattr(self, 'connections'):
+            return
+        
+        # 找到需要删除的连接
+        connections_to_remove = []
+        for conn in self.connections:
+            if conn['item1'] == item or conn['item2'] == item:
+                connections_to_remove.append(conn)
+        
+        # 删除连接线和连接信息，并更新连接计数
+        for conn in connections_to_remove:
+            self.scene.removeItem(conn['line'])
+            self.connections.remove(conn)
+            # 更新连接计数和连接点状态
+            if hasattr(conn['item1'], 'remove_connection'):
+                point_index1 = conn.get('point_index1', None) if conn['item1'].component_type != 'bus' else None
+                conn['item1'].remove_connection(conn['item2'], point_index1)
+            if hasattr(conn['item2'], 'remove_connection'):
+                point_index2 = conn.get('point_index2', None) if conn['item2'].component_type != 'bus' else None
+                conn['item2'].remove_connection(conn['item1'], point_index2)
+        
+        print(f"断开了 {len(connections_to_remove)} 个连接")
     
     def disconnect_items(self, item1, item2):
         """断开两个特定设备之间的连接"""
@@ -330,10 +444,15 @@ class NetworkCanvas(QGraphicsView):
                (conn['item1'] == item2 and conn['item2'] == item1):
                 connections_to_remove.append(conn)
         
-        # 删除找到的连接
+        # 删除找到的连接，并更新连接计数
         for conn in connections_to_remove:
             self.scene.removeItem(conn['line'])
             self.connections.remove(conn)
+            # 更新连接计数
+            if hasattr(conn['item1'], 'remove_connection'):
+                conn['item1'].remove_connection(conn['item2'])
+            if hasattr(conn['item2'], 'remove_connection'):
+                conn['item2'].remove_connection(conn['item1'])
         
         return len(connections_to_remove) > 0
     

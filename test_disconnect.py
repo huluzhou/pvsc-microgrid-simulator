@@ -11,7 +11,7 @@ import os
 # 添加src目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from components.main_window import MainWindow
 
 

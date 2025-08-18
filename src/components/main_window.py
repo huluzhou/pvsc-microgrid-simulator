@@ -5,9 +5,9 @@
 主窗口组件
 """
 
-from PyQt5.QtWidgets import QMainWindow, QDockWidget, QToolBar, QAction, QFileDialog, QMessageBox
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QIcon
+from PySide6.QtWidgets import QMainWindow, QDockWidget, QToolBar, QFileDialog, QMessageBox
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QIcon, QAction
 
 from components.canvas import NetworkCanvas
 from components.component_palette import ComponentPalette
@@ -146,6 +146,6 @@ class MainWindow(QMainWindow):
             self,
             "关于 PandaPower 仿真工具",
             "<h3>PandaPower 仿真工具</h3>"
-            "<p>基于PyQt和pandapower的电网仿真工具</p>"
+            "<p>基于PySide6和pandapower的电网仿真工具</p>"
             "<p>版本: 0.1.0</p>"
         )

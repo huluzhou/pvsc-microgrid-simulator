@@ -5,16 +5,17 @@
 电网组件图形项，用于在画布上显示各种电网元件
 """
 
-from PyQt5.QtWidgets import QGraphicsItem, QGraphicsTextItem
-from PyQt5.QtCore import Qt, QPointF, pyqtSignal, QObject, QRectF
-from PyQt5.QtGui import QPen, QBrush, QColor, QFont, QPainterPath
-from PyQt5.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsTextItem, QMenu, QMessageBox
+from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF
+from PySide6.QtGui import QPen, QBrush, QColor, QFont, QPainterPath, QTransform
+from PySide6.QtSvg import QSvgRenderer
 import os
+import math
 
 
 class ItemSignals(QObject):
     """用于发送图形项信号的类"""
-    itemSelected = pyqtSignal(object)  # 选中信号
+    itemSelected = Signal(object)  # 选中信号
 
 
 class BaseNetworkItem(QGraphicsItem):
@@ -26,6 +27,8 @@ class BaseNetworkItem(QGraphicsItem):
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+        # 设置接受鼠标事件
+        self.setAcceptedMouseButtons(Qt.LeftButton | Qt.RightButton)
         
         # 组件属性
         self.component_type = "base"
@@ -39,6 +42,9 @@ class BaseNetworkItem(QGraphicsItem):
         self.svg_renderer = None
         self.svg_size = 64  # SVG图标大小
         
+        # 旋转角度（以度为单位）
+        self.rotation_angle = 0
+        
         # 添加标签
         self.label = QGraphicsTextItem(self.component_name, self)
         self.label.setPos(-20, 35)  # 标签位置在组件下方
@@ -47,8 +53,14 @@ class BaseNetworkItem(QGraphicsItem):
         # 设置Z值，确保组件在网格之上
         self.setZValue(10)
         
-        # 连接点位置
+        # 连接点位置和状态
         self.connection_points = []
+        self.connection_point_states = {}  # 记录每个连接点的占用状态 {point_index: connected_item}
+        
+        # 连接约束
+        self.max_connections = -1  # -1表示无限制，其他数字表示最大连接数
+        self.min_connections = 0   # 最小连接数
+        self.current_connections = 0  # 当前连接数
 
     def load_svg(self, svg_filename):
         """加载SVG文件"""
@@ -65,16 +77,26 @@ class BaseNetworkItem(QGraphicsItem):
     def paint(self, painter, option, widget):
         """绘制组件"""
         if self.svg_renderer and self.svg_renderer.isValid():
+            # 保存画家状态
+            painter.save()
+            
+            # 应用旋转变换
+            if self.rotation_angle != 0:
+                painter.rotate(self.rotation_angle)
+            
             # 使用SVG渲染
             rect = QRectF(-32, -32, 64, 64)
             self.svg_renderer.render(painter, rect)
+            
+            # 恢复画家状态
+            painter.restore()
             
             # 如果选中，绘制选中框
             if self.isSelected():
                 pen = QPen(QColor(0, 0, 255), 2)  # 蓝色
                 painter.setPen(pen)
                 painter.setBrush(Qt.NoBrush)
-                painter.drawRect(rect)
+                painter.drawRect(QRectF(-32, -32, 64, 64))
         else:
             # 基类不实现具体绘制，由子类实现
             pass
@@ -98,34 +120,155 @@ class BaseNetworkItem(QGraphicsItem):
         return super().itemChange(change, value)
         
     def update_connections(self):
-        """更新与此组件相关的所有连接线"""
-        # 获取场景
-        scene = self.scene()
-        if not scene:
-            return
+        """更新连接线位置（当组件移动或旋转时调用）"""
+        if hasattr(self, 'scene') and self.scene():
+            # 获取画布对象
+            canvas = None
+            for view in self.scene().views():
+                if hasattr(view, 'connections'):
+                    canvas = view
+                    break
             
-        # 获取画布
-        views = scene.views()
-        if not views:
-            return
-            
-        canvas = views[0]
-        if not hasattr(canvas, 'connections'):
-            return
-            
-        # 更新所有与此组件相关的连接线
-        for conn in canvas.connections:
-            if conn['item1'] == self or conn['item2'] == self:
-                # 获取连接点的场景坐标
-                scene_point1 = conn['item1'].mapToScene(conn['point1'])
-                scene_point2 = conn['item2'].mapToScene(conn['point2'])
-                
-                # 更新连接线
-                conn['line'].setLine(
-                    scene_point1.x(), scene_point1.y(),
-                    scene_point2.x(), scene_point2.y()
-                )
+            if canvas and hasattr(canvas, 'connections'):
+                # 更新与此组件相关的连接线
+                for conn in canvas.connections:
+                    if conn['item1'] == self or conn['item2'] == self:
+                        # 重新计算连接点位置
+                        if conn['item1'] == self:
+                            # 使用存储的连接点索引获取旋转后的连接点位置
+                            point_index = conn.get('point_index1', 0)
+                            if point_index < len(self.connection_points):
+                                conn['point1'] = self.connection_points[point_index]
+                            new_point = self.mapToScene(conn['point1'])
+                            conn['line'].setLine(
+                                new_point.x(), new_point.y(),
+                                conn['line'].line().p2().x(), conn['line'].line().p2().y()
+                            )
+                        if conn['item2'] == self:
+                            # 使用存储的连接点索引获取旋转后的连接点位置
+                            point_index = conn.get('point_index2', 0)
+                            if point_index < len(self.connection_points):
+                                conn['point2'] = self.connection_points[point_index]
+                            new_point = self.mapToScene(conn['point2'])
+                            conn['line'].setLine(
+                                conn['line'].line().p1().x(), conn['line'].line().p1().y(),
+                                new_point.x(), new_point.y()
+                            )
         
+    def rotate_component(self, angle=90):
+        """旋转组件"""
+        self.rotation_angle = (self.rotation_angle + angle) % 360
+        self.update_rotated_connection_points()
+        self.update()
+        self.update_connections()
+    
+    def update_rotated_connection_points(self):
+        """更新旋转后的连接点位置"""
+        if not hasattr(self, 'original_connection_points'):
+            self.original_connection_points = self.connection_points.copy()
+        
+        # 将角度转换为弧度
+        angle_rad = math.radians(self.rotation_angle)
+        cos_angle = math.cos(angle_rad)
+        sin_angle = math.sin(angle_rad)
+        
+        # 旋转每个连接点
+        self.connection_points = []
+        for point in self.original_connection_points:
+            # 应用旋转矩阵
+            new_x = point.x() * cos_angle - point.y() * sin_angle
+            new_y = point.x() * sin_angle + point.y() * cos_angle
+            self.connection_points.append(QPointF(new_x, new_y))
+    
+    def can_connect(self):
+        """检查是否可以添加新连接"""
+        if self.max_connections == -1:
+            return True
+        return self.current_connections < self.max_connections
+    
+    def add_connection(self, connected_item=None, connection_point_index=None):
+        """添加连接"""
+        if self.can_connect():
+            self.current_connections += 1
+            # 如果指定了连接点索引，标记该连接点为已占用
+            if connection_point_index is not None:
+                self.connection_point_states[connection_point_index] = connected_item
+            return True
+        return False
+    
+    def remove_connection(self, connected_item=None, connection_point_index=None):
+        """移除连接"""
+        if self.current_connections > 0:
+            self.current_connections -= 1
+            # 如果指定了连接点索引，清除该连接点的占用状态
+            if connection_point_index is not None and connection_point_index in self.connection_point_states:
+                del self.connection_point_states[connection_point_index]
+    
+    def is_connection_point_available(self, point_index):
+        """检查指定连接点是否可用"""
+        return point_index not in self.connection_point_states
+    
+    def get_available_connection_points(self):
+        """获取所有可用的连接点索引"""
+        available_points = []
+        for i in range(len(self.connection_points)):
+            if self.is_connection_point_available(i):
+                available_points.append(i)
+        return available_points
+    
+    def validate_connections(self):
+        """验证连接数是否满足约束"""
+        if self.current_connections < self.min_connections:
+            return False, f"{self.component_name}至少需要{self.min_connections}个连接"
+        if self.max_connections != -1 and self.current_connections > self.max_connections:
+            return False, f"{self.component_name}最多只能有{self.max_connections}个连接"
+        return True, ""
+    
+    def disconnect_all_connections(self):
+        """断开所有连接"""
+        if self.scene():
+            # 获取画布对象
+            canvas = None
+            for view in self.scene().views():
+                if hasattr(view, 'disconnect_all_from_item'):
+                    canvas = view
+                    break
+            
+            if canvas:
+                canvas.disconnect_all_from_item(self)
+            else:
+                print(f"断开{self.component_name}的所有连接")
+    
+    def delete_component(self):
+        """删除组件"""
+        if self.scene():
+            # 先断开所有连接
+            self.disconnect_all_connections()
+            # 从场景中移除
+            self.scene().removeItem(self)
+            print(f"删除组件: {self.component_name}")
+    
+    def contextMenuEvent(self, event):
+        """右键菜单事件"""
+        menu = QMenu()
+        
+        # 添加旋转选项
+        rotate_action = menu.addAction("旋转90°")
+        rotate_action.triggered.connect(lambda: self.rotate_component(90))
+        
+        menu.addSeparator()
+        
+        # 添加断开连接选项
+        disconnect_action = menu.addAction("断开所有连接")
+        disconnect_action.triggered.connect(self.disconnect_all_connections)
+        
+        # 添加删除选项
+        delete_action = menu.addAction("删除组件")
+        delete_action.triggered.connect(self.delete_component)
+        
+        # 显示菜单
+        menu.exec(event.screenPos())
+    
     def mousePressEvent(self, event):
         """鼠标按下事件"""
         super().mousePressEvent(event)
@@ -149,16 +292,18 @@ class BusItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 母线可以连接多个组件，无限制
+        self.max_connections = -1
+        self.min_connections = 0
+        
         # 加载SVG图标
         self.load_svg("bus.svg")
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(-20, 0),  # 左侧
-            QPointF(20, 0),   # 右侧
-            QPointF(0, -10),  # 上侧
-            QPointF(0, 10)    # 下侧
+            QPointF(0, 0)     # 中心点
         ]
+        self.original_connection_points = self.connection_points.copy()
 
 
 class LineItem(BaseNetworkItem):
@@ -177,14 +322,19 @@ class LineItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 连接约束：线路必须连接两个bus
+        self.max_connections = 2
+        self.min_connections = 2
+        
         # 加载SVG图标
         self.load_svg("line.svg")
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(-25, 0),  # 左侧
-            QPointF(25, 0)    # 右侧
+            QPointF(-30, 0),  # 左端
+            QPointF(30, 0)    # 右端
         ]
+        self.original_connection_points = self.connection_points.copy()
 
 
 class TransformerItem(BaseNetworkItem):
@@ -204,14 +354,19 @@ class TransformerItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 连接约束：变压器必须连接两个bus
+        self.max_connections = 2
+        self.min_connections = 2
+        
         # 加载SVG图标
         self.load_svg("transformer.svg")
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(-20, -10),  # 左侧圆
-            QPointF(20, -10)    # 右侧圆
+            QPointF(-28, 0),  # 左端
+            QPointF(28, 0)    # 右端
         ]
+        self.original_connection_points = self.connection_points.copy()
 
 
 class GeneratorItem(BaseNetworkItem):
@@ -228,14 +383,18 @@ class GeneratorItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 连接约束：发电机只能连接一个bus
+        self.max_connections = 1
+        self.min_connections = 1
+        
         # 加载SVG图标
         self.load_svg("generator.svg")
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(0, -20),  # 上侧
-            QPointF(0, 20)    # 下侧
+            QPointF(28, 0)   # 线头端点（上侧）
         ]
+        self.original_connection_points = self.connection_points.copy()
 
 
 class LoadItem(BaseNetworkItem):
@@ -252,15 +411,18 @@ class LoadItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 连接约束：负载只能连接一个bus
+        self.max_connections = 1
+        self.min_connections = 1
+        
         # 加载SVG图标
         self.load_svg("load.svg")
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(0, -20),  # 上侧（三角形顶点）
-            QPointF(-20, 20), # 左下角
-            QPointF(20, 20)   # 右下角
+            QPointF(0, -28)   # 线头端点（上侧）
         ]
+        self.original_connection_points = self.connection_points.copy()
 
 
 class SwitchItem(BaseNetworkItem):
@@ -276,6 +438,10 @@ class SwitchItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
+        # 开关连接两个bus
+        self.max_connections = 2
+        self.min_connections = 2
+        
         # 加载SVG图标
         self.load_svg("switch.svg")
         
@@ -284,3 +450,4 @@ class SwitchItem(BaseNetworkItem):
             QPointF(-25, 0),  # 左侧
             QPointF(25, 0)    # 右侧
         ]
+        self.original_connection_points = self.connection_points.copy()

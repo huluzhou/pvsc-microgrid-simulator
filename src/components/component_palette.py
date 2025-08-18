@@ -5,9 +5,9 @@
 组件面板，用于显示可拖拽的电网组件
 """
 
-from PyQt5.QtWidgets import QListWidget, QListWidgetItem, QLabel
-from PyQt5.QtCore import Qt, QMimeData, QSize
-from PyQt5.QtGui import QDrag, QPixmap, QIcon
+from PySide6.QtWidgets import QListWidget, QListWidgetItem, QLabel
+from PySide6.QtCore import Qt, QMimeData, QSize
+from PySide6.QtGui import QDrag, QPixmap, QIcon
 
 
 class ComponentPalette(QListWidget):

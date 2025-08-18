@@ -8,7 +8,7 @@
 import os
 import json
 import pickle
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 
 def save_network(parent, network_model, scene_data):

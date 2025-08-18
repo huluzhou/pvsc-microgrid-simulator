@@ -1,6 +1,6 @@
 # PandaPower Simulation Tool
 
-基于PyQt和pandapower的电网仿真工具，支持通过拖拽方式构建电网拓扑图。
+基于PySide6和pandapower的电网仿真工具，支持通过拖拽方式构建电网拓扑图。
 
 ## 功能特点
 
@@ -12,7 +12,7 @@
 ## 环境要求
 
 - Python 3.10+
-- PyQt5 5.15+
+- PySide6 6.0+
 - pandapower 2.13+
 
 ## 安装方法

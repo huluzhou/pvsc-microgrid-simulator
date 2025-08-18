@@ -4,7 +4,7 @@ channels:
   - defaults
 dependencies:
   - python=3.10
-  - pyqt=5.15
+  - pyside6>=6.0
   - pandapower=2.13
   - numpy=1.20
   - pandas=1.3
