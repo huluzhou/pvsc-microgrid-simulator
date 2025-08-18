@@ -11,6 +11,25 @@ from PySide6.QtGui import QPen, QBrush, QColor, QFont, QPainterPath, QTransform
 from PySide6.QtSvg import QSvgRenderer
 import os
 import math
+import sys
+
+
+def get_resource_path(relative_path):
+    """获取资源文件的绝对路径，支持开发环境和打包后的环境"""
+    try:
+        # PyInstaller创建临时文件夹，并将路径存储在_MEIPASS中
+        base_path = sys._MEIPASS
+    except Exception:
+        # 开发环境中使用当前文件的目录
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        # 从src目录向上找到项目根目录
+        while not os.path.exists(os.path.join(base_path, 'src')):
+            parent = os.path.dirname(base_path)
+            if parent == base_path:  # 已经到达根目录
+                break
+            base_path = parent
+    
+    return os.path.join(base_path, relative_path)
 
 
 class ItemSignals(QObject):
@@ -64,11 +83,22 @@ class BaseNetworkItem(QGraphicsItem):
 
     def load_svg(self, svg_filename):
         """加载SVG文件"""
-        svg_path = os.path.join("src", "assets", svg_filename)
-        if os.path.exists(svg_path):
-            self.svg_renderer = QSvgRenderer(svg_path)
-        else:
-            print(f"SVG文件不存在: {svg_path}")
+        try:
+            # 使用get_resource_path函数获取正确的资源路径
+            svg_path = get_resource_path(os.path.join("assets", svg_filename))
+            if os.path.exists(svg_path):
+                self.svg_renderer = QSvgRenderer(svg_path)
+            else:
+                # 尝试开发环境路径
+                dev_svg_path = get_resource_path(os.path.join("src", "assets", svg_filename))
+                if os.path.exists(dev_svg_path):
+                    self.svg_renderer = QSvgRenderer(dev_svg_path)
+                else:
+                    print(f"警告: SVG文件未找到: {svg_filename}")
+                    print(f"尝试的路径: {svg_path}, {dev_svg_path}")
+        except Exception as e:
+            print(f"加载SVG文件时出错: {e}")
+            self.svg_renderer = None
 
     def boundingRect(self):
         """返回边界矩形"""
