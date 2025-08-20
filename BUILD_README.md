@@ -28,22 +28,26 @@ conda activate pandapower_sim
 
 ## 打包方法
 
-### 方法一：使用批处理文件（推荐）
+### 方法一：使用PowerShell脚本（推荐）
 
-**在命令提示符(cmd)中运行**：
-```cmd
-cmd /c build.bat
+**在PowerShell中运行**：
+```powershell
+# 方式1：右键点击build.ps1文件，选择"使用PowerShell运行"
+# 方式2：在PowerShell中执行
+powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-或者直接双击 `build.bat` 文件。
+**注意**: 如果遇到执行策略限制，请使用管理员权限运行PowerShell并执行：
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
 
-**注意**: 由于编码问题，建议在cmd中运行而不是PowerShell中运行。
-
-批处理文件会自动：
+PowerShell脚本会自动：
 - 检查conda环境
 - 激活pandapower_sim环境  
 - 检查Python和PyInstaller
 - 执行打包过程
+- 提供详细的错误提示和解决方案
 
 ### 方法二：手动执行
 
@@ -68,7 +72,7 @@ pyinstaller pandapower_sim.spec
 
 - `pandapower_sim.spec`: PyInstaller配置文件，定义了打包参数
 - `build.py`: Python打包脚本，自动化整个打包过程
-- `build.bat`: Windows批处理文件，一键打包
+- `build.ps1`: PowerShell脚本，一键打包（推荐使用）
 
 ## 输出文件
 

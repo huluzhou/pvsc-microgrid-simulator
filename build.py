@@ -9,7 +9,40 @@ import os
 import sys
 import subprocess
 import shutil
+import time
 from pathlib import Path
+
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
+    print("提示: 安装tqdm可获得更好的进度显示体验: pip install tqdm")
+    
+    # 简单的进度条替代
+    class tqdm:
+        def __init__(self, total=None, desc="", unit=""):
+            self.total = total
+            self.desc = desc
+            self.current = 0
+            print(f"{desc}...")
+        
+        def update(self, n=1):
+            self.current += n
+            if self.total:
+                percent = (self.current / self.total) * 100
+                print(f"\r{self.desc}: {percent:.1f}%", end="", flush=True)
+            else:
+                print(".", end="", flush=True)
+        
+        def close(self):
+            print("\n完成!")
+        
+        def __enter__(self):
+            return self
+        
+        def __exit__(self, *args):
+            self.close()
 
 
 def check_conda_env():
@@ -54,21 +87,28 @@ def check_pyinstaller():
 def clean_build():
     """清理之前的构建文件"""
     dirs_to_clean = ['build', 'dist', '__pycache__']
+    
+    print("清理构建文件...")
     for dir_name in dirs_to_clean:
         if os.path.exists(dir_name):
             print(f"清理目录: {dir_name}")
             shutil.rmtree(dir_name)
     
     # 清理.pyc文件
+    pyc_count = 0
     for root, dirs, files in os.walk('.'):
         for file in files:
             if file.endswith('.pyc'):
                 os.remove(os.path.join(root, file))
+                pyc_count += 1
+    
+    if pyc_count > 0:
+        print(f"清理了 {pyc_count} 个.pyc文件")
 
 
 def build_executable():
     """构建可执行文件"""
-    print("开始构建可执行文件...")
+    print("\n开始构建可执行文件...")
     
     # 使用简化的PyInstaller命令，避免复杂的spec文件配置问题
     cmd = [
@@ -81,13 +121,18 @@ def build_executable():
     ]
     
     try:
+        print("正在执行PyInstaller...")
+        # 直接运行命令，不使用进度条避免死循环
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("构建成功!")
+        print("\n构建成功!")
         print("可执行文件已生成: dist/pandapower_sim.exe")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"构建失败: {e}")
+        print(f"\n构建失败: {e}")
         print(f"错误输出: {e.stderr}")
+        return False
+    except Exception as e:
+        print(f"\n构建过程中发生异常: {e}")
         return False
 
 
@@ -95,17 +140,27 @@ def copy_assets():
     """复制资源文件到dist目录"""
     dist_dir = Path('dist')
     if not dist_dir.exists():
-        print("dist目录不存在，构建可能失败")
+        print("\ndist目录不存在，构建可能失败")
         return False
     
     # 确保资源文件被正确复制
     assets_src = Path('src/assets')
     if assets_src.exists():
+        asset_files = list(assets_src.glob('*'))
+        
+        print(f"复制资源文件... ({len(asset_files)} 个文件)")
         assets_dst = dist_dir / 'assets'
         if assets_dst.exists():
             shutil.rmtree(assets_dst)
-        shutil.copytree(assets_src, assets_dst)
-        print("资源文件复制完成")
+        assets_dst.mkdir(exist_ok=True)
+        
+        for asset_file in asset_files:
+            if asset_file.is_file():
+                shutil.copy2(asset_file, assets_dst / asset_file.name)
+        
+        print(f"资源文件复制完成")
+    else:
+        print("\n未找到资源文件目录")
     
     return True
 
@@ -114,27 +169,35 @@ def main():
     """主函数"""
     print("=== PandaPower仿真器打包工具 ===")
     
-    # 检查conda环境
+    # 1. 检查conda环境
+    print("\n[1/5] 检查conda环境...")
     check_conda_env()
     
-    # 检查PyInstaller
+    # 2. 检查PyInstaller
+    print("\n[2/5] 检查PyInstaller...")
     if not check_pyinstaller():
         return False
     
-    # 清理构建文件
+    # 3. 清理构建文件
+    print("\n[3/5] 清理构建文件...")
     clean_build()
     
-    # 构建可执行文件
+    # 4. 构建可执行文件
+    print("\n[4/5] 构建可执行文件...")
     if not build_executable():
         return False
     
-    # 复制资源文件
+    # 5. 复制资源文件
+    print("\n[5/5] 复制资源文件...")
     if not copy_assets():
         return False
     
-    print("\n=== 打包完成 ===")
-    print("可执行文件位置: dist/PandaPowerSim.exe")
-    print("您可以将整个dist文件夹分发给用户")
+    print("\n" + "="*50)
+    print("🎉 打包完成! 🎉")
+    print("="*50)
+    print("📁 可执行文件位置: dist/pandapower_sim.exe")
+    print("📦 您可以将整个dist文件夹分发给用户")
+    print("="*50)
     
     return True
 
