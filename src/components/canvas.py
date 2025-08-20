@@ -56,6 +56,12 @@ class NetworkCanvas(QGraphicsView):
         
         # 连接场景选择变化信号
         self.scene.selectionChanged.connect(self.update_status_bar)
+        
+        # 右键拖动相关变量
+        self.right_drag_active = False
+        self.last_pan_point = QPointF()
+        self.right_press_point = QPointF()
+        self.has_dragged = False
     
     def get_connection_line_color(self):
         """根据当前主题获取连接线颜色"""
@@ -384,6 +390,64 @@ class NetworkCanvas(QGraphicsView):
             # 对象已被删除
             return QPointF(0, 0), -1
 
+    def mousePressEvent(self, event):
+        """鼠标按下事件"""
+        if event.button() == Qt.RightButton:
+            # 右键按下，记录初始位置
+            self.right_drag_active = True
+            self.last_pan_point = event.pos()
+            self.right_press_point = event.pos()
+            self.has_dragged = False
+            event.accept()
+        else:
+            # 其他按键交给父类处理
+            super().mousePressEvent(event)
+    
+    def mouseMoveEvent(self, event):
+        """鼠标移动事件"""
+        if self.right_drag_active:
+            # 检查是否开始拖动（移动距离超过阈值）
+            drag_distance = (event.pos() - self.right_press_point).manhattanLength()
+            if drag_distance > 5 and not self.has_dragged:  # 5像素阈值
+                self.has_dragged = True
+                self.setCursor(Qt.ClosedHandCursor)
+            
+            if self.has_dragged:
+                # 右键拖动画布
+                delta = event.pos() - self.last_pan_point
+                self.last_pan_point = event.pos()
+                
+                # 移动视图
+                self.horizontalScrollBar().setValue(
+                    self.horizontalScrollBar().value() - delta.x()
+                )
+                self.verticalScrollBar().setValue(
+                    self.verticalScrollBar().value() - delta.y()
+                )
+            else:
+                self.last_pan_point = event.pos()
+            
+            event.accept()
+        else:
+            # 其他情况交给父类处理
+            super().mouseMoveEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        """鼠标释放事件"""
+        if event.button() == Qt.RightButton and self.right_drag_active:
+            # 右键释放，结束拖动
+            self.right_drag_active = False
+            self.setCursor(Qt.ArrowCursor)
+            
+            # 使用QTimer延迟重置has_dragged状态，确保contextMenuEvent能检测到拖动状态
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(50, lambda: setattr(self, 'has_dragged', False))
+            
+            event.accept()
+        else:
+            # 其他按键交给父类处理
+            super().mouseReleaseEvent(event)
+
     def wheelEvent(self, event):
         """鼠标滚轮事件，用于缩放"""
         # 获取缩放因子
@@ -398,6 +462,10 @@ class NetworkCanvas(QGraphicsView):
 
     def contextMenuEvent(self, event):
         """右键菜单事件"""
+        # 如果正在拖动或刚刚完成拖动，不显示菜单
+        if self.right_drag_active or self.has_dragged:
+            return
+            
         # 检查右键点击位置是否有组件
         scene_pos = self.mapToScene(event.pos())
         item_at_pos = self.scene.itemAt(scene_pos, self.transform())
@@ -616,18 +684,25 @@ class NetworkCanvas(QGraphicsView):
         self.draw_grid()
 
     def fit_in_view(self):
-        """适应视图"""
-        # 获取所有项目的边界矩形
-        items = self.scene.items()
-        if not items:
+        """适应视图，根据已使用的画布面积自动调整视图范围"""
+        # 获取所有非背景项目（z值大于-1的项目，排除网格线等背景元素）
+        network_items = [item for item in self.scene.items() if item.zValue() > -1]
+        
+        if not network_items:
+            # 如果没有网络组件，重置到默认视图
+            self.resetTransform()
             return
         
-        # 计算所有项目的边界矩形
-        rect = items[0].sceneBoundingRect()
-        for item in items[1:]:
+        # 计算所有网络组件的边界矩形
+        rect = network_items[0].sceneBoundingRect()
+        for item in network_items[1:]:
             rect = rect.united(item.sceneBoundingRect())
         
-        # 适应视图
+        # 添加边距以获得更好的视觉效果（边界矩形扩大20%）
+        margin = max(rect.width(), rect.height()) * 0.1
+        rect.adjust(-margin, -margin, margin, margin)
+        
+        # 适应视图，保持宽高比
         self.fitInView(rect, Qt.KeepAspectRatio)
     
     def keyPressEvent(self, event):
@@ -663,14 +738,14 @@ class NetworkCanvas(QGraphicsView):
         selected_items = self.scene.selectedItems()
         
         if selected_items:
-            # 有组件被选中，显示旋转快捷键提示
+            # 有组件被选中，显示操作提示
             count = len(selected_items)
             if count == 1:
-                message = f"已选中 1 个组件 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
+                message = f"已选中 1 个组件 | 双击修改名称 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
             else:
                 message = f"已选中 {count} 个组件 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
         else:
-            # 没有选中组件，显示默认状态
-            message = "就绪 | 拖拽组件到画布，点击组件进行选择和连接"
+            # 没有选中组件，显示默认状态和视图操作快捷键提示
+            message = "就绪 | 拖拽组件到画布，点击组件进行选择和连接 | 视图: Ctrl++(放大) Ctrl+-(缩小) Ctrl+0(适应视图) 右键拖动画布"
             
         self.main_window.statusBar().showMessage(message)

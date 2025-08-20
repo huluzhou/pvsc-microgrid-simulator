@@ -121,6 +121,23 @@ class MainWindow(QMainWindow):
         # 视图菜单
         view_menu = self.menuBar().addMenu("视图")
         view_menu.addAction(self.component_dock.toggleViewAction())
+        view_menu.addSeparator()
+        
+        # 缩放操作
+        zoom_in_action = QAction("放大", self)
+        zoom_in_action.setShortcut("Ctrl++")
+        zoom_in_action.triggered.connect(self.zoom_in)
+        view_menu.addAction(zoom_in_action)
+        
+        zoom_out_action = QAction("缩小", self)
+        zoom_out_action.setShortcut("Ctrl+-")
+        zoom_out_action.triggered.connect(self.zoom_out)
+        view_menu.addAction(zoom_out_action)
+        
+        fit_view_action = QAction("适应视图", self)
+        fit_view_action.setShortcut("Ctrl+0")
+        fit_view_action.triggered.connect(self.fit_view)
+        view_menu.addAction(fit_view_action)
         
         # 仿真菜单
         sim_menu = self.menuBar().addMenu("仿真")
@@ -142,6 +159,21 @@ class MainWindow(QMainWindow):
         """删除选中的项目"""
         self.canvas.delete_selected_items()
         self.statusBar().showMessage("已删除选中项目")
+    
+    def zoom_in(self):
+        """放大视图"""
+        self.canvas.scale(1.15, 1.15)
+        self.statusBar().showMessage("视图已放大")
+    
+    def zoom_out(self):
+        """缩小视图"""
+        self.canvas.scale(1.0 / 1.15, 1.0 / 1.15)
+        self.statusBar().showMessage("视图已缩小")
+    
+    def fit_view(self):
+        """适应视图"""
+        self.canvas.fit_in_view()
+        self.statusBar().showMessage("视图已适应画布内容")
     
     def update_theme_colors(self):
         """更新主题相关的所有颜色"""
