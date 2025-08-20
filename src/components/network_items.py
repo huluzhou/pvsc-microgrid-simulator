@@ -246,6 +246,19 @@ class BaseNetworkItem(QGraphicsItem):
         """更新旋转后的连接点位置"""
         if not hasattr(self, 'original_connection_points'):
             self.original_connection_points = self.connection_points.copy()
+        
+        # 根据旋转角度计算新的连接点位置
+        angle_rad = math.radians(self.rotation_angle)
+        cos_angle = math.cos(angle_rad)
+        sin_angle = math.sin(angle_rad)
+        
+        # 更新连接点位置
+        self.connection_points = []
+        for original_point in self.original_connection_points:
+            # 旋转变换
+            x = original_point.x() * cos_angle - original_point.y() * sin_angle
+            y = original_point.x() * sin_angle + original_point.y() * cos_angle
+            self.connection_points.append(QPointF(x, y))
     
     def can_connect(self):
         """检查是否可以添加新连接"""
@@ -552,7 +565,7 @@ class GeneratorItem(BaseNetworkItem):
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(0, -28)   # 线头端点（上侧）
+            QPointF(28, 0)   # 线头端点（右侧）
         ]
         self.original_connection_points = self.connection_points.copy()
 

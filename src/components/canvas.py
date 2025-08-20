@@ -5,9 +5,9 @@
 网络画布组件，用于绘制和编辑电网拓扑图
 """
 
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMenu
+from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMenu, QApplication
 from PySide6.QtCore import Qt, QPointF, QRectF
-from PySide6.QtGui import QPen, QBrush, QColor, QPainter
+from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
 from components.network_items import BusItem, LineItem, TransformerItem, GeneratorItem, LoadItem, StorageItem, ChargerItem
 
@@ -17,6 +17,18 @@ class NetworkCanvas(QGraphicsView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # 保存父窗口引用用于更新状态栏
+        self.main_window = parent
+        # 初始化组件计数器
+        self.component_counters = {
+            'bus': 0,
+            'line': 0,
+            'transformer': 0,
+            'generator': 0,
+            'load': 0,
+            'storage': 0,
+            'charger': 0
+        }
         self.init_ui()
 
     def init_ui(self):
@@ -38,20 +50,75 @@ class NetworkCanvas(QGraphicsView):
 
         # 设置接受拖放
         self.setAcceptDrops(True)
+        
+        # 设置焦点策略以接收键盘事件
+        self.setFocusPolicy(Qt.StrongFocus)
+        
+        # 连接场景选择变化信号
+        self.scene.selectionChanged.connect(self.update_status_bar)
+    
+    def get_connection_line_color(self):
+        """根据当前主题获取连接线颜色"""
+        try:
+            app = QApplication.instance()
+            if app:
+                palette = app.palette()
+                # 检查是否为深色主题
+                bg_color = palette.color(QPalette.Window)
+                is_dark_theme = bg_color.lightness() < 128
+                
+                if is_dark_theme:
+                    # 深色主题使用白色连接线
+                    return QColor(255, 255, 255)
+                else:
+                    # 浅色主题使用黑色连接线
+                    return QColor(0, 0, 0)
+            else:
+                # 默认黑色
+                return QColor(0, 0, 0)
+        except Exception as e:
+            print(f"获取连接线颜色时出错: {e}")
+            return QColor(0, 0, 0)
 
+    def get_grid_color(self):
+        """根据当前主题获取网格线颜色"""
+        try:
+            app = QApplication.instance()
+            if app:
+                palette = app.palette()
+                # 检查是否为深色主题
+                bg_color = palette.color(QPalette.Window)
+                is_dark_theme = bg_color.lightness() < 128
+                
+                if is_dark_theme:
+                    # 深色主题使用深灰色网格线
+                    return QColor(80, 80, 80)
+                else:
+                    # 浅色主题使用浅灰色网格线
+                    return QColor(230, 230, 230)
+            else:
+                # 默认浅灰色
+                return QColor(230, 230, 230)
+        except Exception as e:
+            print(f"获取网格颜色时出错: {e}")
+            return QColor(230, 230, 230)
+    
     def draw_grid(self, grid_size=50):
         """绘制网格背景"""
         # 设置网格线颜色和样式
-        grid_pen = QPen(QColor(230, 230, 230))
+        grid_color = self.get_grid_color()
+        grid_pen = QPen(grid_color)
         grid_pen.setWidth(1)
 
         # 绘制水平线
         for y in range(0, int(self.scene.height()), grid_size):
-            self.scene.addLine(0, y, self.scene.width(), y, grid_pen)
+            line = self.scene.addLine(0, y, self.scene.width(), y, grid_pen)
+            line.setZValue(-1)  # 设置网格线在背景层
 
         # 绘制垂直线
         for x in range(0, int(self.scene.width()), grid_size):
-            self.scene.addLine(x, 0, x, self.scene.height(), grid_pen)
+            line = self.scene.addLine(x, 0, x, self.scene.height(), grid_pen)
+            line.setZValue(-1)  # 设置网格线在背景层
 
     def dragEnterEvent(self, event):
         """拖拽进入事件"""
@@ -77,6 +144,25 @@ class NetworkCanvas(QGraphicsView):
             
             event.acceptProposedAction()
 
+    def generate_component_name(self, component_type):
+        """生成组件的自动名称"""
+        # 增加计数器
+        self.component_counters[component_type] += 1
+        count = self.component_counters[component_type]
+        
+        # 根据组件类型生成名称
+        name_mapping = {
+            'bus': f'Bus {count}',
+            'line': f'Line {count}',
+            'transformer': f'Transformer {count}',
+            'generator': f'Generator {count}',
+            'load': f'Load {count}',
+            'storage': f'Storage {count}',
+            'charger': f'Charger {count}'
+        }
+        
+        return name_mapping.get(component_type, f'{component_type.capitalize()} {count}')
+    
     def create_component(self, component_type, pos):
         """创建电网组件"""
         item = None
@@ -99,6 +185,18 @@ class NetworkCanvas(QGraphicsView):
         
         # 添加到场景
         if item:
+            # 生成自动名称
+            auto_name = self.generate_component_name(component_type)
+            item.component_name = auto_name
+            
+            # 更新组件属性中的名称
+            if hasattr(item, 'properties') and 'name' in item.properties:
+                item.properties['name'] = auto_name
+            
+            # 更新标签显示
+            if hasattr(item, 'label'):
+                item.label.setPlainText(auto_name)
+            
             self.scene.addItem(item)
             # 连接信号
             item.signals.itemSelected.connect(self.handle_item_selected)
@@ -213,10 +311,11 @@ class NetworkCanvas(QGraphicsView):
         scene_point2 = item2.mapToScene(connection_point2)
         
         # 创建连接线
+        line_color = self.get_connection_line_color()
         line = self.scene.addLine(
             scene_point1.x(), scene_point1.y(),
             scene_point2.x(), scene_point2.y(),
-            QPen(QColor(0, 0, 0), 2)
+            QPen(line_color, 2)
         )
         
         # 存储连接信息
@@ -327,6 +426,9 @@ class NetworkCanvas(QGraphicsView):
         
         if has_selection:
             # 选中项目相关操作
+            rotate_left_action = menu.addAction("向左旋转90°")
+            rotate_right_action = menu.addAction("向右旋转90°")
+            menu.addSeparator()
             disconnect_action = menu.addAction("断开所选连接")
             delete_action = menu.addAction("删除所选")
             menu.addSeparator()
@@ -344,7 +446,17 @@ class NetworkCanvas(QGraphicsView):
         action = menu.exec_(self.mapToGlobal(event.pos()))
         
         # 处理菜单动作
-        if action == disconnect_action and has_selection:
+        if has_selection and action == rotate_left_action:
+            # 向左旋转选中的组件
+            for item in selected_items:
+                if hasattr(item, 'rotate_component'):
+                    item.rotate_component(-90)
+        elif has_selection and action == rotate_right_action:
+            # 向右旋转选中的组件
+            for item in selected_items:
+                if hasattr(item, 'rotate_component'):
+                    item.rotate_component(90)
+        elif action == disconnect_action and has_selection:
             self.disconnect_all_from_selected()
         elif action == delete_action and has_selection:
             self.delete_selected_items()
@@ -363,6 +475,10 @@ class NetworkCanvas(QGraphicsView):
         
         # 删除与选中项目相关的连接
         self.disconnect_selected_items(selected_items)
+        
+        # 检查是否删除了first_selected_item
+        if hasattr(self, 'first_selected_item') and self.first_selected_item in selected_items:
+            self.first_selected_item = None
         
         # 删除选中的项目
         for item in selected_items:
@@ -407,6 +523,10 @@ class NetworkCanvas(QGraphicsView):
         """断开指定组件的所有连接"""
         if not hasattr(self, 'connections'):
             return
+        
+        # 检查是否需要清理first_selected_item
+        if hasattr(self, 'first_selected_item') and self.first_selected_item == item:
+            self.first_selected_item = None
         
         # 找到需要删除的连接
         connections_to_remove = [
@@ -456,6 +576,40 @@ class NetworkCanvas(QGraphicsView):
         
         return False
 
+    def update_connection_colors(self):
+        """更新所有连接线的颜色以适应当前主题"""
+        if hasattr(self, 'connections'):
+            line_color = self.get_connection_line_color()
+            for conn in self.connections:
+                if 'line' in conn and conn['line']:
+                    # 更新连接线颜色
+                    pen = conn['line'].pen()
+                    pen.setColor(line_color)
+                    conn['line'].setPen(pen)
+    
+    def update_theme_colors(self):
+        """更新主题相关的所有颜色"""
+        # 更新连接线颜色
+        self.update_connection_colors()
+        
+        # 重新绘制网格
+        # 先清除现有网格线（z值为-1的线条）
+        items_to_remove = []
+        for item in self.scene.items():
+            if item.zValue() == -1:  # 网格线的z值为-1
+                items_to_remove.append(item)
+        
+        for item in items_to_remove:
+            self.scene.removeItem(item)
+        
+        # 重新绘制网格
+        self.draw_grid()
+        
+        # 更新所有组件的标签颜色
+        for item in self.scene.items():
+            if hasattr(item, 'update_label_color'):
+                item.update_label_color()
+    
     def clear_canvas(self):
         """清空画布"""
         self.scene.clear()
@@ -475,3 +629,48 @@ class NetworkCanvas(QGraphicsView):
         
         # 适应视图
         self.fitInView(rect, Qt.KeepAspectRatio)
+    
+    def keyPressEvent(self, event):
+        """处理键盘事件"""
+        # 获取选中的组件
+        selected_items = self.scene.selectedItems()
+        
+        if selected_items:
+            # 处理旋转快捷键
+            if event.key() == Qt.Key_Left or event.key() == Qt.Key_Q:
+                # 向左旋转90度（逆时针）
+                for item in selected_items:
+                    if hasattr(item, 'rotate_component'):
+                        item.rotate_component(-90)
+                event.accept()
+                return
+            elif event.key() == Qt.Key_Right or event.key() == Qt.Key_E:
+                # 向右旋转90度（顺时针）
+                for item in selected_items:
+                    if hasattr(item, 'rotate_component'):
+                        item.rotate_component(90)
+                event.accept()
+                return
+        
+        # 如果没有处理，传递给父类
+        super().keyPressEvent(event)
+    
+    def update_status_bar(self):
+        """更新状态栏显示"""
+        if not self.main_window or not hasattr(self.main_window, 'statusBar'):
+            return
+            
+        selected_items = self.scene.selectedItems()
+        
+        if selected_items:
+            # 有组件被选中，显示旋转快捷键提示
+            count = len(selected_items)
+            if count == 1:
+                message = f"已选中 1 个组件 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
+            else:
+                message = f"已选中 {count} 个组件 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
+        else:
+            # 没有选中组件，显示默认状态
+            message = "就绪 | 拖拽组件到画布，点击组件进行选择和连接"
+            
+        self.main_window.statusBar().showMessage(message)

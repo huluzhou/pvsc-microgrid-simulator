@@ -42,6 +42,9 @@ class MainWindow(QMainWindow):
 
         # 状态栏
         self.statusBar().showMessage("就绪")
+        
+        # 初始化主题颜色
+        self.update_theme_colors()
 
     def create_component_palette(self):
         """创建组件面板"""
@@ -139,6 +142,18 @@ class MainWindow(QMainWindow):
         """删除选中的项目"""
         self.canvas.delete_selected_items()
         self.statusBar().showMessage("已删除选中项目")
+    
+    def update_theme_colors(self):
+        """更新主题相关的所有颜色"""
+        # 更新画布主题颜色
+        if hasattr(self, 'canvas'):
+            self.canvas.update_theme_colors()
+        
+        # 更新组件面板主题
+        if hasattr(self, 'component_palette'):
+            # 清空并重新添加组件以适应新主题
+            self.component_palette.clear()
+            self.component_palette.add_components()
     
     def show_about_dialog(self):
         """显示关于对话框"""
