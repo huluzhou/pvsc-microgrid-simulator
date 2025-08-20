@@ -129,6 +129,29 @@ class NetworkCanvas(QGraphicsView):
             
 
     
+    def _check_component_type_compatibility(self, item1, item2):
+        """检查组件类型兼容性"""
+        type1, type2 = item1.component_type, item2.component_type
+        
+        # 相同类型的组件不能相互连接
+        if type1 == type2:
+            return False
+            
+        # 母线可以连接到任何其他类型的组件
+        if type1 == "bus" or type2 == "bus":
+            return True
+            
+        # 变压器和线路必须连接到母线
+        if type1 in ["transformer", "line"] or type2 in ["transformer", "line"]:
+            return False
+            
+        # 发电机和负载必须连接到母线
+        if type1 in ["generator", "load", "storage", "charger"] or type2 in ["generator", "load", "storage", "charger"]:
+            return False
+            
+        # 开关可以连接到母线（已在上面的母线规则中处理）
+        return False
+    
     def can_connect(self, item1, item2):
         """检查两个组件是否可以连接"""
         # 检查是否已经连接
@@ -139,37 +162,8 @@ class NetworkCanvas(QGraphicsView):
         if not item1.can_connect() or not item2.can_connect():
             return False
             
-        # 检查组件类型是否允许连接
-        # 相同类型的组件不能相互连接（包括母线）
-        if item1.component_type == item2.component_type:
-            return False
-            
-        # 特定组件类型的连接规则
-        # 母线可以连接到任何其他类型的组件（但不能连接到母线）
-        if item1.component_type == "bus" and item2.component_type != "bus":
-            return True
-        if item2.component_type == "bus" and item1.component_type != "bus":
-            return True
-            
-        # 变压器和线路必须连接到母线
-        if item1.component_type in ["transformer", "line"] and item2.component_type != "bus":
-            return False
-        if item2.component_type in ["transformer", "line"] and item1.component_type != "bus":
-            return False
-            
-        # 发电机和负载必须连接到母线
-        if item1.component_type in ["generator", "load"] and item2.component_type != "bus":
-            return False
-        if item2.component_type in ["generator", "load"] and item1.component_type != "bus":
-            return False
-            
-        # 开关可以连接到母线
-        if item1.component_type == "switch" and item2.component_type == "bus":
-            return True
-        if item2.component_type == "switch" and item1.component_type == "bus":
-            return True
-        
-        return False
+        # 检查组件类型兼容性
+        return self._check_component_type_compatibility(item1, item2)
     
     def connect_items(self, item1, item2):
         """连接两个组件"""
@@ -374,6 +368,19 @@ class NetworkCanvas(QGraphicsView):
         for item in selected_items:
             self.scene.removeItem(item)
     
+    def _remove_connections(self, connections_to_remove):
+        """移除连接的通用方法"""
+        for conn in connections_to_remove:
+            self.scene.removeItem(conn['line'])
+            self.connections.remove(conn)
+            # 更新连接计数和连接点状态
+            if hasattr(conn['item1'], 'remove_connection'):
+                point_index1 = conn.get('point_index1', None) if conn['item1'].component_type != 'bus' else None
+                conn['item1'].remove_connection(conn['item2'], point_index1)
+            if hasattr(conn['item2'], 'remove_connection'):
+                point_index2 = conn.get('point_index2', None) if conn['item2'].component_type != 'bus' else None
+                conn['item2'].remove_connection(conn['item1'], point_index2)
+    
     def disconnect_selected_items(self, items=None):
         """断开选中设备的所有连接"""
         if items is None:
@@ -383,31 +390,18 @@ class NetworkCanvas(QGraphicsView):
             return
         
         # 找到需要删除的连接
-        connections_to_remove = []
-        for conn in self.connections:
-            # 如果连接的任一端点在选中项目中，则删除该连接
-            if conn['item1'] in items or conn['item2'] in items:
-                connections_to_remove.append(conn)
+        connections_to_remove = [
+            conn for conn in self.connections 
+            if conn['item1'] in items or conn['item2'] in items
+        ]
         
-        # 删除连接线和连接信息，并更新连接计数
-        for conn in connections_to_remove:
-            self.scene.removeItem(conn['line'])
-            self.connections.remove(conn)
-            # 更新连接计数和连接点状态
-            if hasattr(conn['item1'], 'remove_connection'):
-                point_index1 = conn.get('point_index1', None) if conn['item1'].component_type != 'bus' else None
-                conn['item1'].remove_connection(conn['item2'], point_index1)
-            if hasattr(conn['item2'], 'remove_connection'):
-                point_index2 = conn.get('point_index2', None) if conn['item2'].component_type != 'bus' else None
-                conn['item2'].remove_connection(conn['item1'], point_index2)
+        self._remove_connections(connections_to_remove)
     
     def disconnect_all_from_selected(self):
         """断开选中设备的所有连接"""
         selected_items = self.scene.selectedItems()
-        if not selected_items:
-            return
-        
-        self.disconnect_selected_items(selected_items)
+        if selected_items:
+            self.disconnect_selected_items(selected_items)
     
     def disconnect_all_from_item(self, item):
         """断开指定组件的所有连接"""
@@ -415,23 +409,12 @@ class NetworkCanvas(QGraphicsView):
             return
         
         # 找到需要删除的连接
-        connections_to_remove = []
-        for conn in self.connections:
-            if conn['item1'] == item or conn['item2'] == item:
-                connections_to_remove.append(conn)
+        connections_to_remove = [
+            conn for conn in self.connections 
+            if conn['item1'] == item or conn['item2'] == item
+        ]
         
-        # 删除连接线和连接信息，并更新连接计数
-        for conn in connections_to_remove:
-            self.scene.removeItem(conn['line'])
-            self.connections.remove(conn)
-            # 更新连接计数和连接点状态
-            if hasattr(conn['item1'], 'remove_connection'):
-                point_index1 = conn.get('point_index1', None) if conn['item1'].component_type != 'bus' else None
-                conn['item1'].remove_connection(conn['item2'], point_index1)
-            if hasattr(conn['item2'], 'remove_connection'):
-                point_index2 = conn.get('point_index2', None) if conn['item2'].component_type != 'bus' else None
-                conn['item2'].remove_connection(conn['item1'], point_index2)
-        
+        self._remove_connections(connections_to_remove)
         print(f"断开了 {len(connections_to_remove)} 个连接")
     
     def disconnect_items(self, item1, item2):
@@ -440,22 +423,13 @@ class NetworkCanvas(QGraphicsView):
             return False
         
         # 找到两个设备之间的连接
-        connections_to_remove = []
-        for conn in self.connections:
-            if (conn['item1'] == item1 and conn['item2'] == item2) or \
-               (conn['item1'] == item2 and conn['item2'] == item1):
-                connections_to_remove.append(conn)
+        connections_to_remove = [
+            conn for conn in self.connections 
+            if (conn['item1'] == item1 and conn['item2'] == item2) or 
+               (conn['item1'] == item2 and conn['item2'] == item1)
+        ]
         
-        # 删除找到的连接，并更新连接计数
-        for conn in connections_to_remove:
-            self.scene.removeItem(conn['line'])
-            self.connections.remove(conn)
-            # 更新连接计数
-            if hasattr(conn['item1'], 'remove_connection'):
-                conn['item1'].remove_connection(conn['item2'])
-            if hasattr(conn['item2'], 'remove_connection'):
-                conn['item2'].remove_connection(conn['item1'])
-        
+        self._remove_connections(connections_to_remove)
         return len(connections_to_remove) > 0
     
     def get_connections_for_item(self, item):

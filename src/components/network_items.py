@@ -86,6 +86,7 @@ class BaseNetworkItem(QGraphicsItem):
         self.max_connections = -1  # -1表示无限制，其他数字表示最大连接数
         self.min_connections = 0   # 最小连接数
         self.current_connections = []  # 当前连接的组件列表
+        self.connection_point_states = {}  # 记录每个连接点的占用状态 {point_index: connected_item}
     
     def update_label_color(self):
         """根据当前主题更新标签颜色"""
@@ -245,149 +246,6 @@ class BaseNetworkItem(QGraphicsItem):
         """更新旋转后的连接点位置"""
         if not hasattr(self, 'original_connection_points'):
             self.original_connection_points = self.connection_points.copy()
-
-
-class StorageItem(BaseNetworkItem):
-    """储能组件"""
-
-    def __init__(self, pos, parent=None):
-        super().__init__(pos, parent)
-        self.component_type = "storage"
-        self.component_name = "储能"
-        self.properties = {
-            "p_mw": 10.0,  # 额定功率
-            "max_e_mwh": 50.0,  # 最大储能容量
-            "soc_percent": 50.0,  # 荷电状态百分比
-            "name": "Storage 1",  # 名称
-        }
-        self.label.setPlainText(self.properties["name"])
-        
-        # 连接约束：储能只能连接一个bus
-        self.max_connections = 1
-        self.min_connections = 1
-        
-        # 加载SVG图标
-        self.load_svg("storage.svg")
-        
-        # 定义连接点（相对于组件中心的位置）
-        self.connection_points = [
-            QPointF(0, -28)   # 线头端点（上侧）
-        ]
-        self.original_connection_points = self.connection_points.copy()
-
-    def get_available_connection_points(self):
-        """获取可用的连接点索引列表"""
-        if len(self.current_connections) < self.max_connections or self.max_connections == -1:
-            return list(range(len(self.connection_points)))
-        return []
-
-    def can_connect(self):
-        """检查是否可以连接"""
-        return len(self.current_connections) < self.max_connections
-
-    def add_connection(self, connected_item=None, connection_point_index=None):
-        """添加连接"""
-        if connected_item and self.can_connect():
-            self.current_connections.append(connected_item)
-            return True
-        return False
-
-    def remove_connection(self, connected_item=None, connection_point_index=None):
-        """移除连接"""
-        if connected_item and connected_item in self.current_connections:
-            self.current_connections.remove(connected_item)
-            return True
-        return False
-
-    def is_connection_point_available(self, point_index):
-        """检查连接点是否可用"""
-        return len(self.current_connections) < self.max_connections
-
-    def get_available_connection_points(self):
-        """获取可用的连接点索引列表"""
-        if len(self.current_connections) < self.max_connections or self.max_connections == -1:
-            return list(range(len(self.connection_points)))
-        return []
-
-    def validate_connections(self):
-        """验证连接是否有效"""
-        return len(self.current_connections) >= self.min_connections
-
-    def disconnect_all_connections(self):
-        """断开所有连接"""
-        connections_to_remove = self.current_connections.copy()
-        for connected_item in connections_to_remove:
-            if hasattr(connected_item, 'remove_connection'):
-                connected_item.remove_connection(self)
-            self.remove_connection(connected_item)
-            
-            if self.scene():
-                for item in self.scene().items():
-                    if hasattr(item, 'start_item') and hasattr(item, 'end_item'):
-                        if (item.start_item == self and item.end_item == connected_item) or \
-                           (item.start_item == connected_item and item.end_item == self):
-                            self.scene().removeItem(item)
-
-    def delete_component(self):
-        """删除组件"""
-        self.disconnect_all_connections()
-        if self.scene():
-            self.scene().removeItem(self)
-
-    def contextMenuEvent(self, event):
-        """右键菜单事件"""
-        menu = QMenu()
-        rotate_action = menu.addAction("旋转 90°")
-        delete_action = menu.addAction("删除")
-        action = menu.exec_(event.screenPos())
-        
-        if action == rotate_action:
-            self.rotate_component()
-        elif action == delete_action:
-            self.delete_component()
-
-    def mousePressEvent(self, event):
-        """鼠标按下事件"""
-        if event.button() == Qt.LeftButton:
-            current_time = event.timestamp() if hasattr(event, 'timestamp') else 0
-            
-            if hasattr(self, 'last_click_time'):
-                time_diff = current_time - self.last_click_time
-                if time_diff < self.double_click_threshold:
-                    self.handle_double_click()
-                    return
-            
-            self.last_click_time = current_time
-            
-        super().mousePressEvent(event)
-
-    def handle_double_click(self):
-        """处理双击事件 - 重命名组件"""
-        from PySide6.QtWidgets import QInputDialog
-        
-        text, ok = QInputDialog.getText(
-            None, 
-            '重命名组件', 
-            '请输入新名称:', 
-            text=self.properties.get('name', '')
-        )
-        
-        if ok and text:
-            self.properties['name'] = text
-            self.label.setPlainText(text)
-        
-        # 将角度转换为弧度
-        angle_rad = math.radians(self.rotation_angle)
-        cos_angle = math.cos(angle_rad)
-        sin_angle = math.sin(angle_rad)
-        
-        # 旋转每个连接点
-        self.connection_points = []
-        for point in self.original_connection_points:
-            # 应用旋转矩阵
-            new_x = point.x() * cos_angle - point.y() * sin_angle
-            new_y = point.x() * sin_angle + point.y() * cos_angle
-            self.connection_points.append(QPointF(new_x, new_y))
     
     def can_connect(self):
         """检查是否可以添加新连接"""
@@ -408,13 +266,15 @@ class StorageItem(BaseNetworkItem):
     def remove_connection(self, connected_item=None, connection_point_index=None):
         """移除连接"""
         if len(self.current_connections) > 0:
-            if connected_item in self.current_connections:
+            if connected_item and connected_item in self.current_connections:
                 self.current_connections.remove(connected_item)
             elif len(self.current_connections) > 0:
                 self.current_connections.pop()
             # 如果指定了连接点索引，清除该连接点的占用状态
             if connection_point_index is not None and connection_point_index in self.connection_point_states:
                 del self.connection_point_states[connection_point_index]
+            return True
+        return False
     
     def is_connection_point_available(self, point_index):
         """检查指定连接点是否可用"""
@@ -430,9 +290,9 @@ class StorageItem(BaseNetworkItem):
     
     def validate_connections(self):
         """验证连接是否满足约束"""
-        if self.current_connections < self.min_connections:
+        if len(self.current_connections) < self.min_connections:
             return False, f"{self.component_name}至少需要{self.min_connections}个连接"
-        if self.max_connections != -1 and self.current_connections > self.max_connections:
+        if self.max_connections != -1 and len(self.current_connections) > self.max_connections:
             return False, f"{self.component_name}最多只能有{self.max_connections}个连接"
         return True, ""
     
@@ -512,14 +372,42 @@ class StorageItem(BaseNetworkItem):
             text=current_name
         )
         
-        if ok and new_name.strip():
-            # 更新组件名称
-            self.properties['name'] = new_name.strip()
-            self.label.setPlainText(new_name.strip())
-            print(f"组件名称已更新为: {new_name.strip()}")
-            
-            # 发出选中信号以更新属性面板
-            self.signals.itemSelected.emit(self)
+        if ok and new_name:
+            self.properties['name'] = new_name
+            self.label.setPlainText(new_name)
+
+
+class StorageItem(BaseNetworkItem):
+    """储能组件"""
+
+    def __init__(self, pos, parent=None):
+        super().__init__(pos, parent)
+        self.component_type = "storage"
+        self.component_name = "储能"
+        self.properties = {
+            "p_mw": 10.0,  # 额定功率
+            "max_e_mwh": 50.0,  # 最大储能容量
+            "soc_percent": 50.0,  # 荷电状态百分比
+            "name": "Storage 1",  # 名称
+        }
+        self.label.setPlainText(self.properties["name"])
+        
+        # 连接约束：储能只能连接一个bus
+        self.max_connections = 1
+        self.min_connections = 1
+        
+        # 加载SVG图标
+        self.load_svg("storage.svg")
+        
+        # 定义连接点（相对于组件中心的位置）
+        self.connection_points = [
+            QPointF(0, -28)   # 线头端点（上侧）
+        ]
+        self.original_connection_points = self.connection_points.copy()
+
+
+        
+
 
 
 class ChargerItem(BaseNetworkItem):
@@ -549,154 +437,7 @@ class ChargerItem(BaseNetworkItem):
         ]
         self.original_connection_points = self.connection_points.copy()
         
-        # 将角度转换为弧度
-        angle_rad = math.radians(self.rotation_angle)
-        cos_angle = math.cos(angle_rad)
-        sin_angle = math.sin(angle_rad)
-        
-        # 旋转每个连接点
-        self.connection_points = []
-        for point in self.original_connection_points:
-            # 应用旋转矩阵
-            new_x = point.x() * cos_angle - point.y() * sin_angle
-            new_y = point.x() * sin_angle + point.y() * cos_angle
-            self.connection_points.append(QPointF(new_x, new_y))
-    
-    def can_connect(self):
-        """检查是否可以添加新连接"""
-        if self.max_connections == -1:
-            return True
-        return len(self.current_connections) < self.max_connections
-    
-    def add_connection(self, connected_item=None, connection_point_index=None):
-        """添加连接"""
-        if self.can_connect():
-            self.current_connections.append(connected_item)
-            # 如果指定了连接点索引，标记该连接点为已占用
-            if connection_point_index is not None:
-                self.connection_point_states[connection_point_index] = connected_item
-            return True
-        return False
-    
-    def remove_connection(self, connected_item=None, connection_point_index=None):
-        """移除连接"""
-        if len(self.current_connections) > 0:
-            if connected_item and connected_item in self.current_connections:
-                self.current_connections.remove(connected_item)
-            else:
-                self.current_connections.pop()
-            # 如果指定了连接点索引，清除该连接点的占用状态
-            if connection_point_index is not None and connection_point_index in self.connection_point_states:
-                del self.connection_point_states[connection_point_index]
-            return True
-        return False
-    
-    def is_connection_point_available(self, point_index):
-        """检查指定连接点是否可用"""
-        return point_index not in self.connection_point_states
-    
-    def get_available_connection_points(self):
-        """获取所有可用的连接点索引"""
-        available_points = []
-        for i in range(len(self.connection_points)):
-            if self.is_connection_point_available(i):
-                available_points.append(i)
-        return available_points
-    
-    def validate_connections(self):
-        """验证连接数是否满足约束"""
-        if self.current_connections < self.min_connections:
-            return False, f"{self.component_name}至少需要{self.min_connections}个连接"
-        if self.max_connections != -1 and self.current_connections > self.max_connections:
-            return False, f"{self.component_name}最多只能有{self.max_connections}个连接"
-        return True, ""
-    
-    def disconnect_all_connections(self):
-        """断开所有连接"""
-        if self.scene():
-            # 获取画布对象
-            canvas = None
-            for view in self.scene().views():
-                if hasattr(view, 'disconnect_all_from_item'):
-                    canvas = view
-                    break
-            
-            if canvas:
-                canvas.disconnect_all_from_item(self)
-            else:
-                print(f"断开{self.component_name}的所有连接")
-    
-    def delete_component(self):
-        """删除组件"""
-        if self.scene():
-            # 先断开所有连接
-            self.disconnect_all_connections()
-            # 从场景中移除
-            self.scene().removeItem(self)
-            print(f"删除组件: {self.component_name}")
-    
-    def contextMenuEvent(self, event):
-        """右键菜单事件"""
-        menu = QMenu()
-        
-        # 添加旋转选项
-        rotate_action = menu.addAction("旋转90°")
-        rotate_action.triggered.connect(lambda: self.rotate_component(90))
-        
-        menu.addSeparator()
-        
-        # 添加断开连接选项
-        disconnect_action = menu.addAction("断开所有连接")
-        disconnect_action.triggered.connect(self.disconnect_all_connections)
-        
-        # 添加删除选项
-        delete_action = menu.addAction("删除组件")
-        delete_action.triggered.connect(self.delete_component)
-        
-        # 显示菜单
-        menu.exec(event.screenPos())
-    
-    def mousePressEvent(self, event):
-        """鼠标按下事件"""
-        super().mousePressEvent(event)
-        
-        if event.button() == Qt.LeftButton:
-            import time
-            current_time = int(time.time() * 1000)  # 当前时间（毫秒）
-            
-            # 检查是否为双击
-            if current_time - self.last_click_time < self.double_click_threshold:
-                self.handle_double_click()
-                return  # 双击时直接返回，不执行单击逻辑
-            
-            # 选中当前项
-            self.setSelected(True)
-            # 手动发出选中信号
-            print(f"发出选中信号: {self.component_type}")
-            self.signals.itemSelected.emit(self)
-            
-            self.last_click_time = current_time
-    
-    def handle_double_click(self):
-        """处理双击事件，弹出名称编辑对话框"""
-        current_name = self.properties.get('name', self.component_name)
-        
-        # 弹出输入对话框
-        new_name, ok = QInputDialog.getText(
-            None,
-            '修改组件名称',
-            f'请输入新的{self.component_name}名称:',
-            text=current_name
-        )
-        
-        if ok and new_name.strip():
-            # 更新组件名称
-            self.properties['name'] = new_name.strip()
-            self.label.setPlainText(new_name.strip())
-            print(f"组件名称已更新为: {new_name.strip()}")
-            
-            # 发出选中信号以更新属性面板
-            self.signals.itemSelected.emit(self)
+
 
 
 class BusItem(BaseNetworkItem):
@@ -725,124 +466,7 @@ class BusItem(BaseNetworkItem):
         ]
         self.original_connection_points = self.connection_points.copy()
 
-    def can_connect(self):
-        """检查是否可以连接"""
-        # 母线没有连接数量限制
-        return True
 
-    def add_connection(self, connected_item=None, connection_point_index=None):
-        """添加连接"""
-        if connected_item:
-            self.current_connections.append(connected_item)
-            return True
-        return False
-
-    def remove_connection(self, connected_item=None, connection_point_index=None):
-        """移除连接"""
-        if connected_item and connected_item in self.current_connections:
-            self.current_connections.remove(connected_item)
-            return True
-        return False
-
-    def is_connection_point_available(self, point_index):
-        """检查连接点是否可用"""
-        return True  # 母线的连接点总是可用
-
-    def get_available_connection_points(self):
-        """获取可用的连接点"""
-        # 根据旋转角度调整连接点位置
-        rotated_points = []
-        for point in self.connection_points:
-            if self.rotation_angle != 0:
-                # 应用旋转变换
-                transform = QTransform()
-                transform.rotate(self.rotation_angle)
-                rotated_point = transform.map(point)
-                rotated_points.append(rotated_point)
-            else:
-                rotated_points.append(point)
-        return rotated_points
-
-    def validate_connections(self):
-        """验证连接是否有效"""
-        # 母线没有连接限制
-        return True
-
-    def disconnect_all_connections(self):
-        """断开所有连接"""
-        connections_to_remove = self.current_connections.copy()
-        for connected_item in connections_to_remove:
-            # 从对方移除连接
-            if hasattr(connected_item, 'remove_connection'):
-                connected_item.remove_connection(self)
-            # 从自己移除连接
-            self.remove_connection(connected_item)
-            
-            # 从场景中移除连接线
-            if self.scene():
-                for item in self.scene().items():
-                    if hasattr(item, 'start_item') and hasattr(item, 'end_item'):
-                        if (item.start_item == self and item.end_item == connected_item) or \
-                           (item.start_item == connected_item and item.end_item == self):
-                            self.scene().removeItem(item)
-
-    def delete_component(self):
-        """删除组件"""
-        # 先断开所有连接
-        self.disconnect_all_connections()
-        # 从场景中移除
-        if self.scene():
-            self.scene().removeItem(self)
-
-    def contextMenuEvent(self, event):
-        """右键菜单事件"""
-        menu = QMenu()
-        
-        # 添加旋转选项
-        rotate_action = menu.addAction("旋转 90°")
-        
-        # 添加删除选项
-        delete_action = menu.addAction("删除")
-        
-        # 显示菜单并获取选择的动作
-        action = menu.exec_(event.screenPos())
-        
-        if action == rotate_action:
-            self.rotate_component()
-        elif action == delete_action:
-            self.delete_component()
-
-    def mousePressEvent(self, event):
-        """鼠标按下事件"""
-        if event.button() == Qt.LeftButton:
-            current_time = event.timestamp() if hasattr(event, 'timestamp') else 0
-            
-            # 检查是否为双击
-            if hasattr(self, 'last_click_time'):
-                time_diff = current_time - self.last_click_time
-                if time_diff < self.double_click_threshold:
-                    # 双击事件
-                    self.handle_double_click()
-                    return  # 阻止单击逻辑执行
-            
-            self.last_click_time = current_time
-            
-        super().mousePressEvent(event)
-
-    def handle_double_click(self):
-        """处理双击事件 - 重命名组件"""
-        from PySide6.QtWidgets import QInputDialog
-        
-        text, ok = QInputDialog.getText(
-            None, 
-            '重命名组件', 
-            '请输入新名称:', 
-            text=self.properties.get('name', '')
-        )
-        
-        if ok and text:
-            self.properties['name'] = text
-            self.label.setPlainText(text)
 
 
 class LineItem(BaseNetworkItem):
@@ -854,14 +478,13 @@ class LineItem(BaseNetworkItem):
         self.component_name = "线路"
         self.properties = {
             "length_km": 10.0,  # 线路长度
-            "r_ohm_per_km": 0.1,  # 每公里电阻
-            "x_ohm_per_km": 0.1,  # 每公里电抗
-            "c_nf_per_km": 10,  # 每公里电容
+            "r_ohm_per_km": 0.1,  # 电阻
+            "x_ohm_per_km": 0.4,  # 电抗
             "name": "Line 1",  # 名称
         }
         self.label.setPlainText(self.properties["name"])
         
-        # 连接约束：线路必须连接两个bus
+        # 连接约束：线路必须连接两个组件
         self.max_connections = 2
         self.min_connections = 2
         
@@ -870,105 +493,10 @@ class LineItem(BaseNetworkItem):
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(-30, 0),  # 左端
-            QPointF(30, 0)    # 右端
+            QPointF(-25, 0),  # 左端点
+            QPointF(25, 0)    # 右端点
         ]
         self.original_connection_points = self.connection_points.copy()
-
-    def can_connect(self):
-        """检查是否可以连接"""
-        return len(self.current_connections) < self.max_connections
-
-    def add_connection(self, connected_item=None, connection_point_index=None):
-        """添加连接"""
-        if connected_item and self.can_connect():
-            self.current_connections.append(connected_item)
-            return True
-        return False
-
-    def remove_connection(self, connected_item=None, connection_point_index=None):
-        """移除连接"""
-        if connected_item and connected_item in self.current_connections:
-            self.current_connections.remove(connected_item)
-            return True
-        return False
-
-    def is_connection_point_available(self, point_index):
-        """检查连接点是否可用"""
-        return len(self.current_connections) < self.max_connections
-
-    def get_available_connection_points(self):
-        """获取可用的连接点索引列表"""
-        if len(self.current_connections) < self.max_connections or self.max_connections == -1:
-            return list(range(len(self.connection_points)))
-        return []
-
-    def validate_connections(self):
-        """验证连接是否有效"""
-        return len(self.current_connections) >= self.min_connections
-
-    def disconnect_all_connections(self):
-        """断开所有连接"""
-        connections_to_remove = self.current_connections.copy()
-        for connected_item in connections_to_remove:
-            if hasattr(connected_item, 'remove_connection'):
-                connected_item.remove_connection(self)
-            self.remove_connection(connected_item)
-            
-            if self.scene():
-                for item in self.scene().items():
-                    if hasattr(item, 'start_item') and hasattr(item, 'end_item'):
-                        if (item.start_item == self and item.end_item == connected_item) or \
-                           (item.start_item == connected_item and item.end_item == self):
-                            self.scene().removeItem(item)
-
-    def delete_component(self):
-        """删除组件"""
-        self.disconnect_all_connections()
-        if self.scene():
-            self.scene().removeItem(self)
-
-    def contextMenuEvent(self, event):
-        """右键菜单事件"""
-        menu = QMenu()
-        rotate_action = menu.addAction("旋转 90°")
-        delete_action = menu.addAction("删除")
-        action = menu.exec_(event.screenPos())
-        
-        if action == rotate_action:
-            self.rotate_component()
-        elif action == delete_action:
-            self.delete_component()
-
-    def mousePressEvent(self, event):
-        """鼠标按下事件"""
-        if event.button() == Qt.LeftButton:
-            current_time = event.timestamp() if hasattr(event, 'timestamp') else 0
-            
-            if hasattr(self, 'last_click_time'):
-                time_diff = current_time - self.last_click_time
-                if time_diff < self.double_click_threshold:
-                    self.handle_double_click()
-                    return
-            
-            self.last_click_time = current_time
-            
-        super().mousePressEvent(event)
-
-    def handle_double_click(self):
-        """处理双击事件 - 重命名组件"""
-        from PySide6.QtWidgets import QInputDialog
-        
-        text, ok = QInputDialog.getText(
-            None, 
-            '重命名组件', 
-            '请输入新名称:', 
-            text=self.properties.get('name', '')
-        )
-        
-        if ok and text:
-            self.properties['name'] = text
-            self.label.setPlainText(text)
 
 
 class TransformerItem(BaseNetworkItem):
@@ -979,11 +507,9 @@ class TransformerItem(BaseNetworkItem):
         self.component_type = "transformer"
         self.component_name = "变压器"
         self.properties = {
-            "sn_mva": 40.0,  # 额定容量
+            "sn_mva": 100.0,  # 额定容量
             "vn_hv_kv": 110.0,  # 高压侧额定电压
-            "vn_lv_kv": 10.0,  # 低压侧额定电压
-            "vk_percent": 10.0,  # 短路阻抗百分比
-            "vkr_percent": 0.5,  # 短路损耗百分比
+            "vn_lv_kv": 10.0,   # 低压侧额定电压
             "name": "Transformer 1",  # 名称
         }
         self.label.setPlainText(self.properties["name"])
@@ -997,105 +523,10 @@ class TransformerItem(BaseNetworkItem):
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(-28, 0),  # 左端
-            QPointF(28, 0)    # 右端
+            QPointF(-25, 0),  # 高压侧
+            QPointF(25, 0)    # 低压侧
         ]
         self.original_connection_points = self.connection_points.copy()
-
-    def can_connect(self):
-        """检查是否可以连接"""
-        return len(self.current_connections) < self.max_connections
-
-    def add_connection(self, connected_item=None, connection_point_index=None):
-        """添加连接"""
-        if connected_item and self.can_connect():
-            self.current_connections.append(connected_item)
-            return True
-        return False
-
-    def remove_connection(self, connected_item=None, connection_point_index=None):
-        """移除连接"""
-        if connected_item and connected_item in self.current_connections:
-            self.current_connections.remove(connected_item)
-            return True
-        return False
-
-    def is_connection_point_available(self, point_index):
-        """检查连接点是否可用"""
-        return len(self.current_connections) < self.max_connections
-
-    def get_available_connection_points(self):
-        """获取可用的连接点索引列表"""
-        if len(self.current_connections) < self.max_connections or self.max_connections == -1:
-            return list(range(len(self.connection_points)))
-        return []
-
-    def validate_connections(self):
-        """验证连接是否有效"""
-        return len(self.current_connections) >= self.min_connections
-
-    def disconnect_all_connections(self):
-        """断开所有连接"""
-        connections_to_remove = self.current_connections.copy()
-        for connected_item in connections_to_remove:
-            if hasattr(connected_item, 'remove_connection'):
-                connected_item.remove_connection(self)
-            self.remove_connection(connected_item)
-            
-            if self.scene():
-                for item in self.scene().items():
-                    if hasattr(item, 'start_item') and hasattr(item, 'end_item'):
-                        if (item.start_item == self and item.end_item == connected_item) or \
-                           (item.start_item == connected_item and item.end_item == self):
-                            self.scene().removeItem(item)
-
-    def delete_component(self):
-        """删除组件"""
-        self.disconnect_all_connections()
-        if self.scene():
-            self.scene().removeItem(self)
-
-    def contextMenuEvent(self, event):
-        """右键菜单事件"""
-        menu = QMenu()
-        rotate_action = menu.addAction("旋转 90°")
-        delete_action = menu.addAction("删除")
-        action = menu.exec_(event.screenPos())
-        
-        if action == rotate_action:
-            self.rotate_component()
-        elif action == delete_action:
-            self.delete_component()
-
-    def mousePressEvent(self, event):
-        """鼠标按下事件"""
-        if event.button() == Qt.LeftButton:
-            current_time = event.timestamp() if hasattr(event, 'timestamp') else 0
-            
-            if hasattr(self, 'last_click_time'):
-                time_diff = current_time - self.last_click_time
-                if time_diff < self.double_click_threshold:
-                    self.handle_double_click()
-                    return
-            
-            self.last_click_time = current_time
-            
-        super().mousePressEvent(event)
-
-    def handle_double_click(self):
-        """处理双击事件 - 重命名组件"""
-        from PySide6.QtWidgets import QInputDialog
-        
-        text, ok = QInputDialog.getText(
-            None, 
-            '重命名组件', 
-            '请输入新名称:', 
-            text=self.properties.get('name', '')
-        )
-        
-        if ok and text:
-            self.properties['name'] = text
-            self.label.setPlainText(text)
 
 
 class GeneratorItem(BaseNetworkItem):
@@ -1106,8 +537,8 @@ class GeneratorItem(BaseNetworkItem):
         self.component_type = "generator"
         self.component_name = "发电机"
         self.properties = {
-            "p_mw": 100.0,  # 有功功率
-            "vm_pu": 1.0,  # 电压幅值标幺值
+            "p_mw": 50.0,  # 有功功率
+            "vm_pu": 1.0,  # 电压幅值
             "name": "Generator 1",  # 名称
         }
         self.label.setPlainText(self.properties["name"])
@@ -1121,121 +552,26 @@ class GeneratorItem(BaseNetworkItem):
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(28, 0)   # 线头端点（上侧）
+            QPointF(0, -28)   # 线头端点（上侧）
         ]
         self.original_connection_points = self.connection_points.copy()
 
-    def can_connect(self):
-        """检查是否可以连接"""
-        return len(self.current_connections) < self.max_connections
-
-    def add_connection(self, connected_item=None, connection_point_index=None):
-        """添加连接"""
-        if connected_item and self.can_connect():
-            self.current_connections.append(connected_item)
-            return True
-        return False
-
-    def remove_connection(self, connected_item=None, connection_point_index=None):
-        """移除连接"""
-        if connected_item and connected_item in self.current_connections:
-            self.current_connections.remove(connected_item)
-            return True
-        return False
-
-    def is_connection_point_available(self, point_index):
-        """检查连接点是否可用"""
-        return len(self.current_connections) < self.max_connections
-
-    def get_available_connection_points(self):
-        """获取可用的连接点索引列表"""
-        if len(self.current_connections) < self.max_connections or self.max_connections == -1:
-            return list(range(len(self.connection_points)))
-        return []
-
-    def validate_connections(self):
-        """验证连接是否有效"""
-        return len(self.current_connections) >= self.min_connections
-
-    def disconnect_all_connections(self):
-        """断开所有连接"""
-        connections_to_remove = self.current_connections.copy()
-        for connected_item in connections_to_remove:
-            if hasattr(connected_item, 'remove_connection'):
-                connected_item.remove_connection(self)
-            self.remove_connection(connected_item)
-            
-            if self.scene():
-                for item in self.scene().items():
-                    if hasattr(item, 'start_item') and hasattr(item, 'end_item'):
-                        if (item.start_item == self and item.end_item == connected_item) or \
-                           (item.start_item == connected_item and item.end_item == self):
-                            self.scene().removeItem(item)
-
-    def delete_component(self):
-        """删除组件"""
-        self.disconnect_all_connections()
-        if self.scene():
-            self.scene().removeItem(self)
-
-    def contextMenuEvent(self, event):
-        """右键菜单事件"""
-        menu = QMenu()
-        rotate_action = menu.addAction("旋转 90°")
-        delete_action = menu.addAction("删除")
-        action = menu.exec_(event.screenPos())
-        
-        if action == rotate_action:
-            self.rotate_component()
-        elif action == delete_action:
-            self.delete_component()
-
-    def mousePressEvent(self, event):
-        """鼠标按下事件"""
-        if event.button() == Qt.LeftButton:
-            current_time = event.timestamp() if hasattr(event, 'timestamp') else 0
-            
-            if hasattr(self, 'last_click_time'):
-                time_diff = current_time - self.last_click_time
-                if time_diff < self.double_click_threshold:
-                    self.handle_double_click()
-                    return
-            
-            self.last_click_time = current_time
-            
-        super().mousePressEvent(event)
-
-    def handle_double_click(self):
-        """处理双击事件 - 重命名组件"""
-        from PySide6.QtWidgets import QInputDialog
-        
-        text, ok = QInputDialog.getText(
-            None, 
-            '重命名组件', 
-            '请输入新名称:', 
-            text=self.properties.get('name', '')
-        )
-        
-        if ok and text:
-            self.properties['name'] = text
-            self.label.setPlainText(text)
-
 
 class LoadItem(BaseNetworkItem):
-    """负载组件"""
+    """负荷组件"""
 
     def __init__(self, pos, parent=None):
         super().__init__(pos, parent)
         self.component_type = "load"
-        self.component_name = "负载"
+        self.component_name = "负荷"
         self.properties = {
-            "p_mw": 10.0,  # 有功功率
-            "q_mvar": 5.0,  # 无功功率
+            "p_mw": 20.0,  # 有功功率
+            "q_mvar": 10.0,  # 无功功率
             "name": "Load 1",  # 名称
         }
         self.label.setPlainText(self.properties["name"])
         
-        # 连接约束：负载只能连接一个bus
+        # 连接约束：负荷只能连接一个bus
         self.max_connections = 1
         self.min_connections = 1
         
@@ -1247,98 +583,3 @@ class LoadItem(BaseNetworkItem):
             QPointF(0, -28)   # 线头端点（上侧）
         ]
         self.original_connection_points = self.connection_points.copy()
-
-    def can_connect(self):
-        """检查是否可以连接"""
-        return len(self.current_connections) < self.max_connections
-
-    def add_connection(self, connected_item=None, connection_point_index=None):
-        """添加连接"""
-        if connected_item and self.can_connect():
-            self.current_connections.append(connected_item)
-            return True
-        return False
-
-    def remove_connection(self, connected_item=None, connection_point_index=None):
-        """移除连接"""
-        if connected_item and connected_item in self.current_connections:
-            self.current_connections.remove(connected_item)
-            return True
-        return False
-
-    def is_connection_point_available(self, point_index):
-        """检查连接点是否可用"""
-        return len(self.current_connections) < self.max_connections
-
-    def get_available_connection_points(self):
-        """获取可用的连接点索引列表"""
-        if len(self.current_connections) < self.max_connections or self.max_connections == -1:
-            return list(range(len(self.connection_points)))
-        return []
-
-    def validate_connections(self):
-        """验证连接是否有效"""
-        return len(self.current_connections) >= self.min_connections
-
-    def disconnect_all_connections(self):
-        """断开所有连接"""
-        connections_to_remove = self.current_connections.copy()
-        for connected_item in connections_to_remove:
-            if hasattr(connected_item, 'remove_connection'):
-                connected_item.remove_connection(self)
-            self.remove_connection(connected_item)
-            
-            if self.scene():
-                for item in self.scene().items():
-                    if hasattr(item, 'start_item') and hasattr(item, 'end_item'):
-                        if (item.start_item == self and item.end_item == connected_item) or \
-                           (item.start_item == connected_item and item.end_item == self):
-                            self.scene().removeItem(item)
-
-    def delete_component(self):
-        """删除组件"""
-        self.disconnect_all_connections()
-        if self.scene():
-            self.scene().removeItem(self)
-
-    def contextMenuEvent(self, event):
-        """右键菜单事件"""
-        menu = QMenu()
-        rotate_action = menu.addAction("旋转 90°")
-        delete_action = menu.addAction("删除")
-        action = menu.exec_(event.screenPos())
-        
-        if action == rotate_action:
-            self.rotate_component()
-        elif action == delete_action:
-            self.delete_component()
-
-    def mousePressEvent(self, event):
-        """鼠标按下事件"""
-        if event.button() == Qt.LeftButton:
-            current_time = event.timestamp() if hasattr(event, 'timestamp') else 0
-            
-            if hasattr(self, 'last_click_time'):
-                time_diff = current_time - self.last_click_time
-                if time_diff < self.double_click_threshold:
-                    self.handle_double_click()
-                    return
-            
-            self.last_click_time = current_time
-            
-        super().mousePressEvent(event)
-
-    def handle_double_click(self):
-        """处理双击事件 - 重命名组件"""
-        from PySide6.QtWidgets import QInputDialog
-        
-        text, ok = QInputDialog.getText(
-            None, 
-            '重命名组件', 
-            '请输入新名称:', 
-            text=self.properties.get('name', '')
-        )
-        
-        if ok and text:
-            self.properties['name'] = text
-            self.label.setPlainText(text)
