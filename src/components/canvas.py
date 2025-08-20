@@ -6,7 +6,7 @@
 """
 
 from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMenu, QApplication
-from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
 from components.network_items import BusItem, LineItem, TransformerItem, GeneratorItem, LoadItem, StorageItem, ChargerItem
@@ -14,6 +14,9 @@ from components.network_items import BusItem, LineItem, TransformerItem, Generat
 
 class NetworkCanvas(QGraphicsView):
     """电网画布类，用于绘制和编辑电网拓扑图"""
+    
+    # 信号：选择变化时发出
+    selection_changed = Signal(object)  # 发出当前选中的单个项目，如果多选或无选择则为None
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -56,6 +59,7 @@ class NetworkCanvas(QGraphicsView):
         
         # 连接场景选择变化信号
         self.scene.selectionChanged.connect(self.update_status_bar)
+        self.scene.selectionChanged.connect(self.on_selection_changed)
         
         # 右键拖动相关变量
         self.right_drag_active = False
@@ -729,6 +733,16 @@ class NetworkCanvas(QGraphicsView):
         
         # 如果没有处理，传递给父类
         super().keyPressEvent(event)
+    
+    def on_selection_changed(self):
+        """处理选择变化事件"""
+        selected_items = self.scene.selectedItems()
+        
+        # 如果只选中一个项目，发出该项目；否则发出None
+        if len(selected_items) == 1:
+            self.selection_changed.emit(selected_items[0])
+        else:
+            self.selection_changed.emit(None)
     
     def update_status_bar(self):
         """更新状态栏显示"""

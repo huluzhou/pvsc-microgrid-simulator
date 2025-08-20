@@ -11,6 +11,7 @@ from PySide6.QtGui import QIcon, QAction
 
 from components.canvas import NetworkCanvas
 from components.component_palette import ComponentPalette
+from components.properties_panel import PropertiesPanel
 
 
 class MainWindow(QMainWindow):
@@ -33,6 +34,9 @@ class MainWindow(QMainWindow):
 
         # 创建组件面板
         self.create_component_palette()
+        
+        # 创建属性面板
+        self.create_properties_panel()
 
         # 创建工具栏
         self.create_toolbar()
@@ -58,6 +62,22 @@ class MainWindow(QMainWindow):
         
         # 添加到主窗口
         self.addDockWidget(Qt.LeftDockWidgetArea, self.component_dock)
+        
+    def create_properties_panel(self):
+        """创建属性面板"""
+        # 创建属性面板停靠窗口
+        self.properties_dock = QDockWidget("组件属性", self)
+        self.properties_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        
+        # 属性面板内容
+        self.properties_panel = PropertiesPanel(self)
+        self.properties_dock.setWidget(self.properties_panel)
+        
+        # 添加到主窗口右侧
+        self.addDockWidget(Qt.RightDockWidgetArea, self.properties_dock)
+        
+        # 连接画布选择事件到属性面板更新
+        self.canvas.selection_changed.connect(self.properties_panel.update_properties)
 
     def create_toolbar(self):
         """创建工具栏"""
@@ -121,6 +141,7 @@ class MainWindow(QMainWindow):
         # 视图菜单
         view_menu = self.menuBar().addMenu("视图")
         view_menu.addAction(self.component_dock.toggleViewAction())
+        view_menu.addAction(self.properties_dock.toggleViewAction())
         view_menu.addSeparator()
         
         # 缩放操作
