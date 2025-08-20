@@ -123,29 +123,50 @@ class NetworkModel:
         self.component_map[item_id] = {"type": "load", "idx": load_idx}
         return load_idx
 
-    def create_switch(self, item_id, bus, element, et, properties):
-        """创建开关
+    def create_storage(self, item_id, bus, properties):
+        """创建储能设备
         
         Args:
             item_id: 图形项ID
             bus: 母线索引
-            element: 连接元件索引
-            et: 元件类型 ("b"母线, "l"线路, "t"变压器)
-            properties: 开关属性
+            properties: 储能属性
         
         Returns:
-            int: pandapower开关索引
+            int: pandapower储能索引
         """
-        switch_idx = pp.create_switch(
+        storage_idx = pp.create_storage(
             self.net,
             bus=bus,
-            element=element,
-            et=et,
-            closed=properties.get("closed", True),
-            name=properties.get("name", "Switch"),
+            p_mw=properties.get("p_mw", 0.0),
+            max_e_mwh=properties.get("max_e_mwh", 100.0),
+            soc_percent=properties.get("soc_percent", 50.0),
+            name=properties.get("name", "Storage"),
         )
-        self.component_map[item_id] = {"type": "switch", "idx": switch_idx}
-        return switch_idx
+        self.component_map[item_id] = {"type": "storage", "idx": storage_idx}
+        return storage_idx
+
+    def create_charger(self, item_id, bus, properties):
+        """创建充电站设备
+        
+        Args:
+            item_id: 图形项ID
+            bus: 母线索引
+            properties: 充电站属性
+        
+        Returns:
+            int: pandapower负载索引（充电站作为负载处理）
+        """
+        # 充电站作为可控负载处理
+        charger_idx = pp.create_load(
+            self.net,
+            bus=bus,
+            p_mw=properties.get("p_mw", 50.0),
+            q_mvar=0.0,  # 充电站通常功率因数接近1
+            name=properties.get("name", "Charger"),
+            controllable=True,
+        )
+        self.component_map[item_id] = {"type": "charger", "idx": charger_idx}
+        return charger_idx
 
     def update_component(self, item_id, properties):
         """更新组件属性
@@ -183,9 +204,17 @@ class NetworkModel:
             self.net.load.loc[idx, "q_mvar"] = properties.get("q_mvar", self.net.load.loc[idx, "q_mvar"])
             self.net.load.loc[idx, "name"] = properties.get("name", self.net.load.loc[idx, "name"])
         
-        elif component_type == "switch":
-            self.net.switch.loc[idx, "closed"] = properties.get("closed", self.net.switch.loc[idx, "closed"])
-            self.net.switch.loc[idx, "name"] = properties.get("name", self.net.switch.loc[idx, "name"])
+        elif component_type == "storage":
+            self.net.storage.loc[idx, "p_mw"] = properties.get("p_mw", self.net.storage.loc[idx, "p_mw"])
+            self.net.storage.loc[idx, "max_e_mwh"] = properties.get("max_e_mwh", self.net.storage.loc[idx, "max_e_mwh"])
+            self.net.storage.loc[idx, "soc_percent"] = properties.get("soc_percent", self.net.storage.loc[idx, "soc_percent"])
+            self.net.storage.loc[idx, "name"] = properties.get("name", self.net.storage.loc[idx, "name"])
+        
+        elif component_type == "charger":
+            self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
+            self.net.load.loc[idx, "name"] = properties.get("name", self.net.load.loc[idx, "name"])
+        
+
 
     def delete_component(self, item_id):
         """删除组件
@@ -210,8 +239,11 @@ class NetworkModel:
             pp.drop_gens(self.net, [idx])
         elif component_type == "load":
             pp.drop_loads(self.net, [idx])
-        elif component_type == "switch":
-            pp.drop_switches(self.net, [idx])
+        elif component_type == "storage":
+            pp.drop_storages(self.net, [idx])
+        elif component_type == "charger":
+            pp.drop_loads(self.net, [idx])  # 充电站作为负载删除
+
         
         # 从映射中删除
         del self.component_map[item_id]

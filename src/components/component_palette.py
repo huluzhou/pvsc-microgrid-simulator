@@ -5,9 +5,10 @@
 组件面板，用于显示可拖拽的电网组件
 """
 
-from PySide6.QtWidgets import QListWidget, QListWidgetItem, QLabel
+from PySide6.QtWidgets import QListWidget, QListWidgetItem, QLabel, QApplication
 from PySide6.QtCore import Qt, QMimeData, QSize
-from PySide6.QtGui import QDrag, QPixmap, QIcon
+from PySide6.QtGui import QDrag, QPixmap, QIcon, QPalette
+from PySide6.QtSvg import QSvgRenderer
 import os
 
 
@@ -31,6 +32,53 @@ class ComponentPalette(QListWidget):
         # 添加电网组件
         self.add_components()
 
+    def is_dark_theme(self):
+        """检测是否为深色主题"""
+        app = QApplication.instance()
+        if app:
+            palette = app.palette()
+            window_color = palette.color(QPalette.Window)
+            return window_color.lightness() < 128
+        return False
+
+    def adapt_svg_for_theme(self, svg_path):
+        """根据主题适配SVG颜色"""
+        try:
+            with open(svg_path, 'r', encoding='utf-8') as f:
+                svg_content = f.read()
+            
+            if self.is_dark_theme():
+                # 深色主题：将黑色元素替换为白色
+                svg_content = svg_content.replace('stroke="black"', 'stroke="white"')
+                svg_content = svg_content.replace('fill="black"', 'fill="white"')
+                svg_content = svg_content.replace('stroke="#000000"', 'stroke="#ffffff"')
+                svg_content = svg_content.replace('fill="#000000"', 'fill="#ffffff"')
+                svg_content = svg_content.replace('stroke="#000"', 'stroke="#fff"')
+                svg_content = svg_content.replace('fill="#000"', 'fill="#fff"')
+            
+            return svg_content
+        except Exception as e:
+            print(f"Error adapting SVG for theme: {e}")
+            return None
+
+    def create_themed_icon(self, svg_path, size=64):
+        """创建适配主题的图标"""
+        svg_content = self.adapt_svg_for_theme(svg_path)
+        if svg_content:
+            renderer = QSvgRenderer()
+            renderer.load(svg_content.encode('utf-8'))
+            
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.transparent)
+            
+            from PySide6.QtGui import QPainter
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            
+            return QIcon(pixmap)
+        return QIcon()
+
     def add_components(self):
         """添加电网组件到面板"""
         # 添加各种电网组件
@@ -40,19 +88,21 @@ class ComponentPalette(QListWidget):
             {"name": "变压器", "type": "transformer", "icon": "transformer.svg"},
             {"name": "发电机", "type": "generator", "icon": "generator.svg"},
             {"name": "负载", "type": "load", "icon": "load.svg"},
-            {"name": "开关", "type": "switch", "icon": "switch.svg"},
+            {"name": "储能", "type": "storage", "icon": "storage.svg"},
+            {"name": "充电站", "type": "charger", "icon": "charger.svg"},
         ]
 
         # 使用正确的资源路径加载图标
         for component in components:
             item = QListWidgetItem(component["name"])
             item.setData(Qt.UserRole, component["type"])
-            # 设置图标 - 使用资源路径函数
+            # 设置图标 - 使用主题适配的图标
             try:
                 from components.main_window import MainWindow
                 icon_path = MainWindow.get_resource_path(f"assets/{component['icon']}")
                 if os.path.exists(icon_path):
-                    item.setIcon(QIcon(icon_path))
+                    themed_icon = self.create_themed_icon(icon_path, 64)
+                    item.setIcon(themed_icon)
                 else:
                     print(f"Warning: Icon file not found: {icon_path}")
             except Exception as e:
@@ -82,7 +132,8 @@ class ComponentPalette(QListWidget):
             from components.main_window import MainWindow
             icon_path = MainWindow.get_resource_path(f"assets/{component_type}.svg")
             if os.path.exists(icon_path):
-                pixmap = QIcon(icon_path).pixmap(64, 64)
+                themed_icon = self.create_themed_icon(icon_path, 64)
+                pixmap = themed_icon.pixmap(64, 64)
             else:
                 # 如果图标不存在，创建一个默认的pixmap
                 pixmap = QPixmap(64, 64)

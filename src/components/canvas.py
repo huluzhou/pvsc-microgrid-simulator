@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMen
 from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter
 
-from components.network_items import BusItem, LineItem, TransformerItem, GeneratorItem, LoadItem, SwitchItem
+from components.network_items import BusItem, LineItem, TransformerItem, GeneratorItem, LoadItem, StorageItem, ChargerItem
 
 
 class NetworkCanvas(QGraphicsView):
@@ -92,8 +92,10 @@ class NetworkCanvas(QGraphicsView):
             item = GeneratorItem(pos)
         elif component_type == "load":
             item = LoadItem(pos)
-        elif component_type == "switch":
-            item = SwitchItem(pos)
+        elif component_type == "storage":
+            item = StorageItem(pos)
+        elif component_type == "charger":
+            item = ChargerItem(pos)
         
         # 添加到场景
         if item:
