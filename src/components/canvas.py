@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMen
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
-from components.network_items import BusItem, LineItem, TransformerItem, GeneratorItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem
+from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem
 
 
 class NetworkCanvas(QGraphicsView):
@@ -27,11 +27,11 @@ class NetworkCanvas(QGraphicsView):
             'bus': 0,
             'line': 0,
             'transformer': 0,
-            'generator': 0,
             'load': 0,
             'storage': 0,
             'charger': 0,
-            'external_grid': 0
+            'external_grid': 0,
+            'static_generator': 0
         }
         self.init_ui()
 
@@ -166,11 +166,11 @@ class NetworkCanvas(QGraphicsView):
             'bus': f'Bus {count}',
             'line': f'Line {count}',
             'transformer': f'Transformer {count}',
-            'generator': f'Generator {count}',
             'load': f'Load {count}',
             'storage': f'Storage {count}',
             'charger': f'Charger {count}',
-            'external_grid': f'External Grid {count}'
+            'external_grid': f'External Grid {count}',
+            'static_generator': f'Static Generator {count}'
         }
         
         return name_mapping.get(component_type, f'{component_type.capitalize()} {count}')
@@ -186,8 +186,6 @@ class NetworkCanvas(QGraphicsView):
             item = LineItem(pos)
         elif component_type == "transformer":
             item = TransformerItem(pos)
-        elif component_type == "generator":
-            item = GeneratorItem(pos)
         elif component_type == "load":
             item = LoadItem(pos)
         elif component_type == "storage":
@@ -196,6 +194,8 @@ class NetworkCanvas(QGraphicsView):
             item = ChargerItem(pos)
         elif component_type == "external_grid":
             item = ExternalGridItem(pos)
+        elif component_type == "static_generator":
+            item = StaticGeneratorItem(pos)
         
         # 添加到场景
         if item:
@@ -257,8 +257,8 @@ class NetworkCanvas(QGraphicsView):
         if type1 in ["transformer", "line"] or type2 in ["transformer", "line"]:
             return False
             
-        # 发电机、负载和外部电网必须连接到母线
-        if type1 in ["generator", "load", "storage", "charger", "external_grid"] or type2 in ["generator", "load", "storage", "charger", "external_grid"]:
+        # 负载和外部电网必须连接到母线
+        if type1 in ["load", "storage", "charger", "external_grid", "static_generator"] or type2 in ["load", "storage", "charger", "external_grid", "static_generator"]:
             return False
             
         # 开关可以连接到母线（已在上面的母线规则中处理）

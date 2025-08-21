@@ -32,6 +32,11 @@ class NetworkModel:
             self.net,
             vn_kv=properties.get("vn_kv", 10.0),
             name=properties.get("name", "Bus"),
+            type=properties.get("type", "b"),
+            zone=properties.get("zone", None),
+            in_service=properties.get("in_service", True),
+            max_vm_pu=properties.get("max_vm_pu", float('nan')),
+            min_vm_pu=properties.get("min_vm_pu", float('nan')),
         )
         self.component_map[item_id] = {"type": "bus", "idx": bus_idx}
         return bus_idx
@@ -193,6 +198,45 @@ class NetworkModel:
         self.component_map[item_id] = {"type": "external_grid", "idx": ext_grid_idx}
         return ext_grid_idx
 
+    def create_static_generator(self, item_id, bus, properties):
+        """创建静态发电机
+        
+        Args:
+            item_id: 图形项ID
+            bus: 母线索引
+            properties: 静态发电机属性
+        
+        Returns:
+            int: pandapower静态发电机索引
+        """
+        # 根据use_power_factor参数决定使用哪种创建方式
+        use_power_factor = properties.get("use_power_factor", False)
+        
+        if use_power_factor:
+            # 使用功率因数模式
+            sn_mva = properties.get("sn_mva", 1.0)
+            cos_phi = properties.get("cos_phi", 0.9)
+            
+            # 根据功率因数计算有功功率，无功功率设为0（光伏发电通常不提供无功功率）
+            p_mw = sn_mva * cos_phi
+            q_mvar = 0.0
+        else:
+            # 直接使用有功功率，无功功率设为0
+            p_mw = properties.get("p_mw", 1.0)
+            q_mvar = 0.0
+        
+        sgen_idx = pp.create_sgen(
+            self.net,
+            bus=bus,
+            p_mw=p_mw,
+            q_mvar=q_mvar,
+            name=properties.get("name", "Static Generator"),
+            scaling=properties.get("scaling", 1.0),
+            in_service=properties.get("in_service", True),
+        )
+        self.component_map[item_id] = {"type": "static_generator", "idx": sgen_idx}
+        return sgen_idx
+
     def update_component(self, item_id, properties):
         """更新组件属性
         
@@ -210,6 +254,16 @@ class NetworkModel:
         if component_type == "bus":
             self.net.bus.loc[idx, "vn_kv"] = properties.get("vn_kv", self.net.bus.loc[idx, "vn_kv"])
             self.net.bus.loc[idx, "name"] = properties.get("name", self.net.bus.loc[idx, "name"])
+            self.net.bus.loc[idx, "type"] = properties.get("type", self.net.bus.loc[idx, "type"])
+            self.net.bus.loc[idx, "zone"] = properties.get("zone", self.net.bus.loc[idx, "zone"])
+            self.net.bus.loc[idx, "in_service"] = properties.get("in_service", self.net.bus.loc[idx, "in_service"])
+            # 处理NaN值的特殊情况
+            max_vm_pu = properties.get("max_vm_pu", self.net.bus.loc[idx, "max_vm_pu"])
+            min_vm_pu = properties.get("min_vm_pu", self.net.bus.loc[idx, "min_vm_pu"])
+            if not pd.isna(max_vm_pu):
+                self.net.bus.loc[idx, "max_vm_pu"] = max_vm_pu
+            if not pd.isna(min_vm_pu):
+                self.net.bus.loc[idx, "min_vm_pu"] = min_vm_pu
         
         elif component_type == "line":
             self.net.line.loc[idx, "length_km"] = properties.get("length_km", self.net.line.loc[idx, "length_km"])

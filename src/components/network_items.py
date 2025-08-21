@@ -405,7 +405,7 @@ class StorageItem(BaseNetworkItem):
             "soc_percent": 50.0,  # 荷电状态百分比
             "name": "Storage 1",  # 名称
         }
-        self.label.setPlainText(self.properties["name"])
+        self.label.setPlainText("母线")
         
         # 连接约束：储能只能连接一个bus
         self.max_connections = 1
@@ -437,7 +437,7 @@ class ChargerItem(BaseNetworkItem):
             "efficiency": 0.95,  # 充电效率
             "name": "Charger 1",  # 名称
         }
-        self.label.setPlainText(self.properties["name"])
+        self.label.setPlainText("母线")
         
         # 连接约束：充电站只能连接一个bus
         self.max_connections = 1
@@ -463,10 +463,9 @@ class BusItem(BaseNetworkItem):
         self.component_type = "bus"
         self.component_name = "母线"
         self.properties = {
-            "vn_kv": 110.0,  # 额定电压
-            "name": "Bus 1",  # 名称
+            "vn_kv": 20.0,  # 电网电压等级 [kV]
         }
-        self.label.setPlainText(self.properties["name"])
+        self.label.setPlainText("母线")
         
         # 母线可以连接多个组件，无限制
         self.max_connections = -1
@@ -492,12 +491,23 @@ class LineItem(BaseNetworkItem):
         self.component_type = "line"
         self.component_name = "线路"
         self.properties = {
-            "length_km": 10.0,  # 线路长度
-            "r_ohm_per_km": 0.1,  # 电阻
-            "x_ohm_per_km": 0.4,  # 电抗
-            "name": "Line 1",  # 名称
+            # 通用参数
+            "length_km": 1.0,  # 线路长度 [km]
+            "use_standard_type": True,  # 使用标准类型
+            
+            # 标准类型选择 (用于create_line)
+            "std_type": "NAYY 4x50 SE",  # 标准类型
+            
+            # 自定义参数 (用于create_line_from_parameters)
+            "r_ohm_per_km": 0.1,  # 线路电阻 [Ω/km]
+            "x_ohm_per_km": 0.1,  # 线路电抗 [Ω/km]
+            "c_nf_per_km": 0.0,  # 线路电容 [nF/km]
+            "r0_ohm_per_km": 0.0,  # 零序电阻 [Ω/km]
+            "x0_ohm_per_km": 0.0,  # 零序电抗 [Ω/km]
+            "c0_nf_per_km": 0.0,  # 零序电容 [nF/km]
+            "max_i_ka": 1.0,  # 最大热电流 [kA]
         }
-        self.label.setPlainText(self.properties["name"])
+        self.label.setPlainText("线路")
         
         # 连接约束：线路必须连接两个组件
         self.max_connections = 2
@@ -522,10 +532,29 @@ class TransformerItem(BaseNetworkItem):
         self.component_type = "transformer"
         self.component_name = "变压器"
         self.properties = {
-            "sn_mva": 100.0,  # 额定容量
+            "use_standard_type": True,  # 使用标准类型
+            
+            # 标准类型参数
+            "std_type": "25 MVA 110/20 kV",  # 标准类型
+            
+            # 自定义类型参数
+            "sn_mva": 25.0,  # 额定容量
             "vn_hv_kv": 110.0,  # 高压侧额定电压
-            "vn_lv_kv": 10.0,   # 低压侧额定电压
-            "name": "Transformer 1",  # 名称
+            "vn_lv_kv": 20.0,   # 低压侧额定电压
+            "vkr_percent": 0.3,  # 短路电阻电压
+            "vk_percent": 12.0,  # 短路电压
+            "pfe_kw": 14.0,  # 铁损
+            "i0_percent": 0.07,  # 空载电流
+            "vector_group": "Dyn",  # 接线组别
+            
+            # 零序参数 (标准类型和自定义类型都需要)
+            "vk0_percent": 0.0,  # 零序短路电压
+            "vkr0_percent": 0.0,  # 零序短路电阻电压
+            "mag0_percent": 0.0,  # 零序励磁阻抗
+            "mag0_rx": 0.0,  # 零序励磁R/X比
+            "si0_hv_partial": 0.0,  # 零序漏抗高压侧分配
+            
+            "name": "变压器",  # 名称
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -626,6 +655,48 @@ class ExternalGridItem(BaseNetworkItem):
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
             QPointF(25, 0)    # 右侧连接点
+        ]
+        self.original_connection_points = self.connection_points.copy()
+
+
+class StaticGeneratorItem(BaseNetworkItem):
+    """静态发电机组件（光伏等）"""
+
+    def __init__(self, pos, parent=None):
+        super().__init__(pos, parent)
+        self.component_type = "static_generator"
+        self.component_name = "静态发电机"
+        self.properties = {
+            # 通用参数
+            "use_power_factor": False,  # 使用功率因数模式
+            
+            # 直接功率模式参数
+            "p_mw": 1.0,  # 有功功率 (MW)
+            "q_mvar": 0.0,  # 无功功率 (Mvar)
+            
+            # 功率因数模式参数
+            "sn_mva": 1.0,  # 额定功率 (MVA)
+            "cos_phi": 0.9,  # 功率因数
+            "mode": "overexcited",  # 运行模式
+            
+            # 其他参数
+            "scaling": 1.0,  # 缩放因子
+            "type": "wye",  # 连接类型
+            "in_service": True,  # 投入运行
+            "name": "Static Generator 1",  # 名称
+        }
+        self.label.setPlainText(self.properties["name"])
+        
+        # 连接约束：静态发电机只能连接一个bus
+        self.max_connections = 1
+        self.min_connections = 1
+        
+        # 加载SVG图标
+        self.load_svg("static_generator.svg")
+        
+        # 定义连接点（相对于组件中心的位置）
+        self.connection_points = [
+            QPointF(28, 0)   # 线头端点（右侧）
         ]
         self.original_connection_points = self.connection_points.copy()
         
