@@ -90,6 +90,7 @@ class ComponentPalette(QListWidget):
             {"name": "负载", "type": "load", "icon": "load.svg"},
             {"name": "储能", "type": "storage", "icon": "storage.svg"},
             {"name": "充电站", "type": "charger", "icon": "charger.svg"},
+            {"name": "外部电网", "type": "external_grid", "icon": "external_grid.svg"},
         ]
 
         # 使用正确的资源路径加载图标

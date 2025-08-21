@@ -246,7 +246,9 @@ class BaseNetworkItem(QGraphicsItem):
         """更新旋转后的连接点位置"""
         if not hasattr(self, 'original_connection_points'):
             self.original_connection_points = self.connection_points.copy()
-        
+
+
+
         # 根据旋转角度计算新的连接点位置
         angle_rad = math.radians(self.rotation_angle)
         cos_angle = math.cos(angle_rad)
@@ -596,3 +598,34 @@ class LoadItem(BaseNetworkItem):
             QPointF(0, -28)   # 线头端点（上侧）
         ]
         self.original_connection_points = self.connection_points.copy()
+class ExternalGridItem(BaseNetworkItem):
+    """外部电网组件"""
+
+    def __init__(self, pos, parent=None):
+        super().__init__(pos, parent)
+        self.component_type = "external_grid"
+        self.component_name = "外部电网"
+        self.properties = {
+            "vm_pu": 1.0,  # 电压标幺值
+            "va_degree": 0.0,  # 电压角度
+            "name": "External Grid 1",  # 名称
+            "s_sc_max_mva": 1000.0,  # 最大短路容量
+            "s_sc_min_mva": 800.0,  # 最小短路容量
+            "rx_max": 0.1,  # 最大R/X比
+            "rx_min": 0.1,  # 最小R/X比
+        }
+        self.label.setPlainText(self.properties["name"])
+        
+        # 连接约束：外部电网必须连接到一个母线
+        self.max_connections = 1
+        self.min_connections = 1
+        
+        # 加载SVG图标
+        self.load_svg("external_grid.svg")
+        
+        # 定义连接点（相对于组件中心的位置）
+        self.connection_points = [
+            QPointF(25, 0)    # 右侧连接点
+        ]
+        self.original_connection_points = self.connection_points.copy()
+        

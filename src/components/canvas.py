@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMen
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
-from components.network_items import BusItem, LineItem, TransformerItem, GeneratorItem, LoadItem, StorageItem, ChargerItem
+from components.network_items import BusItem, LineItem, TransformerItem, GeneratorItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem
 
 
 class NetworkCanvas(QGraphicsView):
@@ -30,7 +30,8 @@ class NetworkCanvas(QGraphicsView):
             'generator': 0,
             'load': 0,
             'storage': 0,
-            'charger': 0
+            'charger': 0,
+            'external_grid': 0
         }
         self.init_ui()
 
@@ -168,7 +169,8 @@ class NetworkCanvas(QGraphicsView):
             'generator': f'Generator {count}',
             'load': f'Load {count}',
             'storage': f'Storage {count}',
-            'charger': f'Charger {count}'
+            'charger': f'Charger {count}',
+            'external_grid': f'External Grid {count}'
         }
         
         return name_mapping.get(component_type, f'{component_type.capitalize()} {count}')
@@ -192,6 +194,8 @@ class NetworkCanvas(QGraphicsView):
             item = StorageItem(pos)
         elif component_type == "charger":
             item = ChargerItem(pos)
+        elif component_type == "external_grid":
+            item = ExternalGridItem(pos)
         
         # 添加到场景
         if item:
@@ -253,8 +257,8 @@ class NetworkCanvas(QGraphicsView):
         if type1 in ["transformer", "line"] or type2 in ["transformer", "line"]:
             return False
             
-        # 发电机和负载必须连接到母线
-        if type1 in ["generator", "load", "storage", "charger"] or type2 in ["generator", "load", "storage", "charger"]:
+        # 发电机、负载和外部电网必须连接到母线
+        if type1 in ["generator", "load", "storage", "charger", "external_grid"] or type2 in ["generator", "load", "storage", "charger", "external_grid"]:
             return False
             
         # 开关可以连接到母线（已在上面的母线规则中处理）

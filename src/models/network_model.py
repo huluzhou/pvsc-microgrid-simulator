@@ -168,6 +168,31 @@ class NetworkModel:
         self.component_map[item_id] = {"type": "charger", "idx": charger_idx}
         return charger_idx
 
+    def create_external_grid(self, item_id, bus, properties):
+        """创建外部电网
+        
+        Args:
+            item_id: 图形项ID
+            bus: 母线索引
+            properties: 外部电网属性
+        
+        Returns:
+            int: pandapower外部电网索引
+        """
+        ext_grid_idx = pp.create_ext_grid(
+            self.net,
+            bus=bus,
+            vm_pu=properties.get("vm_pu", 1.0),
+            va_degree=properties.get("va_degree", 0.0),
+            name=properties.get("name", "External Grid"),
+            s_sc_max_mva=properties.get("s_sc_max_mva", 1000.0),
+            s_sc_min_mva=properties.get("s_sc_min_mva", 800.0),
+            rx_max=properties.get("rx_max", 0.1),
+            rx_min=properties.get("rx_min", 0.1),
+        )
+        self.component_map[item_id] = {"type": "external_grid", "idx": ext_grid_idx}
+        return ext_grid_idx
+
     def update_component(self, item_id, properties):
         """更新组件属性
         
@@ -214,6 +239,15 @@ class NetworkModel:
             self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
             self.net.load.loc[idx, "name"] = properties.get("name", self.net.load.loc[idx, "name"])
         
+        elif component_type == "external_grid":
+            self.net.ext_grid.loc[idx, "vm_pu"] = properties.get("vm_pu", self.net.ext_grid.loc[idx, "vm_pu"])
+            self.net.ext_grid.loc[idx, "va_degree"] = properties.get("va_degree", self.net.ext_grid.loc[idx, "va_degree"])
+            self.net.ext_grid.loc[idx, "name"] = properties.get("name", self.net.ext_grid.loc[idx, "name"])
+            self.net.ext_grid.loc[idx, "s_sc_max_mva"] = properties.get("s_sc_max_mva", self.net.ext_grid.loc[idx, "s_sc_max_mva"])
+            self.net.ext_grid.loc[idx, "s_sc_min_mva"] = properties.get("s_sc_min_mva", self.net.ext_grid.loc[idx, "s_sc_min_mva"])
+            self.net.ext_grid.loc[idx, "rx_max"] = properties.get("rx_max", self.net.ext_grid.loc[idx, "rx_max"])
+            self.net.ext_grid.loc[idx, "rx_min"] = properties.get("rx_min", self.net.ext_grid.loc[idx, "rx_min"])
+        
 
 
     def delete_component(self, item_id):
@@ -243,6 +277,8 @@ class NetworkModel:
             pp.drop_storages(self.net, [idx])
         elif component_type == "charger":
             pp.drop_loads(self.net, [idx])  # 充电站作为负载删除
+        elif component_type == "external_grid":
+            pp.drop_ext_grids(self.net, [idx])
 
         
         # 从映射中删除
