@@ -529,10 +529,10 @@ class LineItem(BaseNetworkItem):
         # 加载SVG图标
         self.load_svg("line.svg")
         
-        # 定义连接点（相对于组件中心的位置）
+        # 定义连接点（相对于组件中心的位置）- 旋转90度后
         self.connection_points = [
-            QPointF(-25, 0),  # 左端点
-            QPointF(25, 0)    # 右端点
+            QPointF(0, -25),  # 上端点
+            QPointF(0, 25)    # 下端点
         ]
         self.original_connection_points = self.connection_points.copy()
 
@@ -578,10 +578,10 @@ class TransformerItem(BaseNetworkItem):
         # 加载SVG图标
         self.load_svg("transformer.svg")
         
-        # 定义连接点（相对于组件中心的位置）
+        # 定义连接点（相对于组件中心的位置）- 旋转90度后
         self.connection_points = [
-            QPointF(-25, 0),  # 高压侧
-            QPointF(25, 0)    # 低压侧
+            QPointF(0, -25),  # 高压侧（上方）
+            QPointF(0, 25)    # 低压侧（下方）
         ]
         self.original_connection_points = self.connection_points.copy()
 
@@ -607,9 +607,9 @@ class GeneratorItem(BaseNetworkItem):
         # 加载SVG图标
         self.load_svg("generator.svg")
         
-        # 定义连接点（相对于组件中心的位置）
+        # 定义连接点（相对于组件中心的位置）- 逆时针旋转90度后
         self.connection_points = [
-            QPointF(28, 0)   # 线头端点（右侧）
+            QPointF(0, 28)   # 线头端点（下方）
         ]
         self.original_connection_points = self.connection_points.copy()
 
@@ -665,9 +665,9 @@ class ExternalGridItem(BaseNetworkItem):
         # 加载SVG图标
         self.load_svg("external_grid.svg")
         
-        # 定义连接点（相对于组件中心的位置）
+        # 定义连接点（相对于组件中心的位置）- 旋转270度后
         self.connection_points = [
-            QPointF(25, 0)    # 右侧连接点
+            QPointF(0, 25)    # 下方连接点
         ]
         self.original_connection_points = self.connection_points.copy()
 
@@ -707,9 +707,9 @@ class StaticGeneratorItem(BaseNetworkItem):
         # 加载SVG图标
         self.load_svg("static_generator.svg")
         
-        # 定义连接点（相对于组件中心的位置）
+        # 定义连接点（相对于组件中心的位置）- 逆时针旋转90度后
         self.connection_points = [
-            QPointF(28, 0)   # 线头端点（右侧）
+            QPointF(0, -28)   # 线头端点（下方）
         ]
         self.original_connection_points = self.connection_points.copy()
         

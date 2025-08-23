@@ -7,6 +7,4 @@
   <!-- 触点圆圈 -->
   <circle cx="26" cy="32" r="2" fill="#000000" />
   <circle cx="38" cy="32" r="2" fill="#000000" />
-  <!-- 标签 -->
-  <text x="32" y="54" font-family="Arial" font-size="10" text-anchor="middle" fill="#000000">Switch</text>
 </svg>
