@@ -190,8 +190,8 @@ class PropertiesPanel(QWidget):
                     if not use_power_factor:
                         continue  # 跳过
             
-            # 对于外部电网组件，动态获取连接的bus信息
-            if item.component_type == 'external_grid' and prop_name == 'bus':
+            # 对于所有组件，动态获取连接的bus信息
+            if prop_name == 'bus':
                 # 获取连接的bus名称
                 connected_bus = self.get_connected_bus_name(item)
                 current_value = connected_bus if connected_bus else ''
@@ -373,7 +373,12 @@ class PropertiesPanel(QWidget):
                 'r0_ohm_per_km': {'type': 'float', 'label': '零序电阻 (Ω/km)', 'default': 0.0, 'min': 0.0, 'decimals': 4, 'condition': {'use_standard_type': False}},
                 'x0_ohm_per_km': {'type': 'float', 'label': '零序电抗 (Ω/km)', 'default': 0.0, 'min': 0.0, 'decimals': 4, 'condition': {'use_standard_type': False}},
                 'c0_nf_per_km': {'type': 'float', 'label': '零序电容 (nF/km)', 'default': 0.0, 'min': 0.0, 'decimals': 1, 'condition': {'use_standard_type': False}},
-                'max_i_ka': {'type': 'float', 'label': '最大热电流 (kA)', 'default': 1.0, 'min': 0.001, 'decimals': 3, 'condition': {'use_standard_type': False}}
+                'max_i_ka': {'type': 'float', 'label': '最大热电流 (kA)', 'default': 1.0, 'min': 0.001, 'decimals': 3, 'condition': {'use_standard_type': False}},
+                
+                # 连接属性（只读显示）
+                'from_bus': {'type': 'readonly', 'label': '起始母线'},
+                'to_bus': {'type': 'readonly', 'label': '终止母线'},
+                'name': {'type': 'string', 'label': '名称', 'default': '线路'}
             },
             'transformer': {
                 # 通用参数
@@ -412,7 +417,12 @@ class PropertiesPanel(QWidget):
                 'vkr0_percent': {'type': 'float', 'label': '零序短路电阻电压 (%)', 'default': 0.0, 'min': 0.0, 'max': 10.0, 'decimals': 3},
                 'mag0_percent': {'type': 'float', 'label': '零序励磁阻抗 (%)', 'default': 0.0, 'min': 0.0, 'max': 100.0},
                 'mag0_rx': {'type': 'float', 'label': '零序励磁R/X比', 'default': 0.0, 'min': 0.0, 'max': 10.0, 'decimals': 3},
-                'si0_hv_partial': {'type': 'float', 'label': '零序漏抗高压侧分配', 'default': 0.0, 'min': 0.0, 'max': 1.0, 'decimals': 3}
+                'si0_hv_partial': {'type': 'float', 'label': '零序漏抗高压侧分配', 'default': 0.0, 'min': 0.0, 'max': 1.0, 'decimals': 3},
+                
+                # 连接属性（只读显示）
+                'hv_bus': {'type': 'readonly', 'label': '高压侧母线'},
+                'lv_bus': {'type': 'readonly', 'label': '低压侧母线'},
+                'name': {'type': 'string', 'label': '名称', 'default': '变压器'}
             },
 
             'load': {
@@ -427,11 +437,13 @@ class PropertiesPanel(QWidget):
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
                 
                 # 其他参数
-                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True}
+                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
+                'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'storage': {
                 'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 0.0, 'min': -10000.0, 'max': 10000.0, 'decimals': 3},
-                'max_e_mwh': {'type': 'float', 'label': '最大储能容量 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0, 'decimals': 3}
+                'max_e_mwh': {'type': 'float', 'label': '最大储能容量 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0, 'decimals': 3},
+                'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'charger': {
                 # 通用参数
@@ -445,10 +457,26 @@ class PropertiesPanel(QWidget):
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
                 
                 # 其他参数
-                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True}
+                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
+                'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'external_grid': {
                 # 显示连接的母线
+                'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
+            },
+            'generator': {
+                # 通用参数
+                'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
+                
+                # 直接功率模式参数
+                'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 1.0, 'min': 0.0, 'max': 10000.0},
+                
+                # 功率因数模式参数
+                'sn_mva': {'type': 'float', 'label': '额定功率 (MVA)', 'default': 1.0, 'min': 0.1, 'max': 10000.0},
+                'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
+                
+                # 其他参数
+                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'static_generator': {
@@ -463,7 +491,8 @@ class PropertiesPanel(QWidget):
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
                 
                 # 其他参数
-                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True}
+                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
+                'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             }
         }
         

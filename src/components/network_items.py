@@ -291,6 +291,8 @@ class BaseNetworkItem(QGraphicsItem):
             # 如果指定了连接点索引，标记该连接点为已占用
             if connection_point_index is not None:
                 self.connection_point_states[connection_point_index] = connected_item
+            # 更新bus参数
+            self.update_bus_parameter()
             return True
         return False
     
@@ -304,8 +306,103 @@ class BaseNetworkItem(QGraphicsItem):
             # 如果指定了连接点索引，清除该连接点的占用状态
             if connection_point_index is not None and connection_point_index in self.connection_point_states:
                 del self.connection_point_states[connection_point_index]
+            # 更新bus参数
+            self.update_bus_parameter()
             return True
         return False
+    
+    def update_bus_parameter(self):
+        """更新bus参数"""
+        # 保存旧的bus值以检测变化
+        old_bus_values = {}
+        
+        # 处理单个bus连接的组件
+        if hasattr(self, 'properties') and 'bus' in self.properties:
+            old_bus_values['bus'] = self.properties.get('bus')
+            
+            # 查找连接的bus组件
+            connected_bus = None
+            for connected_item in self.current_connections:
+                if hasattr(connected_item, 'component_type') and connected_item.component_type == 'bus':
+                    connected_bus = connected_item
+                    break
+            
+            # 更新bus参数
+            if connected_bus:
+                if hasattr(connected_bus, 'component_name') and connected_bus.component_name:
+                    self.properties['bus'] = connected_bus.component_name
+                else:
+                    self.properties['bus'] = connected_bus.properties.get('name', 'Unknown Bus')
+            else:
+                self.properties['bus'] = None
+        
+        # 处理变压器的hv_bus和lv_bus
+        elif hasattr(self, 'component_type') and self.component_type == 'transformer':
+            old_bus_values['hv_bus'] = self.properties.get('hv_bus')
+            old_bus_values['lv_bus'] = self.properties.get('lv_bus')
+            
+            # 获取连接的bus组件
+            connected_buses = []
+            for connected_item in self.current_connections:
+                if hasattr(connected_item, 'component_type') and connected_item.component_type == 'bus':
+                    bus_name = connected_item.component_name if hasattr(connected_item, 'component_name') and connected_item.component_name else connected_item.properties.get('name', 'Unknown Bus')
+                    connected_buses.append(bus_name)
+            
+            # 更新hv_bus和lv_bus
+            if len(connected_buses) >= 2:
+                self.properties['hv_bus'] = connected_buses[0]  # 第一个连接点为高压侧
+                self.properties['lv_bus'] = connected_buses[1]  # 第二个连接点为低压侧
+            elif len(connected_buses) == 1:
+                self.properties['hv_bus'] = connected_buses[0]
+                self.properties['lv_bus'] = None
+            else:
+                self.properties['hv_bus'] = None
+                self.properties['lv_bus'] = None
+        
+        # 处理线路的from_bus和to_bus
+        elif hasattr(self, 'component_type') and self.component_type == 'line':
+            old_bus_values['from_bus'] = self.properties.get('from_bus')
+            old_bus_values['to_bus'] = self.properties.get('to_bus')
+            
+            # 获取连接的bus组件
+            connected_buses = []
+            for connected_item in self.current_connections:
+                if hasattr(connected_item, 'component_type') and connected_item.component_type == 'bus':
+                    bus_name = connected_item.component_name if hasattr(connected_item, 'component_name') and connected_item.component_name else connected_item.properties.get('name', 'Unknown Bus')
+                    connected_buses.append(bus_name)
+            
+            # 更新from_bus和to_bus
+            if len(connected_buses) >= 2:
+                self.properties['from_bus'] = connected_buses[0]  # 第一个连接点为起始母线
+                self.properties['to_bus'] = connected_buses[1]    # 第二个连接点为终止母线
+            elif len(connected_buses) == 1:
+                self.properties['from_bus'] = connected_buses[0]
+                self.properties['to_bus'] = None
+            else:
+                self.properties['from_bus'] = None
+                self.properties['to_bus'] = None
+        
+        # 检查是否有变化，如果有则通知属性面板刷新
+        has_changes = False
+        for key, old_value in old_bus_values.items():
+            if self.properties.get(key) != old_value:
+                has_changes = True
+                break
+        
+        if has_changes:
+            # 通过场景查找主窗口并刷新属性面板
+            try:
+                from PySide6.QtCore import QTimer
+                scene = self.scene()
+                if scene:
+                    views = scene.views()
+                    if views:
+                        main_window = views[0].window()
+                        if hasattr(main_window, 'properties_panel'):
+                            # 延迟刷新以避免递归调用
+                            QTimer.singleShot(10, lambda: main_window.properties_panel.update_properties(self))
+            except Exception as e:
+                pass  # 忽略错误，避免影响主要功能
     
     def is_connection_point_available(self, point_index):
         """检查指定连接点是否可用"""
@@ -420,6 +517,7 @@ class StorageItem(BaseNetworkItem):
             "max_e_mwh": 50.0,  # 最大储能容量
             "soc_percent": 50.0,  # 荷电状态百分比
             "name": "Storage 1",  # 名称
+            "bus": None,  # 连接的母线
         }
         self.label.setPlainText("母线")
         
@@ -452,6 +550,7 @@ class ChargerItem(BaseNetworkItem):
             "p_mw": 5.0,  # 充电功率
             "efficiency": 0.95,  # 充电效率
             "name": "Charger 1",  # 名称
+            "bus": None,  # 连接的母线
         }
         self.label.setPlainText("母线")
         
@@ -522,6 +621,11 @@ class LineItem(BaseNetworkItem):
             "x0_ohm_per_km": 0.0,  # 零序电抗 [Ω/km]
             "c0_nf_per_km": 0.0,  # 零序电容 [nF/km]
             "max_i_ka": 1.0,  # 最大热电流 [kA]
+            
+            # 连接属性
+            "from_bus": None,  # 起始母线
+            "to_bus": None,  # 终止母线
+            "name": "线路",  # 名称
         }
         self.label.setPlainText("线路")
         
@@ -570,6 +674,9 @@ class TransformerItem(BaseNetworkItem):
             "mag0_rx": 0.0,  # 零序励磁R/X比
             "si0_hv_partial": 0.0,  # 零序漏抗高压侧分配
             
+            # 连接属性
+            "hv_bus": None,  # 高压侧母线
+            "lv_bus": None,  # 低压侧母线
             "name": "变压器",  # 名称
         }
         self.label.setPlainText(self.properties["name"])
@@ -600,6 +707,7 @@ class GeneratorItem(BaseNetworkItem):
             "p_mw": 50.0,  # 有功功率
             "vm_pu": 1.0,  # 电压幅值
             "name": "Generator 1",  # 名称
+            "bus": None,  # 连接的母线
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -628,6 +736,7 @@ class LoadItem(BaseNetworkItem):
             "p_mw": 20.0,  # 有功功率
             "q_mvar": 10.0,  # 无功功率
             "name": "Load 1",  # 名称
+            "bus": None,  # 连接的母线
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -658,6 +767,7 @@ class ExternalGridItem(BaseNetworkItem):
             "s_sc_min_mva": 800.0,  # 最小短路容量
             "rx_max": 0.1,  # 最大R/X比
             "rx_min": 0.1,  # 最小R/X比
+            "bus": None,  # 连接的母线
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -700,6 +810,7 @@ class StaticGeneratorItem(BaseNetworkItem):
             "type": "wye",  # 连接类型
             "in_service": True,  # 投入运行
             "name": "Static Generator 1",  # 名称
+            "bus": None,  # 连接的母线
         }
         self.label.setPlainText(self.properties["name"])
         
