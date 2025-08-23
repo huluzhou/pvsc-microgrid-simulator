@@ -71,6 +71,9 @@ class BaseNetworkItem(QGraphicsItem):
         # 添加标签
         self.label = QGraphicsTextItem(self.component_name, self)
         self.label.setPos(-20, 35)  # 标签位置在组件下方
+        # 设置标签可拖动，防止遮挡
+        self.label.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.label.setFlag(QGraphicsItem.ItemIsSelectable, True)
         
         # 根据主题设置标签颜色
         self.update_label_color()
