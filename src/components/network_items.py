@@ -113,10 +113,20 @@ class BaseNetworkItem(QGraphicsItem):
         except Exception as e:
             print(f"更新标签颜色时出错: {e}")
             self.label.setDefaultTextColor(QColor(0, 0, 0))
+    
+    def reload_svg_for_theme(self):
+        """重新加载SVG以适应当前主题"""
+        if hasattr(self, 'svg_filename') and self.svg_filename:
+            self.load_svg(self.svg_filename)
+            # 触发重绘
+            self.update()
 
     def load_svg(self, svg_filename):
         """加载SVG文件，支持主题适配"""
         try:
+            # 保存文件名以便主题切换时重新加载
+            self.svg_filename = svg_filename
+            
             # 使用get_resource_path函数获取正确的资源路径
             svg_path = get_resource_path(os.path.join("assets", svg_filename))
             if not os.path.exists(svg_path):

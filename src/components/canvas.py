@@ -708,10 +708,13 @@ class NetworkCanvas(QGraphicsView):
         # 重新绘制网格
         self.draw_grid()
         
-        # 更新所有组件的标签颜色
+        # 更新所有组件的标签颜色和SVG图标
         for item in self.scene.items():
             if hasattr(item, 'update_label_color'):
                 item.update_label_color()
+            # 重新加载SVG以适应新主题
+            if hasattr(item, 'reload_svg_for_theme'):
+                item.reload_svg_for_theme()
     
     def clear_canvas(self):
         """清空画布"""
