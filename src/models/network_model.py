@@ -118,13 +118,34 @@ class NetworkModel:
         Returns:
             int: pandapower负载索引
         """
-        load_idx = pp.create_load(
-            self.net,
-            bus=bus,
-            p_mw=properties.get("p_mw", 10.0),
-            q_mvar=properties.get("q_mvar", 5.0),
-            name=properties.get("name", "Load"),
-        )
+        # 根据use_power_factor参数决定使用哪种创建方式
+        use_power_factor = properties.get("use_power_factor", False)
+        
+        if use_power_factor:
+            # 使用功率因数模式 - 调用create_load_from_cosphi
+            sn_mva = properties.get("sn_mva", 1.0)
+            cos_phi = properties.get("cos_phi", 0.9)
+            mode = "underexcited"  # 默认为欠励磁模式（吸收无功功率）
+            
+            load_idx = pp.create_load_from_cosphi(
+                self.net,
+                bus=bus,
+                sn_mva=sn_mva,
+                cos_phi=cos_phi,
+                mode=mode,
+                name=properties.get("name", "Load")
+            )
+        else:
+            # 直接使用有功功率模式 - 调用create_load
+            p_mw = properties.get("p_mw", 1.0)
+            
+            load_idx = pp.create_load(
+                self.net,
+                bus=bus,
+                p_mw=p_mw,
+                name=properties.get("name", "Load")
+            )
+        
         self.component_map[item_id] = {"type": "load", "idx": load_idx}
         return load_idx
 
@@ -143,9 +164,7 @@ class NetworkModel:
             self.net,
             bus=bus,
             p_mw=properties.get("p_mw", 0.0),
-            max_e_mwh=properties.get("max_e_mwh", 100.0),
-            soc_percent=properties.get("soc_percent", 50.0),
-            name=properties.get("name", "Storage"),
+            max_e_mwh=properties.get("max_e_mwh", 1.0)
         )
         self.component_map[item_id] = {"type": "storage", "idx": storage_idx}
         return storage_idx
@@ -162,14 +181,29 @@ class NetworkModel:
             int: pandapower负载索引（充电站作为负载处理）
         """
         # 充电站作为可控负载处理
-        charger_idx = pp.create_load(
-            self.net,
-            bus=bus,
-            p_mw=properties.get("p_mw", 50.0),
-            q_mvar=0.0,  # 充电站通常功率因数接近1
-            name=properties.get("name", "Charger"),
-            controllable=True,
-        )
+        use_power_factor = properties.get("use_power_factor", False)
+        
+        if use_power_factor:
+            # 使用功率因数模式创建充电桩
+            sn_mva = properties.get("sn_mva", 0.1)
+            cos_phi = properties.get("cos_phi", 0.9)
+            
+            charger_idx = pp.create_load_from_cosphi(
+                self.net,
+                bus=bus,
+                sn_mva=sn_mva,
+                cos_phi=cos_phi,
+                mode="ind",  # 感性负载
+                controllable=True
+            )
+        else:
+            # 使用直接功率模式创建充电桩
+            charger_idx = pp.create_load(
+                self.net,
+                bus=bus,
+                p_mw=properties.get("p_mw", 0.1),
+                controllable=True
+            )
         self.component_map[item_id] = {"type": "charger", "idx": charger_idx}
         return charger_idx
 
@@ -186,14 +220,7 @@ class NetworkModel:
         """
         ext_grid_idx = pp.create_ext_grid(
             self.net,
-            bus=bus,
-            vm_pu=properties.get("vm_pu", 1.0),
-            va_degree=properties.get("va_degree", 0.0),
-            name=properties.get("name", "External Grid"),
-            s_sc_max_mva=properties.get("s_sc_max_mva", 1000.0),
-            s_sc_min_mva=properties.get("s_sc_min_mva", 800.0),
-            rx_max=properties.get("rx_max", 0.1),
-            rx_min=properties.get("rx_min", 0.1),
+            bus=bus
         )
         self.component_map[item_id] = {"type": "external_grid", "idx": ext_grid_idx}
         return ext_grid_idx
@@ -279,28 +306,102 @@ class NetworkModel:
             self.net.gen.loc[idx, "name"] = properties.get("name", self.net.gen.loc[idx, "name"])
         
         elif component_type == "load":
-            self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
-            self.net.load.loc[idx, "q_mvar"] = properties.get("q_mvar", self.net.load.loc[idx, "q_mvar"])
+            # 根据use_power_factor参数决定如何更新功率值
+            use_power_factor = properties.get("use_power_factor", False)
+            
+            if use_power_factor:
+                # 使用功率因数模式 - 根据sn_mva和cos_phi计算p_mw
+                sn_mva = properties.get("sn_mva", 1.0)
+                cos_phi = properties.get("cos_phi", 0.9)
+                
+                # 根据功率因数计算有功功率
+                p_mw = sn_mva * cos_phi
+                self.net.load.loc[idx, "p_mw"] = p_mw
+                
+                # 如果存在q_mvar列，也更新无功功率
+                if "q_mvar" in self.net.load.columns:
+                    sin_phi = (1 - cos_phi**2)**0.5
+                    q_mvar = sn_mva * sin_phi  # 负载通常消耗感性无功功率
+                    self.net.load.loc[idx, "q_mvar"] = q_mvar
+            else:
+                # 直接使用有功功率
+                self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
+                
+                # 如果存在q_mvar列且用户提供了值，也更新无功功率
+                if "q_mvar" in self.net.load.columns and "q_mvar" in properties:
+                    self.net.load.loc[idx, "q_mvar"] = properties.get("q_mvar", self.net.load.loc[idx, "q_mvar"])
+            
+            # 更新其他属性
             self.net.load.loc[idx, "name"] = properties.get("name", self.net.load.loc[idx, "name"])
+            
+            # 只更新存在的列
+            if "const_z_percent" in self.net.load.columns:
+                self.net.load.loc[idx, "const_z_percent"] = properties.get("const_z_percent", self.net.load.loc[idx, "const_z_percent"])
+            if "const_i_percent" in self.net.load.columns:
+                self.net.load.loc[idx, "const_i_percent"] = properties.get("const_i_percent", self.net.load.loc[idx, "const_i_percent"])
+            if "scaling" in self.net.load.columns:
+                self.net.load.loc[idx, "scaling"] = properties.get("scaling", self.net.load.loc[idx, "scaling"])
+            if "in_service" in self.net.load.columns:
+                self.net.load.loc[idx, "in_service"] = properties.get("in_service", self.net.load.loc[idx, "in_service"])
         
         elif component_type == "storage":
             self.net.storage.loc[idx, "p_mw"] = properties.get("p_mw", self.net.storage.loc[idx, "p_mw"])
             self.net.storage.loc[idx, "max_e_mwh"] = properties.get("max_e_mwh", self.net.storage.loc[idx, "max_e_mwh"])
-            self.net.storage.loc[idx, "soc_percent"] = properties.get("soc_percent", self.net.storage.loc[idx, "soc_percent"])
-            self.net.storage.loc[idx, "name"] = properties.get("name", self.net.storage.loc[idx, "name"])
         
         elif component_type == "charger":
-            self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
-            self.net.load.loc[idx, "name"] = properties.get("name", self.net.load.loc[idx, "name"])
+            # 根据use_power_factor参数决定如何更新功率值
+            use_power_factor = properties.get("use_power_factor", False)
+            
+            if use_power_factor:
+                # 使用功率因数模式 - 根据sn_mva和cos_phi计算p_mw
+                sn_mva = properties.get("sn_mva", 0.1)
+                cos_phi = properties.get("cos_phi", 0.9)
+                
+                # 根据功率因数计算有功功率
+                p_mw = sn_mva * cos_phi
+                self.net.load.loc[idx, "p_mw"] = p_mw
+                
+                # 如果存在q_mvar列，也更新无功功率
+                if "q_mvar" in self.net.load.columns:
+                    sin_phi = (1 - cos_phi**2)**0.5
+                    q_mvar = sn_mva * sin_phi  # 负载通常消耗感性无功功率
+                    self.net.load.loc[idx, "q_mvar"] = q_mvar
+            else:
+                # 直接使用有功功率
+                self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
+            
+            # 更新其他属性
+            if "in_service" in self.net.load.columns:
+                self.net.load.loc[idx, "in_service"] = properties.get("in_service", self.net.load.loc[idx, "in_service"])
+        
+        elif component_type == "static_generator":
+            # 根据use_power_factor参数决定如何更新功率值
+            use_power_factor = properties.get("use_power_factor", False)
+            
+            if use_power_factor:
+                # 使用功率因数模式
+                sn_mva = properties.get("sn_mva", 1.0)
+                cos_phi = properties.get("cos_phi", 0.9)
+                
+                # 根据功率因数计算有功功率，无功功率设为0（光伏发电通常不提供无功功率）
+                p_mw = sn_mva * cos_phi
+                q_mvar = 0.0
+                
+                self.net.sgen.loc[idx, "p_mw"] = p_mw
+                self.net.sgen.loc[idx, "q_mvar"] = q_mvar
+            else:
+                # 直接使用有功功率，无功功率设为0
+                self.net.sgen.loc[idx, "p_mw"] = properties.get("p_mw", self.net.sgen.loc[idx, "p_mw"])
+                self.net.sgen.loc[idx, "q_mvar"] = 0.0
+            
+            # 更新其他属性
+            self.net.sgen.loc[idx, "name"] = properties.get("name", self.net.sgen.loc[idx, "name"])
+            self.net.sgen.loc[idx, "scaling"] = properties.get("scaling", self.net.sgen.loc[idx, "scaling"])
+            self.net.sgen.loc[idx, "in_service"] = properties.get("in_service", self.net.sgen.loc[idx, "in_service"])
         
         elif component_type == "external_grid":
-            self.net.ext_grid.loc[idx, "vm_pu"] = properties.get("vm_pu", self.net.ext_grid.loc[idx, "vm_pu"])
-            self.net.ext_grid.loc[idx, "va_degree"] = properties.get("va_degree", self.net.ext_grid.loc[idx, "va_degree"])
-            self.net.ext_grid.loc[idx, "name"] = properties.get("name", self.net.ext_grid.loc[idx, "name"])
-            self.net.ext_grid.loc[idx, "s_sc_max_mva"] = properties.get("s_sc_max_mva", self.net.ext_grid.loc[idx, "s_sc_max_mva"])
-            self.net.ext_grid.loc[idx, "s_sc_min_mva"] = properties.get("s_sc_min_mva", self.net.ext_grid.loc[idx, "s_sc_min_mva"])
-            self.net.ext_grid.loc[idx, "rx_max"] = properties.get("rx_max", self.net.ext_grid.loc[idx, "rx_max"])
-            self.net.ext_grid.loc[idx, "rx_min"] = properties.get("rx_min", self.net.ext_grid.loc[idx, "rx_min"])
+            # 外部电网只需要bus参数，无需更新其他属性
+            pass
         
 
 

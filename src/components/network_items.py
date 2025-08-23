@@ -138,6 +138,19 @@ class BaseNetworkItem(QGraphicsItem):
                         svg_content = svg_content.replace('#000000', '#FFFFFF')
                         svg_content = svg_content.replace('stroke="black"', 'stroke="white"')
                         svg_content = svg_content.replace('fill="black"', 'fill="white"')
+                        svg_content = svg_content.replace('#333333', '#CCCCCC')
+                        svg_content = svg_content.replace('stroke="#333333"', 'stroke="#cccccc"')
+                        svg_content = svg_content.replace('fill="#333333"', 'fill="#cccccc"')
+                    else:
+                        # 浅色主题：将白色元素替换为黑色
+                        svg_content = svg_content.replace('#FFFFFF', '#000000')
+                        svg_content = svg_content.replace('stroke="white"', 'stroke="black"')
+                        svg_content = svg_content.replace('fill="white"', 'fill="black"')
+                        svg_content = svg_content.replace('#ffffff', '#000000')
+                        svg_content = svg_content.replace('#fff', '#000')
+                        svg_content = svg_content.replace('#CCCCCC', '#333333')
+                        svg_content = svg_content.replace('stroke="#cccccc"', 'stroke="#333333"')
+                        svg_content = svg_content.replace('fill="#cccccc"', 'fill="#333333"')
                 
                 # 使用修改后的SVG内容创建渲染器
                 self.svg_renderer = QSvgRenderer()

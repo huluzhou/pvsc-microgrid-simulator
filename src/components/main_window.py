@@ -160,6 +160,14 @@ class MainWindow(QMainWindow):
         fit_view_action.triggered.connect(self.fit_view)
         view_menu.addAction(fit_view_action)
         
+        view_menu.addSeparator()
+        
+        # 主题切换
+        theme_action = QAction("切换主题", self)
+        theme_action.setShortcut("Ctrl+T")
+        theme_action.triggered.connect(self.toggle_theme)
+        view_menu.addAction(theme_action)
+        
         # 仿真菜单
         sim_menu = self.menuBar().addMenu("仿真")
         sim_menu.addAction("运行潮流计算")
@@ -196,8 +204,214 @@ class MainWindow(QMainWindow):
         self.canvas.fit_in_view()
         self.statusBar().showMessage("视图已适应画布内容")
     
+    def toggle_theme(self):
+        """切换主题"""
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QPalette, QColor
+        
+        app = QApplication.instance()
+        if app:
+            palette = app.palette()
+            # 检查当前是否为深色主题
+            bg_color = palette.color(QPalette.Window)
+            is_dark_theme = bg_color.lightness() < 128
+            
+            # 创建新的调色板
+            new_palette = QPalette()
+            
+            if is_dark_theme:
+                # 当前是深色主题，切换到浅色主题
+                new_palette.setColor(QPalette.Window, QColor(240, 240, 240))
+                new_palette.setColor(QPalette.WindowText, QColor(0, 0, 0))
+                new_palette.setColor(QPalette.Base, QColor(255, 255, 255))
+                new_palette.setColor(QPalette.AlternateBase, QColor(245, 245, 245))
+                new_palette.setColor(QPalette.ToolTipBase, QColor(255, 255, 220))
+                new_palette.setColor(QPalette.ToolTipText, QColor(0, 0, 0))
+                new_palette.setColor(QPalette.Text, QColor(0, 0, 0))
+                new_palette.setColor(QPalette.Button, QColor(240, 240, 240))
+                new_palette.setColor(QPalette.ButtonText, QColor(0, 0, 0))
+                new_palette.setColor(QPalette.BrightText, QColor(255, 0, 0))
+                new_palette.setColor(QPalette.Link, QColor(0, 0, 255))
+                new_palette.setColor(QPalette.Highlight, QColor(0, 120, 215))
+                new_palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+                self.statusBar().showMessage("已切换到浅色主题")
+            else:
+                # 当前是浅色主题，切换到深色主题
+                new_palette.setColor(QPalette.Window, QColor(53, 53, 53))
+                new_palette.setColor(QPalette.WindowText, QColor(255, 255, 255))
+                new_palette.setColor(QPalette.Base, QColor(25, 25, 25))
+                new_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+                new_palette.setColor(QPalette.ToolTipBase, QColor(0, 0, 0))
+                new_palette.setColor(QPalette.ToolTipText, QColor(255, 255, 255))
+                new_palette.setColor(QPalette.Text, QColor(255, 255, 255))
+                new_palette.setColor(QPalette.Button, QColor(53, 53, 53))
+                new_palette.setColor(QPalette.ButtonText, QColor(255, 255, 255))
+                new_palette.setColor(QPalette.BrightText, QColor(255, 0, 0))
+                new_palette.setColor(QPalette.Link, QColor(42, 130, 218))
+                new_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+                new_palette.setColor(QPalette.HighlightedText, QColor(0, 0, 0))
+                self.statusBar().showMessage("已切换到深色主题")
+            
+            # 应用新的调色板
+            app.setPalette(new_palette)
+            
+            # 设置菜单栏样式表
+            if is_dark_theme:
+                # 浅色主题菜单样式
+                menu_style = """
+                QMenuBar {
+                    background-color: rgb(240, 240, 240);
+                    color: rgb(0, 0, 0);
+                }
+                QMenuBar::item {
+                    background-color: transparent;
+                    padding: 4px 8px;
+                }
+                QMenuBar::item:selected {
+                    background-color: rgb(0, 120, 215);
+                    color: rgb(255, 255, 255);
+                }
+                QMenu {
+                    background-color: rgb(255, 255, 255);
+                    color: rgb(0, 0, 0);
+                    border: 1px solid rgb(200, 200, 200);
+                }
+                QMenu::item {
+                    padding: 4px 20px;
+                }
+                QMenu::item:selected {
+                    background-color: rgb(0, 120, 215);
+                    color: rgb(255, 255, 255);
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: rgb(200, 200, 200);
+                    margin: 2px 0px;
+                }
+                """
+            else:
+                # 深色主题菜单样式
+                menu_style = """
+                QMenuBar {
+                    background-color: rgb(53, 53, 53);
+                    color: rgb(255, 255, 255);
+                }
+                QMenuBar::item {
+                    background-color: transparent;
+                    padding: 4px 8px;
+                }
+                QMenuBar::item:selected {
+                    background-color: rgb(42, 130, 218);
+                    color: rgb(255, 255, 255);
+                }
+                QMenu {
+                    background-color: rgb(53, 53, 53);
+                    color: rgb(255, 255, 255);
+                    border: 1px solid rgb(80, 80, 80);
+                }
+                QMenu::item {
+                    padding: 4px 20px;
+                }
+                QMenu::item:selected {
+                    background-color: rgb(42, 130, 218);
+                    color: rgb(255, 255, 255);
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: rgb(80, 80, 80);
+                    margin: 2px 0px;
+                }
+                """
+            
+            # 应用菜单样式
+            self.menuBar().setStyleSheet(menu_style)
+            
+            # 更新所有主题相关的颜色
+            self.update_theme_colors()
+    
     def update_theme_colors(self):
         """更新主题相关的所有颜色"""
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QPalette
+        
+        # 获取当前主题
+        app = QApplication.instance()
+        if app:
+            palette = app.palette()
+            bg_color = palette.color(QPalette.Window)
+            is_dark_theme = bg_color.lightness() < 128
+            
+            # 设置菜单栏样式
+            if is_dark_theme:
+                # 深色主题菜单样式
+                menu_style = """
+                QMenuBar {
+                    background-color: rgb(53, 53, 53);
+                    color: rgb(255, 255, 255);
+                }
+                QMenuBar::item {
+                    background-color: transparent;
+                    padding: 4px 8px;
+                }
+                QMenuBar::item:selected {
+                    background-color: rgb(42, 130, 218);
+                    color: rgb(255, 255, 255);
+                }
+                QMenu {
+                    background-color: rgb(53, 53, 53);
+                    color: rgb(255, 255, 255);
+                    border: 1px solid rgb(80, 80, 80);
+                }
+                QMenu::item {
+                    padding: 4px 20px;
+                }
+                QMenu::item:selected {
+                    background-color: rgb(42, 130, 218);
+                    color: rgb(255, 255, 255);
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: rgb(80, 80, 80);
+                    margin: 2px 0px;
+                }
+                """
+            else:
+                # 浅色主题菜单样式
+                menu_style = """
+                QMenuBar {
+                    background-color: rgb(240, 240, 240);
+                    color: rgb(0, 0, 0);
+                }
+                QMenuBar::item {
+                    background-color: transparent;
+                    padding: 4px 8px;
+                }
+                QMenuBar::item:selected {
+                    background-color: rgb(0, 120, 215);
+                    color: rgb(255, 255, 255);
+                }
+                QMenu {
+                    background-color: rgb(255, 255, 255);
+                    color: rgb(0, 0, 0);
+                    border: 1px solid rgb(200, 200, 200);
+                }
+                QMenu::item {
+                    padding: 4px 20px;
+                }
+                QMenu::item:selected {
+                    background-color: rgb(0, 120, 215);
+                    color: rgb(255, 255, 255);
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: rgb(200, 200, 200);
+                    margin: 2px 0px;
+                }
+                """
+            
+            # 应用菜单样式
+            self.menuBar().setStyleSheet(menu_style)
+        
         # 更新画布主题颜色
         if hasattr(self, 'canvas'):
             self.canvas.update_theme_colors()

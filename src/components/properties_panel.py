@@ -158,7 +158,45 @@ class PropertiesPanel(QWidget):
                     if not use_power_factor:
                         continue  # 跳过
             
-            current_value = item.properties.get(prop_name, prop_info.get('default', ''))
+            # 对于负载组件，根据use_power_factor控制显示
+            elif item.component_type == 'load':
+                use_power_factor = item.properties.get('use_power_factor', False)
+                
+                # 通用参数始终显示
+                if prop_name in ['use_power_factor', 'const_z_percent', 'const_i_percent', 'scaling', 'in_service']:
+                    pass  # 显示
+                # 直接功率模式参数：仅在不使用功率因数模式时显示
+                elif prop_name in ['p_mw']:
+                    if use_power_factor:
+                        continue  # 跳过
+                # 功率因数模式参数：仅在使用功率因数模式时显示
+                elif prop_name in ['sn_mva', 'cos_phi']:
+                    if not use_power_factor:
+                        continue  # 跳过
+            
+            # 对于充电桩组件，根据use_power_factor控制显示
+            elif item.component_type == 'charger':
+                use_power_factor = item.properties.get('use_power_factor', False)
+                
+                # 通用参数始终显示
+                if prop_name in ['use_power_factor', 'in_service']:
+                    pass  # 显示
+                # 直接功率模式参数：仅在不使用功率因数模式时显示
+                elif prop_name in ['p_mw']:
+                    if use_power_factor:
+                        continue  # 跳过
+                # 功率因数模式参数：仅在使用功率因数模式时显示
+                elif prop_name in ['sn_mva', 'cos_phi']:
+                    if not use_power_factor:
+                        continue  # 跳过
+            
+            # 对于外部电网组件，动态获取连接的bus信息
+            if item.component_type == 'external_grid' and prop_name == 'bus':
+                # 获取连接的bus名称
+                connected_bus = self.get_connected_bus_name(item)
+                current_value = connected_bus if connected_bus else ''
+            else:
+                current_value = item.properties.get(prop_name, prop_info.get('default', ''))
             widget = self.create_property_widget(prop_name, prop_info, current_value)
             
             if widget:
@@ -172,7 +210,22 @@ class PropertiesPanel(QWidget):
         # 添加弹性空间
         self.properties_layout.addStretch()
         
-
+    def get_connected_bus_name(self, item):
+        """获取组件连接的bus名称"""
+        try:
+            # 检查item是否有连接的组件
+            if hasattr(item, 'current_connections') and item.current_connections:
+                # 查找连接的bus组件
+                for connected_item in item.current_connections:
+                    if hasattr(connected_item, 'component_type') and connected_item.component_type == 'bus':
+                        if hasattr(connected_item, 'component_name') and connected_item.component_name:
+                            return connected_item.component_name
+                        else:
+                            return f"Bus_{connected_item.properties.get('name', 'Unknown')}"
+            return ''
+        except Exception as e:
+            print(f"获取连接bus名称时出错: {e}")
+            return ''
                     
     def create_property_widget(self, prop_name, prop_info, current_value):
         """创建属性编辑控件"""
@@ -227,6 +280,13 @@ class PropertiesPanel(QWidget):
             )
             return widget
             
+        elif prop_type == 'readonly':
+            widget = QLineEdit()
+            widget.setText(str(current_value) if current_value else '')
+            widget.setReadOnly(True)
+            widget.setStyleSheet("QLineEdit { background-color: #f0f0f0; color: #333333; }")
+            return widget
+            
         else:  # 默认为字符串
             widget = QLineEdit()
             widget.setText(str(current_value) if current_value else '')
@@ -257,6 +317,24 @@ class PropertiesPanel(QWidget):
                 self.update_properties(self.current_item)
                 return  # 避免重复发出信号
             
+            # 特殊处理负载的use_power_factor属性改变
+            if prop_name == 'use_power_factor' and self.current_item.component_type == 'load':
+                # 重新刷新属性面板显示
+                self.update_properties(self.current_item)
+                return  # 避免重复发出信号
+            
+            # 特殊处理线路的use_standard_type属性改变
+            if prop_name == 'use_standard_type' and self.current_item.component_type == 'line':
+                # 重新刷新属性面板显示
+                self.update_properties(self.current_item)
+                return  # 避免重复发出信号
+            
+            # 特殊处理充电桩的use_power_factor属性改变
+            if prop_name == 'use_power_factor' and self.current_item.component_type == 'charger':
+                # 重新刷新属性面板显示
+                self.update_properties(self.current_item)
+                return  # 避免重复发出信号
+            
             # 发出信号
             self.property_changed.emit(self.current_item.component_type, prop_name, new_value)
             
@@ -272,14 +350,30 @@ class PropertiesPanel(QWidget):
                 'length_km': {'type': 'float', 'label': '长度 (km)', 'default': 1.0, 'min': 0.001, 'max': 1000.0, 'decimals': 3},
                 'use_standard_type': {'type': 'bool', 'label': '使用标准类型', 'default': True},
                 
+                # 标准类型参数
+                'std_type': {
+                    'type': 'choice', 
+                    'label': '标准类型', 
+                    'choices': [
+                        'NAYY 4x50 SE', 'NAYY 4x120 SE', 'NAYY 4x150 SE',
+                        'NA2XS2Y 1x95 RM/25 12/20 kV', 'NA2XS2Y 1x185 RM/25 12/20 kV',
+                        'NA2XS2Y 1x240 RM/25 12/20 kV', 'NA2XS2Y 1x300 RM/25 12/20 kV',
+                        '15-AL1/3-ST1A 0.4', '24-AL1/4-ST1A 0.4', '48-AL1/8-ST1A 0.4',
+                        '70-AL1/11-ST1A 0.4', '94-AL1/15-ST1A 0.4', '122-AL1/20-ST1A 0.4',
+                        '149-AL1/24-ST1A 0.4', '184-AL1/30-ST1A 0.4', '243-AL1/39-ST1A 0.4'
+                    ], 
+                    'default': 'NAYY 4x50 SE',
+                    'condition': {'use_standard_type': True}
+                },
+                
                 # 自定义参数 (用于create_line_from_parameters)
-                'r_ohm_per_km': {'type': 'float', 'label': '线路电阻 (Ω/km)', 'default': 0.1, 'min': 0.0, 'decimals': 4},
-                'x_ohm_per_km': {'type': 'float', 'label': '线路电抗 (Ω/km)', 'default': 0.1, 'min': 0.0, 'decimals': 4},
-                'c_nf_per_km': {'type': 'float', 'label': '线路电容 (nF/km)', 'default': 0.0, 'min': 0.0, 'decimals': 1},
-                'r0_ohm_per_km': {'type': 'float', 'label': '零序电阻 (Ω/km)', 'default': 0.0, 'min': 0.0, 'decimals': 4},
-                'x0_ohm_per_km': {'type': 'float', 'label': '零序电抗 (Ω/km)', 'default': 0.0, 'min': 0.0, 'decimals': 4},
-                'c0_nf_per_km': {'type': 'float', 'label': '零序电容 (nF/km)', 'default': 0.0, 'min': 0.0, 'decimals': 1},
-                'max_i_ka': {'type': 'float', 'label': '最大热电流 (kA)', 'default': 1.0, 'min': 0.001, 'decimals': 3}
+                'r_ohm_per_km': {'type': 'float', 'label': '线路电阻 (Ω/km)', 'default': 0.1, 'min': 0.0, 'decimals': 4, 'condition': {'use_standard_type': False}},
+                'x_ohm_per_km': {'type': 'float', 'label': '线路电抗 (Ω/km)', 'default': 0.1, 'min': 0.0, 'decimals': 4, 'condition': {'use_standard_type': False}},
+                'c_nf_per_km': {'type': 'float', 'label': '线路电容 (nF/km)', 'default': 0.0, 'min': 0.0, 'decimals': 1, 'condition': {'use_standard_type': False}},
+                'r0_ohm_per_km': {'type': 'float', 'label': '零序电阻 (Ω/km)', 'default': 0.0, 'min': 0.0, 'decimals': 4, 'condition': {'use_standard_type': False}},
+                'x0_ohm_per_km': {'type': 'float', 'label': '零序电抗 (Ω/km)', 'default': 0.0, 'min': 0.0, 'decimals': 4, 'condition': {'use_standard_type': False}},
+                'c0_nf_per_km': {'type': 'float', 'label': '零序电容 (nF/km)', 'default': 0.0, 'min': 0.0, 'decimals': 1, 'condition': {'use_standard_type': False}},
+                'max_i_ka': {'type': 'float', 'label': '最大热电流 (kA)', 'default': 1.0, 'min': 0.001, 'decimals': 3, 'condition': {'use_standard_type': False}}
             },
             'transformer': {
                 # 通用参数
@@ -322,40 +416,40 @@ class PropertiesPanel(QWidget):
             },
 
             'load': {
+                # 通用参数
+                'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
+                
+                # 直接功率模式参数
                 'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 1.0, 'min': 0.0, 'max': 10000.0},
-                'q_mvar': {'type': 'float', 'label': '无功功率 (Mvar)', 'default': 0.0, 'min': -10000.0, 'max': 10000.0},
-                'const_z_percent': {'type': 'float', 'label': '恒阻抗比例 (%)', 'default': 0.0, 'min': 0.0, 'max': 100.0},
-                'const_i_percent': {'type': 'float', 'label': '恒电流比例 (%)', 'default': 0.0, 'min': 0.0, 'max': 100.0},
-                'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 1.0, 'min': 0.001, 'max': 10000.0},
-                'scaling': {'type': 'float', 'label': '缩放因子', 'default': 1.0, 'min': 0.0, 'max': 10.0, 'decimals': 3},
+                
+                # 功率因数模式参数
+                'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 1.0, 'min': 0.1, 'max': 10000.0},
+                'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
+                
+                # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True}
             },
             'storage': {
-                'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 0.0, 'min': -10000.0, 'max': 10000.0},
-                'max_e_mwh': {'type': 'float', 'label': '最大储能 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0},
-                'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 1.0, 'min': 0.001, 'max': 10000.0},
-                'soc_percent': {'type': 'float', 'label': '荷电状态 (%)', 'default': 50.0, 'min': 0.0, 'max': 100.0},
-                'min_p_mw': {'type': 'float', 'label': '最小有功 (MW)', 'default': -100.0, 'min': -10000.0, 'max': 0.0},
-                'max_p_mw': {'type': 'float', 'label': '最大有功 (MW)', 'default': 100.0, 'min': 0.0, 'max': 10000.0},
-                'q_mvar': {'type': 'float', 'label': '无功功率 (Mvar)', 'default': 0.0, 'min': -10000.0, 'max': 10000.0},
-                'scaling': {'type': 'float', 'label': '缩放因子', 'default': 1.0, 'min': 0.0, 'max': 10.0, 'decimals': 3},
-                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True}
+                'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 0.0, 'min': -10000.0, 'max': 10000.0, 'decimals': 3},
+                'max_e_mwh': {'type': 'float', 'label': '最大储能容量 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0, 'decimals': 3}
             },
             'charger': {
+                # 通用参数
+                'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
+                
+                # 直接功率模式参数
                 'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 0.1, 'min': 0.0, 'max': 1000.0},
-                'q_mvar': {'type': 'float', 'label': '无功功率 (Mvar)', 'default': 0.0, 'min': -1000.0, 'max': 1000.0},
-                'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 0.1, 'min': 0.001, 'max': 1000.0},
-                'scaling': {'type': 'float', 'label': '缩放因子', 'default': 1.0, 'min': 0.0, 'max': 10.0, 'decimals': 3},
+                
+                # 功率因数模式参数
+                'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 0.1, 'min': 0.1, 'max': 1000.0},
+                'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
+                
+                # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True}
             },
             'external_grid': {
-                'vm_pu': {'type': 'float', 'label': '电压幅值 (p.u.)', 'default': 1.0, 'min': 0.8, 'max': 1.2, 'decimals': 3},
-                'va_degree': {'type': 'float', 'label': '电压相角 (度)', 'default': 0.0, 'min': -180.0, 'max': 180.0, 'decimals': 1},
-                'max_p_mw': {'type': 'float', 'label': '最大有功 (MW)', 'default': 1000.0, 'min': 0.0, 'max': 100000.0},
-                'min_p_mw': {'type': 'float', 'label': '最小有功 (MW)', 'default': -1000.0, 'min': -100000.0, 'max': 0.0},
-                'max_q_mvar': {'type': 'float', 'label': '最大无功 (Mvar)', 'default': 1000.0, 'min': 0.0, 'max': 100000.0},
-                'min_q_mvar': {'type': 'float', 'label': '最小无功 (Mvar)', 'default': -1000.0, 'min': -100000.0, 'max': 0.0},
-                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True}
+                # 显示连接的母线
+                'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'static_generator': {
                 # 通用参数
@@ -369,7 +463,6 @@ class PropertiesPanel(QWidget):
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
                 
                 # 其他参数
-                'scaling': {'type': 'float', 'label': '缩放因子', 'default': 1.0, 'min': 0.0, 'max': 10.0, 'decimals': 3},
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True}
             }
         }

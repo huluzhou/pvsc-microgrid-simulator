@@ -55,6 +55,18 @@ class ComponentPalette(QListWidget):
                 svg_content = svg_content.replace('fill="#000000"', 'fill="#ffffff"')
                 svg_content = svg_content.replace('stroke="#000"', 'stroke="#fff"')
                 svg_content = svg_content.replace('fill="#000"', 'fill="#fff"')
+                svg_content = svg_content.replace('stroke="#333333"', 'stroke="#cccccc"')
+                svg_content = svg_content.replace('fill="#333333"', 'fill="#cccccc"')
+            else:
+                # 浅色主题：将白色元素替换为黑色
+                svg_content = svg_content.replace('stroke="white"', 'stroke="black"')
+                svg_content = svg_content.replace('fill="white"', 'fill="black"')
+                svg_content = svg_content.replace('stroke="#ffffff"', 'stroke="#000000"')
+                svg_content = svg_content.replace('fill="#ffffff"', 'fill="#000000"')
+                svg_content = svg_content.replace('stroke="#fff"', 'stroke="#000"')
+                svg_content = svg_content.replace('fill="#fff"', 'fill="#000"')
+                svg_content = svg_content.replace('stroke="#cccccc"', 'stroke="#333333"')
+                svg_content = svg_content.replace('fill="#cccccc"', 'fill="#333333"')
             
             return svg_content
         except Exception as e:

@@ -49,6 +49,9 @@ class NetworkCanvas(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
 
+        # 设置初始背景颜色
+        self.update_background_color()
+        
         # 绘制网格背景
         self.draw_grid()
 
@@ -652,6 +655,27 @@ class NetworkCanvas(QGraphicsView):
         
         return False
 
+    def update_background_color(self):
+        """更新画布背景颜色"""
+        try:
+            app = QApplication.instance()
+            if app:
+                palette = app.palette()
+                # 检查是否为深色主题
+                bg_color = palette.color(QPalette.Window)
+                is_dark_theme = bg_color.lightness() < 128
+                
+                if is_dark_theme:
+                    # 深色主题使用深色背景
+                    self.setBackgroundBrush(QBrush(QColor(42, 42, 42)))
+                    self.scene.setBackgroundBrush(QBrush(QColor(42, 42, 42)))
+                else:
+                    # 浅色主题使用白色背景
+                    self.setBackgroundBrush(QBrush(QColor(255, 255, 255)))
+                    self.scene.setBackgroundBrush(QBrush(QColor(255, 255, 255)))
+        except Exception as e:
+            print(f"更新背景颜色时出错: {e}")
+    
     def update_connection_colors(self):
         """更新所有连接线的颜色以适应当前主题"""
         if hasattr(self, 'connections'):
@@ -665,6 +689,9 @@ class NetworkCanvas(QGraphicsView):
     
     def update_theme_colors(self):
         """更新主题相关的所有颜色"""
+        # 更新画布背景颜色
+        self.update_background_color()
+        
         # 更新连接线颜色
         self.update_connection_colors()
         
