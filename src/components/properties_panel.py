@@ -378,7 +378,6 @@ class PropertiesPanel(QWidget):
                 # 连接属性（只读显示）
                 'from_bus': {'type': 'readonly', 'label': '起始母线'},
                 'to_bus': {'type': 'readonly', 'label': '终止母线'},
-                'name': {'type': 'string', 'label': '名称', 'default': '线路'}
             },
             'transformer': {
                 # 通用参数
@@ -422,7 +421,6 @@ class PropertiesPanel(QWidget):
                 # 连接属性（只读显示）
                 'hv_bus': {'type': 'readonly', 'label': '高压侧母线'},
                 'lv_bus': {'type': 'readonly', 'label': '低压侧母线'},
-                'name': {'type': 'string', 'label': '名称', 'default': '变压器'}
             },
 
             'load': {
