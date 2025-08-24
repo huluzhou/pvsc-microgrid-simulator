@@ -298,9 +298,11 @@ class BaseNetworkItem(QGraphicsItem):
         """添加连接"""
         if self.can_connect():
             self.current_connections.append(connected_item)
-            # 如果指定了连接点索引，标记该连接点为已占用
+            # 如果指定了连接点索引，管理该连接点的连接状态
             if connection_point_index is not None:
-                self.connection_point_states[connection_point_index] = connected_item
+                if connection_point_index not in self.connection_point_states:
+                    self.connection_point_states[connection_point_index] = []
+                self.connection_point_states[connection_point_index].append(connected_item)
             # 更新bus参数
             self.update_bus_parameter()
             return True
@@ -313,9 +315,13 @@ class BaseNetworkItem(QGraphicsItem):
                 self.current_connections.remove(connected_item)
             elif len(self.current_connections) > 0:
                 self.current_connections.pop()
-            # 如果指定了连接点索引，清除该连接点的占用状态
+            # 如果指定了连接点索引，从该连接点的连接列表中移除
             if connection_point_index is not None and connection_point_index in self.connection_point_states:
-                del self.connection_point_states[connection_point_index]
+                if connected_item in self.connection_point_states[connection_point_index]:
+                    self.connection_point_states[connection_point_index].remove(connected_item)
+                # 如果连接点没有连接了，删除该键
+                if not self.connection_point_states[connection_point_index]:
+                    del self.connection_point_states[connection_point_index]
             # 更新bus参数
             self.update_bus_parameter()
             return True
@@ -414,15 +420,34 @@ class BaseNetworkItem(QGraphicsItem):
             except Exception as e:
                 pass  # 忽略错误，避免影响主要功能
     
-    def is_connection_point_available(self, point_index):
+    def is_connection_point_available(self, point_index, connecting_item=None):
         """检查指定连接点是否可用"""
-        return point_index not in self.connection_point_states
+        if point_index not in self.connection_point_states:
+            return True
+        
+        connections = self.connection_point_states[point_index]
+        
+        # 如果已经有2个连接，不能再连接
+        if len(connections) >= 2:
+            return False
+        
+        # 如果只有1个连接
+        if len(connections) == 1:
+            existing_item = connections[0]
+            # 如果现有连接是电表，新连接可以是任何非电表组件
+            if hasattr(existing_item, 'component_type') and existing_item.component_type == 'meter':
+                return connecting_item is None or (hasattr(connecting_item, 'component_type') and connecting_item.component_type != 'meter')
+            # 如果现有连接不是电表，新连接必须是电表
+            else:
+                return connecting_item is not None and hasattr(connecting_item, 'component_type') and connecting_item.component_type == 'meter'
+        
+        return True
     
-    def get_available_connection_points(self):
+    def get_available_connection_points(self, connecting_item=None):
         """获取所有可用的连接点索引"""
         available_points = []
         for i in range(len(self.connection_points)):
-            if self.is_connection_point_available(i):
+            if self.is_connection_point_available(i, connecting_item):
                 available_points.append(i)
         return available_points
     
@@ -549,8 +574,8 @@ class StorageItem(BaseNetworkItem):
         }
         self.label.setPlainText("母线")
         
-        # 连接约束：储能只能连接一个bus
-        self.max_connections = 1
+        # 连接约束：储能可以连接一个母线和一个电表
+        self.max_connections = 2
         self.min_connections = 1
         
         # 加载SVG图标
@@ -558,7 +583,7 @@ class StorageItem(BaseNetworkItem):
         
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
-            QPointF(0, -28)   # 线头端点（上侧）
+            QPointF(0, -28),   # 线头端点（上侧）
         ]
         self.original_connection_points = self.connection_points.copy()
 
@@ -582,8 +607,8 @@ class ChargerItem(BaseNetworkItem):
         }
         self.label.setPlainText("母线")
         
-        # 连接约束：充电站只能连接一个bus
-        self.max_connections = 1
+        # 连接约束：充电站可以连接一个母线和一个电表
+        self.max_connections = 2
         self.min_connections = 1
         
         # 加载SVG图标
@@ -658,7 +683,7 @@ class LineItem(BaseNetworkItem):
         self.label.setPlainText("线路")
         
         # 连接约束：线路必须连接两个组件
-        self.max_connections = 2
+        self.max_connections = 4
         self.min_connections = 2
         
         # 加载SVG图标
@@ -710,7 +735,7 @@ class TransformerItem(BaseNetworkItem):
         self.label.setPlainText(self.properties["name"])
         
         # 连接约束：变压器必须连接两个bus
-        self.max_connections = 2
+        self.max_connections = 4
         self.min_connections = 2
         
         # 加载SVG图标
@@ -739,8 +764,8 @@ class GeneratorItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
-        # 连接约束：发电机只能连接一个bus
-        self.max_connections = 1
+        # 连接约束：发电机可以连接一个母线和一个电表
+        self.max_connections = 2
         self.min_connections = 1
         
         # 加载SVG图标
@@ -768,8 +793,8 @@ class LoadItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
-        # 连接约束：负荷只能连接一个bus
-        self.max_connections = 1
+        # 连接约束：负荷可以连接一个bus和一个电表
+        self.max_connections = 2
         self.min_connections = 1
         
         # 加载SVG图标
@@ -799,8 +824,8 @@ class ExternalGridItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
-        # 连接约束：外部电网必须连接到一个母线
-        self.max_connections = 1
+        # 连接约束：外部电网可以连接一个母线和一个电表
+        self.max_connections = 2
         self.min_connections = 1
         
         # 加载SVG图标
@@ -842,8 +867,8 @@ class StaticGeneratorItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
-        # 连接约束：静态发电机只能连接一个bus
-        self.max_connections = 1
+        # 连接约束：静态发电机可以连接一个母线和一个电表
+        self.max_connections = 2
         self.min_connections = 1
         
         # 加载SVG图标
@@ -852,6 +877,42 @@ class StaticGeneratorItem(BaseNetworkItem):
         # 定义连接点（相对于组件中心的位置）- 逆时针旋转90度后
         self.connection_points = [
             QPointF(0, -28)   # 线头端点（下方）
+        ]
+        self.original_connection_points = self.connection_points.copy()
+
+
+class MeterItem(BaseNetworkItem):
+    """电表组件"""
+    
+    def __init__(self, pos, parent=None):
+        super().__init__(pos, parent)
+        self.component_type = "meter"
+        self.component_name = "Meter 1"
+        
+        # 初始化属性
+        self.properties = {
+            "meas_type": "v",  # 测量类型
+            "element_type": "bus",  # 测量元件类型
+            "value": 0.0,  # 测量值
+            "std_dev": 0.01,  # 标准偏差
+            "element": 0,  # 元件索引
+            "side": None,  # 测量侧
+            "in_service": True,  # 投入运行
+            "name": "Meter 1",  # 名称
+            "bus": None,  # 连接的母线
+        }
+        self.label.setPlainText(self.properties["name"])
+        
+        # 连接约束：电表可以连接到多个组件
+        self.max_connections =  1 # 允许连接多个组件
+        self.min_connections = 1   # 不强制要求连接
+        
+        # 加载SVG图标
+        self.load_svg("meter.svg")
+        
+        # 定义连接点（相对于组件中心的位置）
+        self.connection_points = [
+            QPointF(0, 32)   # 底部连接点
         ]
         self.original_connection_points = self.connection_points.copy()
         

@@ -491,6 +491,57 @@ class PropertiesPanel(QWidget):
                 # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
+            },
+            'meter': {
+                'meas_type': {
+                    'type': 'choice', 
+                    'label': '测量类型', 
+                    'choices': [
+                        ('v', '电压 (V)'),
+                        ('p', '有功功率 (P)'),
+                        ('q', '无功功率 (Q)'),
+                        ('i', '电流 (I)'),
+                        ('va', '电压角度 (VA)'),
+                        ('ia', '电流角度 (IA)')
+                    ], 
+                    'default': 'v'
+                },
+                'element_type': {
+                    'type': 'choice', 
+                    'label': '测量元件类型', 
+                    'choices': [
+                        ('bus', '母线'),
+                        ('line', '线路'),
+                        ('trafo', '变压器'),
+                        ('trafo3w', '三绕组变压器'),
+                        ('load', '负载'),
+                        ('gen', '发电机'),
+                        ('sgen', '静态发电机'),
+                        ('shunt', '并联电抗器'),
+                        ('ward', 'Ward等值'),
+                        ('xward', '扩展Ward等值'),
+                        ('ext_grid', '外部电网')
+                    ], 
+                    'default': 'bus'
+                },
+                'value': {'type': 'float', 'label': '测量值', 'default': 0.0, 'min': -999999.0, 'max': 999999.0, 'decimals': 6},
+                'std_dev': {'type': 'float', 'label': '标准偏差', 'default': 0.01, 'min': 0.0, 'max': 999999.0, 'decimals': 6},
+                'element': {'type': 'int', 'label': '元件索引', 'default': 0, 'min': 0, 'max': 999999},
+                'side': {
+                    'type': 'choice', 
+                    'label': '测量侧', 
+                    'choices': [
+                        (None, '无'),
+                        ('from', '起始侧'),
+                        ('to', '终止侧'),
+                        ('hv', '高压侧'),
+                        ('mv', '中压侧'),
+                        ('lv', '低压侧')
+                    ], 
+                    'default': None
+                },
+                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
+                'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             }
         }
         

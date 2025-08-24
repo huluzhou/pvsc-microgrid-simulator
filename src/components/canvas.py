@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMen
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
-from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem
+from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem
 
 
 class NetworkCanvas(QGraphicsView):
@@ -31,7 +31,8 @@ class NetworkCanvas(QGraphicsView):
             'storage': 0,
             'charger': 0,
             'external_grid': 0,
-            'static_generator': 0
+            'static_generator': 0,
+            'meter': 0
         }
         self.init_ui()
 
@@ -176,7 +177,8 @@ class NetworkCanvas(QGraphicsView):
             'storage': f'Storage {count}',
             'charger': f'Charger {count}',
             'external_grid': f'External Grid {count}',
-            'static_generator': f'Static Generator {count}'
+            'static_generator': f'Static Generator {count}',
+            'meter': f'Meter {count}'
         }
         
         return name_mapping.get(component_type, f'{component_type.capitalize()} {count}')
@@ -202,6 +204,8 @@ class NetworkCanvas(QGraphicsView):
             item = ExternalGridItem(pos)
         elif component_type == "static_generator":
             item = StaticGeneratorItem(pos)
+        elif component_type == "meter":
+            item = MeterItem(pos)
         
         # 添加到场景
         if item:
@@ -259,15 +263,25 @@ class NetworkCanvas(QGraphicsView):
         if type1 == "bus" or type2 == "bus":
             return True
             
-        # 变压器和线路必须连接到母线
+        # 电表可以连接到任何组件
+        if type1 == "meter" or type2 == "meter":
+            return True
+            
+        # 变压器和线路必须连接到母线或电表
         if type1 in ["transformer", "line"] or type2 in ["transformer", "line"]:
+            # 如果其中一个是母线或电表，则允许连接
+            if type1 in ["bus", "meter"] or type2 in ["bus", "meter"]:
+                return True
             return False
             
-        # 负载和外部电网必须连接到母线
+        # 负载、存储、充电器、外部电网、静态发电机可以连接到母线或电表
         if type1 in ["load", "storage", "charger", "external_grid", "static_generator"] or type2 in ["load", "storage", "charger", "external_grid", "static_generator"]:
+            # 如果其中一个是母线或电表，则允许连接
+            if type1 in ["bus", "meter"] or type2 in ["bus", "meter"]:
+                return True
             return False
             
-        # 开关可以连接到母线（已在上面的母线规则中处理）
+        # 开关可以连接到母线或电表（已在上面的规则中处理）
         return False
     
     def can_connect(self, item1, item2):
@@ -275,6 +289,13 @@ class NetworkCanvas(QGraphicsView):
         # 检查是否已经连接
         if self.is_connected(item1, item2):
             return False
+            
+        # 初始化connections列表（如果不存在）
+        if not hasattr(self, 'connections'):
+            self.connections = []
+        
+        # 连接限制现在由连接点管理机制处理
+        # 每个连接点最多支持2个连接，其中一个必须是电表
             
         # 检查连接数量约束
         if not item1.can_connect() or not item2.can_connect():
@@ -373,7 +394,7 @@ class NetworkCanvas(QGraphicsView):
             if hasattr(source_item, 'component_type') and source_item.component_type == 'bus':
                 available_points = list(range(len(source_item.connection_points)))
             else:
-                available_points = source_item.get_available_connection_points()
+                available_points = source_item.get_available_connection_points(target_item)
             
             if not available_points:
                 return QPointF(0, 0), -1  # 没有可用连接点
