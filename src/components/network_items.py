@@ -39,6 +39,9 @@ class ItemSignals(QObject):
 
 class BaseNetworkItem(QGraphicsItem):
     """电网组件基类"""
+    
+    # 类级别的索引计数器，用于为每种组件类型分配唯一索引
+    _component_counters = {}
 
     def __init__(self, pos, parent=None):
         super().__init__(parent)
@@ -57,6 +60,9 @@ class BaseNetworkItem(QGraphicsItem):
         self.component_type = "base"
         self.component_name = "基础组件"
         self.properties = {}
+        
+        # 索引将在子类中设置component_type后分配
+        self.component_index = None
         
         # 创建信号对象
         self.signals = ItemSignals()
@@ -90,6 +96,13 @@ class BaseNetworkItem(QGraphicsItem):
         self.min_connections = 0   # 最小连接数
         self.current_connections = []  # 当前连接的组件列表
         self.connection_point_states = {}  # 记录每个连接点的占用状态 {point_index: connected_item}
+    
+    def _get_next_index(self):
+        """获取下一个可用的组件索引"""
+        if self.component_type not in self._component_counters:
+            self._component_counters[self.component_type] = 0
+        self._component_counters[self.component_type] += 1
+        return self._component_counters[self.component_type]
     
     def update_label_color(self):
         """根据当前主题更新标签颜色"""
@@ -345,10 +358,10 @@ class BaseNetworkItem(QGraphicsItem):
             
             # 更新bus参数
             if connected_bus:
-                if hasattr(connected_bus, 'component_name') and connected_bus.component_name:
-                    self.properties['bus'] = connected_bus.component_name
+                if hasattr(connected_bus, 'component_index'):
+                    self.properties['bus'] = str(connected_bus.component_index)
                 else:
-                    self.properties['bus'] = connected_bus.properties.get('name', 'Unknown Bus')
+                    self.properties['bus'] = str(connected_bus.properties.get('index', 'Unknown'))
             else:
                 self.properties['bus'] = None
         
@@ -361,8 +374,8 @@ class BaseNetworkItem(QGraphicsItem):
             connected_buses = []
             for connected_item in self.current_connections:
                 if hasattr(connected_item, 'component_type') and connected_item.component_type == 'bus':
-                    bus_name = connected_item.component_name if hasattr(connected_item, 'component_name') and connected_item.component_name else connected_item.properties.get('name', 'Unknown Bus')
-                    connected_buses.append(bus_name)
+                    bus_index = str(connected_item.component_index) if hasattr(connected_item, 'component_index') else str(connected_item.properties.get('index', 'Unknown'))
+                    connected_buses.append(bus_index)
             
             # 更新hv_bus和lv_bus
             if len(connected_buses) >= 2:
@@ -384,8 +397,8 @@ class BaseNetworkItem(QGraphicsItem):
             connected_buses = []
             for connected_item in self.current_connections:
                 if hasattr(connected_item, 'component_type') and connected_item.component_type == 'bus':
-                    bus_name = connected_item.component_name if hasattr(connected_item, 'component_name') and connected_item.component_name else connected_item.properties.get('name', 'Unknown Bus')
-                    connected_buses.append(bus_name)
+                    bus_index = str(connected_item.component_index) if hasattr(connected_item, 'component_index') else str(connected_item.properties.get('index', 'Unknown'))
+                    connected_buses.append(bus_index)
             
             # 更新from_bus和to_bus
             if len(connected_buses) >= 2:
@@ -565,7 +578,10 @@ class StorageItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "storage"
         self.component_name = "储能"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         self.properties = {
+            "index": self.component_index,  # 组件索引
             "p_mw": 10.0,  # 额定功率
             "max_e_mwh": 50.0,  # 最大储能容量
             "soc_percent": 50.0,  # 荷电状态百分比
@@ -599,7 +615,10 @@ class ChargerItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "charger"
         self.component_name = "充电站"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         self.properties = {
+            "index": self.component_index,  # 组件索引
             "p_mw": 5.0,  # 充电功率
             "efficiency": 0.95,  # 充电效率
             "name": "Charger 1",  # 名称
@@ -630,7 +649,10 @@ class BusItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "bus"
         self.component_name = "母线"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         self.properties = {
+            "index": self.component_index,  # 组件索引
             "vn_kv": 20.0,  # 电网电压等级 [kV]
         }
         self.label.setPlainText("母线")
@@ -658,7 +680,10 @@ class LineItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "line"
         self.component_name = "线路"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         self.properties = {
+            "index": self.component_index,  # 组件索引
             # 通用参数
             "length_km": 1.0,  # 线路长度 [km]
             "use_standard_type": True,  # 使用标准类型
@@ -704,7 +729,10 @@ class TransformerItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "transformer"
         self.component_name = "变压器"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         self.properties = {
+            "index": self.component_index,  # 组件索引
             "use_standard_type": True,  # 使用标准类型
             
             # 标准类型参数
@@ -756,7 +784,10 @@ class GeneratorItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "generator"
         self.component_name = "发电机"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         self.properties = {
+            "index": self.component_index,  # 组件索引
             "p_mw": 50.0,  # 有功功率
             "vm_pu": 1.0,  # 电压幅值
             "name": "Generator 1",  # 名称
@@ -785,7 +816,10 @@ class LoadItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "load"
         self.component_name = "负荷"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         self.properties = {
+            "index": self.component_index,  # 组件索引
             "p_mw": 20.0,  # 有功功率
             "q_mvar": 10.0,  # 无功功率
             "name": "Load 1",  # 名称
@@ -812,7 +846,10 @@ class ExternalGridItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "external_grid"
         self.component_name = "外部电网"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         self.properties = {
+            "index": self.component_index,  # 组件索引
             "vm_pu": 1.0,  # 电压标幺值
             "va_degree": 0.0,  # 电压角度
             "name": "External Grid 1",  # 名称
@@ -845,7 +882,10 @@ class StaticGeneratorItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "static_generator"
         self.component_name = "静态发电机"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         self.properties = {
+            "index": self.component_index,  # 组件索引
             # 通用参数
             "use_power_factor": False,  # 使用功率因数模式
             
@@ -888,9 +928,12 @@ class MeterItem(BaseNetworkItem):
         super().__init__(pos, parent)
         self.component_type = "meter"
         self.component_name = "Meter 1"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
         
         # 初始化属性
         self.properties = {
+            "index": self.component_index,  # 组件索引
             "meas_type": "v",  # 测量类型
             "element_type": "bus",  # 测量元件类型
             "value": 0.0,  # 测量值

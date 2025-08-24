@@ -211,20 +211,21 @@ class PropertiesPanel(QWidget):
         self.properties_layout.addStretch()
         
     def get_connected_bus_name(self, item):
-        """获取组件连接的bus名称"""
+        """获取组件连接的bus索引"""
         try:
             # 检查item是否有连接的组件
             if hasattr(item, 'current_connections') and item.current_connections:
                 # 查找连接的bus组件
                 for connected_item in item.current_connections:
                     if hasattr(connected_item, 'component_type') and connected_item.component_type == 'bus':
-                        if hasattr(connected_item, 'component_name') and connected_item.component_name:
-                            return connected_item.component_name
+                        # 返回母线的索引而不是名称
+                        if hasattr(connected_item, 'component_index'):
+                            return str(connected_item.component_index)
                         else:
-                            return f"Bus_{connected_item.properties.get('name', 'Unknown')}"
+                            return connected_item.properties.get('index', 'Unknown')
             return ''
         except Exception as e:
-            print(f"获取连接bus名称时出错: {e}")
+            print(f"获取连接bus索引时出错: {e}")
             return ''
                     
     def create_property_widget(self, prop_name, prop_info, current_value):
@@ -343,9 +344,11 @@ class PropertiesPanel(QWidget):
         # 基于pandapower文档的属性定义
         properties = {
             'bus': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 'vn_kv': {'type': 'float', 'label': '电网电压等级 (kV)', 'default': 20.0, 'min': 0.1}
             },
             'line': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 # 通用参数
                 'length_km': {'type': 'float', 'label': '长度 (km)', 'default': 1.0, 'min': 0.001, 'max': 1000.0, 'decimals': 3},
                 'use_standard_type': {'type': 'bool', 'label': '使用标准类型', 'default': True},
@@ -380,6 +383,7 @@ class PropertiesPanel(QWidget):
                 'to_bus': {'type': 'readonly', 'label': '终止母线'},
             },
             'transformer': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 # 通用参数
                 'use_standard_type': {'type': 'bool', 'label': '使用标准类型', 'default': True},
                 
@@ -424,6 +428,7 @@ class PropertiesPanel(QWidget):
             },
 
             'load': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 # 通用参数
                 'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
                 
@@ -439,11 +444,13 @@ class PropertiesPanel(QWidget):
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'storage': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 0.0, 'min': -10000.0, 'max': 10000.0, 'decimals': 3},
                 'max_e_mwh': {'type': 'float', 'label': '最大储能容量 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0, 'decimals': 3},
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'charger': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 # 通用参数
                 'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
                 
@@ -459,10 +466,12 @@ class PropertiesPanel(QWidget):
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'external_grid': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 # 显示连接的母线
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'generator': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 # 通用参数
                 'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
                 
@@ -478,6 +487,7 @@ class PropertiesPanel(QWidget):
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'static_generator': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 # 通用参数
                 'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
                 
@@ -493,6 +503,7 @@ class PropertiesPanel(QWidget):
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'meter': {
+                'index': {'type': 'readonly', 'label': '组件索引'},
                 'meas_type': {
                     'type': 'choice', 
                     'label': '测量类型', 
