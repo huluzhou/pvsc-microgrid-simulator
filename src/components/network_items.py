@@ -511,8 +511,26 @@ class BaseNetworkItem(QGraphicsItem):
         )
         
         if ok and new_name:
+            # 更新所有名称相关的属性
             self.properties['name'] = new_name
+            self.component_name = new_name
             self.label.setPlainText(new_name)
+            
+            # 通知属性面板刷新并触发信号
+            try:
+                scene = self.scene()
+                if scene:
+                    views = scene.views()
+                    if views:
+                        main_window = views[0].window()
+                        if hasattr(main_window, 'properties_panel'):
+                            # 如果当前组件被选中，刷新属性面板显示
+                            if main_window.properties_panel.current_item == self:
+                                main_window.properties_panel.update_properties(self)
+                            # 触发属性变化信号，确保主窗口能处理这个变化
+                            main_window.properties_panel.property_changed.emit(self.component_type, 'name', new_name)
+            except Exception as e:
+                print(f"刷新属性面板时出错: {e}")
 
 
 class StorageItem(BaseNetworkItem):

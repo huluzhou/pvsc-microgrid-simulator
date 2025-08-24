@@ -78,6 +78,9 @@ class MainWindow(QMainWindow):
         
         # 连接画布选择事件到属性面板更新
         self.canvas.selection_changed.connect(self.properties_panel.update_properties)
+        
+        # 连接属性面板的属性变化信号
+        self.properties_panel.property_changed.connect(self.on_property_changed)
 
     def create_toolbar(self):
         """创建工具栏"""
@@ -421,6 +424,29 @@ class MainWindow(QMainWindow):
             # 清空并重新添加组件以适应新主题
             self.component_palette.clear()
             self.component_palette.add_components()
+    
+    def on_property_changed(self, component_type, prop_name, new_value):
+        """处理组件属性变化事件"""
+        try:
+            # 获取当前选中的组件
+            current_item = self.properties_panel.current_item
+            if not current_item:
+                return
+            
+            # 如果是名称属性变化，需要更新网络模型中的名称
+            if prop_name == 'name':
+                # 更新网络模型（如果存在）
+                if hasattr(self.canvas, 'network_model') and self.canvas.network_model:
+                    # 这里可以添加网络模型更新逻辑
+                    pass
+                
+                # 强制刷新画布显示
+                self.canvas.scene.update()
+                
+            print(f"属性更新: {component_type}.{prop_name} = {new_value}")
+            
+        except Exception as e:
+            print(f"处理属性变化时出错: {e}")
     
     def show_about_dialog(self):
         """显示关于对话框"""
