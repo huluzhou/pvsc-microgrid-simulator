@@ -52,6 +52,9 @@ class NetworkCanvas(QGraphicsView):
         # 设置初始背景颜色
         self.update_background_color()
         
+        # 设置初始滚动条样式
+        self.update_scrollbar_styles()
+        
         # 绘制网格背景
         self.draw_grid()
 
@@ -695,6 +698,9 @@ class NetworkCanvas(QGraphicsView):
         # 更新连接线颜色
         self.update_connection_colors()
         
+        # 更新滚动条样式
+        self.update_scrollbar_styles()
+        
         # 重新绘制网格
         # 先清除现有网格线（z值为-1的线条）
         items_to_remove = []
@@ -715,6 +721,115 @@ class NetworkCanvas(QGraphicsView):
             # 重新加载SVG以适应新主题
             if hasattr(item, 'reload_svg_for_theme'):
                 item.reload_svg_for_theme()
+    
+    def update_scrollbar_styles(self):
+        """更新滚动条样式以适应当前主题"""
+        try:
+            app = QApplication.instance()
+            if app:
+                palette = app.palette()
+                # 检查是否为深色主题
+                bg_color = palette.color(QPalette.Window)
+                is_dark_theme = bg_color.lightness() < 128
+                
+                if is_dark_theme:
+                    # 深色主题滚动条样式
+                    scrollbar_style = """
+                    QScrollBar:vertical {
+                        background-color: rgb(53, 53, 53);
+                        width: 16px;
+                        border: none;
+                    }
+                    QScrollBar::handle:vertical {
+                        background-color: rgb(80, 80, 80);
+                        border-radius: 8px;
+                        min-height: 20px;
+                        margin: 2px;
+                    }
+                    QScrollBar::handle:vertical:hover {
+                        background-color: rgb(100, 100, 100);
+                    }
+                    QScrollBar::handle:vertical:pressed {
+                        background-color: rgb(120, 120, 120);
+                    }
+                    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                        border: none;
+                        background: none;
+                    }
+                    QScrollBar:horizontal {
+                        background-color: rgb(53, 53, 53);
+                        height: 16px;
+                        border: none;
+                    }
+                    QScrollBar::handle:horizontal {
+                        background-color: rgb(80, 80, 80);
+                        border-radius: 8px;
+                        min-width: 20px;
+                        margin: 2px;
+                    }
+                    QScrollBar::handle:horizontal:hover {
+                        background-color: rgb(100, 100, 100);
+                    }
+                    QScrollBar::handle:horizontal:pressed {
+                        background-color: rgb(120, 120, 120);
+                    }
+                    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                        border: none;
+                        background: none;
+                    }
+                    """
+                else:
+                    # 浅色主题滚动条样式
+                    scrollbar_style = """
+                    QScrollBar:vertical {
+                        background-color: rgb(240, 240, 240);
+                        width: 16px;
+                        border: none;
+                    }
+                    QScrollBar::handle:vertical {
+                        background-color: rgb(200, 200, 200);
+                        border-radius: 8px;
+                        min-height: 20px;
+                        margin: 2px;
+                    }
+                    QScrollBar::handle:vertical:hover {
+                        background-color: rgb(180, 180, 180);
+                    }
+                    QScrollBar::handle:vertical:pressed {
+                        background-color: rgb(160, 160, 160);
+                    }
+                    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                        border: none;
+                        background: none;
+                    }
+                    QScrollBar:horizontal {
+                        background-color: rgb(240, 240, 240);
+                        height: 16px;
+                        border: none;
+                    }
+                    QScrollBar::handle:horizontal {
+                        background-color: rgb(200, 200, 200);
+                        border-radius: 8px;
+                        min-width: 20px;
+                        margin: 2px;
+                    }
+                    QScrollBar::handle:horizontal:hover {
+                        background-color: rgb(180, 180, 180);
+                    }
+                    QScrollBar::handle:horizontal:pressed {
+                        background-color: rgb(160, 160, 160);
+                    }
+                    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                        border: none;
+                        background: none;
+                    }
+                    """
+                
+                # 应用滚动条样式
+                self.setStyleSheet(scrollbar_style)
+                
+        except Exception as e:
+            print(f"更新滚动条样式时出错: {e}")
     
     def clear_canvas(self):
         """清空画布"""
