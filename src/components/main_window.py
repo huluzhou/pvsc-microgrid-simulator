@@ -12,7 +12,7 @@ from PySide6.QtGui import QIcon, QAction
 from components.canvas import NetworkCanvas
 from components.component_palette import ComponentPalette
 from components.properties_panel import PropertiesPanel
-
+from models.network_model import NetworkModel
 
 class MainWindow(QMainWindow):
     """主窗口类"""
