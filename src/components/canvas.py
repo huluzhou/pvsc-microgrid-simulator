@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
 from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem
+from models.network_model import NetworkModel
 
 
 class NetworkCanvas(QGraphicsView):
@@ -34,6 +35,8 @@ class NetworkCanvas(QGraphicsView):
             'static_generator': 0,
             'meter': 0
         }
+        # 初始化网络模型
+        self.network_model = None
         self.init_ui()
 
     def init_ui(self):
@@ -232,6 +235,151 @@ class NetworkCanvas(QGraphicsView):
     def handle_item_selected(self, item):
         """处理组件被选中的事件"""
         print(f"组件被选中: {item.component_type}")
+    
+    def create_network_model(self):
+        """从画布上的图形组件创建pandapower网络模型"""
+        try:
+            # 创建新的网络模型
+            self.network_model = NetworkModel()
+            
+            # 获取所有图形组件
+            items = [item for item in self.scene.items() if hasattr(item, 'component_type')]
+            
+            if not items:
+                print("画布上没有组件，无法创建网络模型")
+                return False
+            
+            # 第一步：创建所有母线
+            bus_items = [item for item in items if item.component_type == 'bus']
+            bus_map = {}  # 存储图形项到pandapower母线索引的映射
+            
+            for bus_item in bus_items:
+                try:
+                    bus_idx = self.network_model.create_bus(
+                        id(bus_item),  # 使用对象ID作为唯一标识
+                        bus_item.properties if hasattr(bus_item, 'properties') else {}
+                    )
+                    bus_map[bus_item] = bus_idx
+                    print(f"创建母线: {bus_item.component_name} -> 索引 {bus_idx}")
+                except Exception as e:
+                    print(f"创建母线 {bus_item.component_name} 时出错: {str(e)}")
+                    return False
+            
+            if not bus_map:
+                print("没有有效的母线组件，无法创建网络模型")
+                return False
+            
+            # 第二步：创建连接到母线的组件（负载、发电机等）
+            for item in items:
+                if item.component_type == 'bus':
+                    continue  # 母线已经处理过了
+                
+                try:
+                    # 查找该组件连接的母线
+                    connected_buses = self.get_connected_buses(item, bus_map)
+                    
+                    if item.component_type == 'load':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            load_idx = self.network_model.create_load(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建负载: {item.component_name} -> 母线 {bus_idx}")
+                    
+                    elif item.component_type == 'external_grid':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            ext_grid_idx = self.network_model.create_external_grid(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建外部电网: {item.component_name} -> 母线 {bus_idx}")
+                    
+                    elif item.component_type == 'static_generator':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            sgen_idx = self.network_model.create_static_generator(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建静态发电机: {item.component_name} -> 母线 {bus_idx}")
+                    
+                    elif item.component_type == 'storage':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            storage_idx = self.network_model.create_storage(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建储能: {item.component_name} -> 母线 {bus_idx}")
+                    
+                    elif item.component_type == 'charger':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            charger_idx = self.network_model.create_charger(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建充电站: {item.component_name} -> 母线 {bus_idx}")
+                    
+                    elif item.component_type == 'transformer':
+                        if len(connected_buses) >= 2:
+                            hv_bus = connected_buses[0]
+                            lv_bus = connected_buses[1]
+                            trafo_idx = self.network_model.create_transformer(
+                                id(item),
+                                hv_bus,
+                                lv_bus,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建变压器: {item.component_name} -> 母线 {hv_bus}-{lv_bus}")
+                    
+                    elif item.component_type == 'line':
+                        if len(connected_buses) >= 2:
+                            from_bus = connected_buses[0]
+                            to_bus = connected_buses[1]
+                            line_idx = self.network_model.create_line(
+                                id(item),
+                                from_bus,
+                                to_bus,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建线路: {item.component_name} -> 母线 {from_bus}-{to_bus}")
+                
+                except Exception as e:
+                    print(f"创建组件 {item.component_name} 时出错: {str(e)}")
+                    # 继续处理其他组件，不中断整个过程
+            
+            print(f"网络模型创建完成，包含 {len(self.network_model.net.bus)} 个母线")
+            return True
+            
+        except Exception as e:
+            print(f"创建网络模型时出错: {str(e)}")
+            return False
+    
+    def get_connected_buses(self, item, bus_map):
+        """获取与指定组件连接的母线列表"""
+        connected_buses = []
+        
+        # 获取该组件的所有连接
+        if hasattr(self, 'connections'):
+            for conn in self.connections:
+                if conn['item1'] == item:
+                    # item连接到item2
+                    if conn['item2'] in bus_map:
+                        connected_buses.append(bus_map[conn['item2']])
+                elif conn['item2'] == item:
+                    # item连接到item1
+                    if conn['item1'] in bus_map:
+                        connected_buses.append(bus_map[conn['item1']])
+        
+        return connected_buses
         # 如果已经有一个组件被选中，并且当前选中的是另一个组件，尝试连接它们
         if hasattr(self, 'first_selected_item') and self.first_selected_item and self.first_selected_item != item:
             print(f"尝试连接: {self.first_selected_item.component_type} 和 {item.component_type}")
