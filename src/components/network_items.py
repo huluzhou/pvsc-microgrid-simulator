@@ -580,13 +580,17 @@ class StorageItem(BaseNetworkItem):
         self.component_name = "储能"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Storage {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             "p_mw": 10.0,  # 额定功率
             "max_e_mwh": 50.0,  # 最大储能容量
             "soc_percent": 50.0,  # 荷电状态百分比
-            "name": "Storage 1",  # 名称
+            "name": component_name,  # 名称
             "bus": None,  # 连接的母线
+            "sn": component_name,  # 序列号
+            "brand": "",  # 品牌
         }
         self.label.setPlainText("母线")
         
@@ -617,12 +621,16 @@ class ChargerItem(BaseNetworkItem):
         self.component_name = "充电站"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Charger {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             "p_mw": 5.0,  # 充电功率
             "efficiency": 0.95,  # 充电效率
-            "name": "Charger 1",  # 名称
+            "name": component_name,  # 名称
             "bus": None,  # 连接的母线
+            "sn": component_name,  # 序列号
+            "brand": "",  # 品牌
         }
         self.label.setPlainText("母线")
         
@@ -884,6 +892,8 @@ class StaticGeneratorItem(BaseNetworkItem):
         self.component_name = "静态发电机"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Static Generator {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             # 通用参数
@@ -902,8 +912,10 @@ class StaticGeneratorItem(BaseNetworkItem):
             "scaling": 1.0,  # 缩放因子
             "type": "wye",  # 连接类型
             "in_service": True,  # 投入运行
-            "name": "Static Generator 1",  # 名称
+            "name": component_name,  # 名称
             "bus": None,  # 连接的母线
+            "sn": component_name,  # 序列号
+            "brand": "",  # 品牌
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -930,6 +942,8 @@ class MeterItem(BaseNetworkItem):
         self.component_name = "Meter 1"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Meter {self.component_index}"
         
         # 初始化属性
         self.properties = {
@@ -941,8 +955,10 @@ class MeterItem(BaseNetworkItem):
             "element": 0,  # 元件索引
             "side": None,  # 测量侧
             "in_service": True,  # 投入运行
-            "name": "Meter 1",  # 名称
+            "name": component_name,  # 名称
             "bus": None,  # 连接的母线
+            "sn": component_name,  # 序列号
+            "brand": "",  # 品牌
         }
         self.label.setPlainText(self.properties["name"])
         

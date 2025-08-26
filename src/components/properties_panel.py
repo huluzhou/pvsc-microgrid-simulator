@@ -309,6 +309,13 @@ class PropertiesPanel(QWidget):
                 self.current_item.component_name = new_value
                 if hasattr(self.current_item, 'label'):
                     self.current_item.label.setPlainText(new_value)
+                
+                # 对于电表、储能、充电桩、光伏组件，当name改变时同步更新sn
+                if self.current_item.component_type in ['meter', 'storage', 'charger', 'static_generator']:
+                    self.current_item.properties['sn'] = new_value
+                    # 如果sn属性控件存在，也需要更新其显示值
+                    if 'sn' in self.property_widgets:
+                        self.property_widgets['sn'].setText(new_value)
             
             # 特殊处理线路和变压器的use_standard_type属性改变
             if prop_name == 'use_standard_type' and self.current_item.component_type in ['line', 'transformer']:
@@ -451,6 +458,8 @@ class PropertiesPanel(QWidget):
                 'index': {'type': 'readonly', 'label': '组件索引'},
                 'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 0.0, 'min': -10000.0, 'max': 10000.0, 'decimals': 3},
                 'max_e_mwh': {'type': 'float', 'label': '最大储能容量 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0, 'decimals': 3},
+                'sn': {'type': 'str', 'label': '序列号', 'default': ''},
+                'brand': {'type': 'str', 'label': '品牌', 'default': ''},
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'charger': {
@@ -464,6 +473,10 @@ class PropertiesPanel(QWidget):
                 # 功率因数模式参数
                 'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 0.1, 'min': 0.1, 'max': 1000.0},
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
+                
+                # 设备信息
+                'sn': {'type': 'str', 'label': '序列号', 'default': ''},
+                'brand': {'type': 'str', 'label': '品牌', 'default': ''},
                 
                 # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
@@ -501,6 +514,10 @@ class PropertiesPanel(QWidget):
                 # 功率因数模式参数
                 'sn_mva': {'type': 'float', 'label': '额定功率 (MVA)', 'default': 1.0, 'min': 0.1, 'max': 10000.0},
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
+                
+                # 设备信息
+                'sn': {'type': 'str', 'label': '序列号', 'default': ''},
+                'brand': {'type': 'str', 'label': '品牌', 'default': ''},
                 
                 # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
@@ -553,6 +570,9 @@ class PropertiesPanel(QWidget):
                     ], 
                     'default': None
                 },
+                # 设备信息
+                'sn': {'type': 'str', 'label': '序列号', 'default': ''},
+                'brand': {'type': 'str', 'label': '品牌', 'default': ''},
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
             }
         }
