@@ -173,6 +173,14 @@ class MainWindow(QMainWindow):
         
         # 仿真菜单
         sim_menu = self.menuBar().addMenu("仿真")
+        
+        # 仿真模式菜单项
+        simulation_mode_action = QAction("仿真模式", self)
+        simulation_mode_action.setShortcut("F5")
+        simulation_mode_action.triggered.connect(self.enter_simulation_mode)
+        sim_menu.addAction(simulation_mode_action)
+        
+        sim_menu.addSeparator()
         sim_menu.addAction("运行潮流计算")
         sim_menu.addAction("短路分析")
         
@@ -451,6 +459,75 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             print(f"处理属性变化时出错: {e}")
+    
+    def enter_simulation_mode(self):
+        """进入仿真模式"""
+        try:
+            # 首先进行网络诊断
+            if not self.validate_network():
+                return
+            
+            # 如果诊断通过，创建并显示仿真界面
+            from components.simulation_window import SimulationWindow
+            self.simulation_window = SimulationWindow(self.canvas, self)
+            self.simulation_window.show()
+            
+            self.statusBar().showMessage("已进入仿真模式")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"进入仿真模式时发生错误：{str(e)}")
+    
+    def validate_network(self):
+        """验证网络拓扑和参数"""
+        try:
+            # 检查是否有网络模型
+            if not hasattr(self.canvas, 'network_model') or not self.canvas.network_model:
+                QMessageBox.warning(self, "网络诊断", "当前没有创建网络模型，请先添加电网组件。")
+                return False
+            
+            network_model = self.canvas.network_model
+            
+            # 检查是否有足够的组件
+            if network_model.net.bus.empty:
+                QMessageBox.warning(self, "网络诊断", "网络中没有母线组件，无法进行仿真。")
+                return False
+            
+            # 检查网络连通性
+            bus_count = len(network_model.net.bus)
+            if bus_count < 2:
+                QMessageBox.warning(self, "网络诊断", "网络中母线数量不足，至少需要2个母线才能进行仿真。")
+                return False
+            
+            # 检查是否有电源
+            has_power_source = (
+                not network_model.net.ext_grid.empty or 
+                not network_model.net.gen.empty or 
+                not network_model.net.sgen.empty
+            )
+            
+            if not has_power_source:
+                QMessageBox.warning(self, "网络诊断", "网络中没有电源（外部电网、发电机或静态发电机），无法进行潮流计算。")
+                return False
+            
+            # 尝试运行基本的网络检查
+            import pandapower as pp
+            try:
+                # 创建网络副本进行测试
+                test_net = network_model.net.deepcopy()
+                # 运行基本的网络一致性检查
+                pp.diagnostic(test_net, report_style='compact')
+                
+            except Exception as e:
+                QMessageBox.warning(self, "网络诊断", f"网络拓扑检查发现问题：{str(e)}\n\n建议检查组件连接和参数设置。")
+                return False
+            
+            # 所有检查通过
+            QMessageBox.information(self, "网络诊断", "网络诊断通过，可以进入仿真模式。")
+            return True
+            
+        except Exception as e:
+            QMessageBox.critical(self, "网络诊断错误", f"网络诊断过程中发生错误：{str(e)}")
+            return False
     
     def show_about_dialog(self):
         """显示关于对话框"""
