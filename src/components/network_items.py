@@ -934,7 +934,7 @@ class MeterItem(BaseNetworkItem):
         # 初始化属性
         self.properties = {
             "index": self.component_index,  # 组件索引
-            "meas_type": "v",  # 测量类型
+            "meas_type": "p",  # 测量类型 - 默认测量有功功率
             "element_type": "bus",  # 测量元件类型
             "value": 0.0,  # 测量值
             "std_dev": 0.01,  # 标准偏差

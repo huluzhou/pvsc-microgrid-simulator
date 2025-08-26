@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
     QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox,
-    QScrollArea, QFrame, QPushButton, QFormLayout
+    QScrollArea, QFrame, QPushButton, QFormLayout, QApplication
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPalette, QColor
 
 
 class PropertiesPanel(QWidget):
@@ -18,6 +18,9 @@ class PropertiesPanel(QWidget):
         self.current_item = None
         self.property_widgets = {}
         self.init_ui()
+        
+        # 初始化主题
+        self.update_theme_colors()
         
         # 移除 standard_types，直接通过标准类型创建 pandapower 组件
         
@@ -62,10 +65,11 @@ class PropertiesPanel(QWidget):
         """显示未选中组件的提示"""
         self.clear_properties()
         
-        label = QLabel("请选择一个组件以查看其属性")
-        label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
-        self.properties_layout.addWidget(label)
+        self.no_selection_label = QLabel("请选择一个组件以查看其属性")
+        self.no_selection_label.setAlignment(Qt.AlignCenter)
+        self.no_selection_label.setObjectName("noSelectionLabel")
+        self.update_no_selection_style()
+        self.properties_layout.addWidget(self.no_selection_label)
         
     def clear_properties(self):
         """清空属性显示"""
@@ -515,7 +519,7 @@ class PropertiesPanel(QWidget):
                         ('va', '电压角度 (VA)'),
                         ('ia', '电流角度 (IA)')
                     ], 
-                    'default': 'v'
+                    'default': 'p'
                 },
                 'element_type': {
                     'type': 'choice', 
@@ -535,8 +539,6 @@ class PropertiesPanel(QWidget):
                     ], 
                     'default': 'bus'
                 },
-                'value': {'type': 'float', 'label': '测量值', 'default': 0.0, 'min': -999999.0, 'max': 999999.0, 'decimals': 6},
-                'std_dev': {'type': 'float', 'label': '标准偏差', 'default': 0.01, 'min': 0.0, 'max': 999999.0, 'decimals': 6},
                 'element': {'type': 'int', 'label': '元件索引', 'default': 0, 'min': 0, 'max': 999999},
                 'side': {
                     'type': 'choice', 
@@ -552,8 +554,327 @@ class PropertiesPanel(QWidget):
                     'default': None
                 },
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
-                'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             }
         }
         
         return properties.get(component_type, {})
+    
+    def is_dark_theme(self):
+        """检测是否为深色主题"""
+        app = QApplication.instance()
+        if app:
+            palette = app.palette()
+            window_color = palette.color(QPalette.Window)
+            return window_color.lightness() < 128
+        return False
+    
+    def update_theme_colors(self):
+        """更新主题相关的所有颜色"""
+        is_dark = self.is_dark_theme()
+        
+        if is_dark:
+            # 深色主题样式
+            self.setStyleSheet("""
+                QWidget {
+                    background-color: rgb(53, 53, 53);
+                    color: rgb(255, 255, 255);
+                }
+                QLabel {
+                    color: rgb(255, 255, 255);
+                }
+                QGroupBox {
+                    color: rgb(255, 255, 255);
+                    border: 2px solid rgb(80, 80, 80);
+                    border-radius: 5px;
+                    margin-top: 10px;
+                    padding-top: 5px;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 10px;
+                    padding: 0 5px 0 5px;
+                    color: rgb(255, 255, 255);
+                }
+                QLineEdit {
+                    background-color: rgb(42, 42, 42);
+                    border: 1px solid rgb(80, 80, 80);
+                    border-radius: 3px;
+                    padding: 4px;
+                    color: rgb(255, 255, 255);
+                }
+                QLineEdit:focus {
+                    border: 2px solid rgb(42, 130, 218);
+                }
+                QLineEdit:read-only {
+                    background-color: rgb(60, 60, 60);
+                    color: rgb(200, 200, 200);
+                }
+                QComboBox {
+                    background-color: rgb(42, 42, 42);
+                    border: 1px solid rgb(80, 80, 80);
+                    border-radius: 3px;
+                    padding: 4px;
+                    color: rgb(255, 255, 255);
+                }
+                QComboBox:focus {
+                    border: 2px solid rgb(42, 130, 218);
+                }
+                QComboBox::drop-down {
+                    border: none;
+                    width: 0px;
+                }
+                QComboBox::down-arrow {
+                    image: none;
+                    width: 0px;
+                    height: 0px;
+                }
+                QSpinBox, QDoubleSpinBox {
+                    background-color: rgb(42, 42, 42);
+                    border: 1px solid rgb(80, 80, 80);
+                    border-radius: 3px;
+                    padding: 4px;
+                    color: rgb(255, 255, 255);
+                }
+                QSpinBox:focus, QDoubleSpinBox:focus {
+                    border: 2px solid rgb(42, 130, 218);
+                }
+                QSpinBox::up-button, QDoubleSpinBox::up-button {
+                    width: 0px;
+                    height: 0px;
+                }
+                QSpinBox::down-button, QDoubleSpinBox::down-button {
+                    width: 0px;
+                    height: 0px;
+                }
+                QCheckBox {
+                    color: rgb(255, 255, 255);
+                }
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                    border: 1px solid rgb(80, 80, 80);
+                    border-radius: 3px;
+                    background-color: rgb(42, 42, 42);
+                }
+                QCheckBox::indicator:checked {
+                    background-color: rgb(42, 130, 218);
+                    border: 1px solid rgb(42, 130, 218);
+                }
+                QScrollArea {
+                    border: none;
+                    background-color: rgb(53, 53, 53);
+                }
+                QScrollBar:vertical {
+                    background-color: rgb(53, 53, 53);
+                    width: 16px;
+                    border: none;
+                }
+                QScrollBar::handle:vertical {
+                    background-color: rgb(80, 80, 80);
+                    border-radius: 8px;
+                    min-height: 20px;
+                    margin: 2px;
+                }
+                QScrollBar::handle:vertical:hover {
+                    background-color: rgb(100, 100, 100);
+                }
+                QScrollBar::handle:vertical:pressed {
+                    background-color: rgb(120, 120, 120);
+                }
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    border: none;
+                    background: none;
+                }
+                QScrollBar:horizontal {
+                    background-color: rgb(53, 53, 53);
+                    height: 16px;
+                    border: none;
+                }
+                QScrollBar::handle:horizontal {
+                    background-color: rgb(80, 80, 80);
+                    border-radius: 8px;
+                    min-width: 20px;
+                    margin: 2px;
+                }
+                QScrollBar::handle:horizontal:hover {
+                    background-color: rgb(100, 100, 100);
+                }
+                QScrollBar::handle:horizontal:pressed {
+                    background-color: rgb(120, 120, 120);
+                }
+                QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                    border: none;
+                    background: none;
+                }
+                QFrame[frameShape="4"] {
+                    color: rgb(80, 80, 80);
+                }
+            """)
+        else:
+            # 浅色主题样式
+            self.setStyleSheet("""
+                QWidget {
+                    background-color: rgb(240, 240, 240);
+                    color: rgb(0, 0, 0);
+                }
+                QLabel {
+                    color: rgb(0, 0, 0);
+                }
+                QGroupBox {
+                    color: rgb(0, 0, 0);
+                    border: 2px solid rgb(200, 200, 200);
+                    border-radius: 5px;
+                    margin-top: 10px;
+                    padding-top: 5px;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 10px;
+                    padding: 0 5px 0 5px;
+                    color: rgb(0, 0, 0);
+                }
+                QLineEdit {
+                    background-color: rgb(255, 255, 255);
+                    border: 1px solid rgb(200, 200, 200);
+                    border-radius: 3px;
+                    padding: 4px;
+                    color: rgb(0, 0, 0);
+                }
+                QLineEdit:focus {
+                    border: 2px solid rgb(0, 120, 215);
+                }
+                QLineEdit:read-only {
+                    background-color: rgb(245, 245, 245);
+                    color: rgb(100, 100, 100);
+                }
+                QComboBox {
+                    background-color: rgb(255, 255, 255);
+                    border: 1px solid rgb(200, 200, 200);
+                    border-radius: 3px;
+                    padding: 4px;
+                    color: rgb(0, 0, 0);
+                }
+                QComboBox:focus {
+                    border: 2px solid rgb(0, 120, 215);
+                }
+                QComboBox::drop-down {
+                    border: none;
+                    width: 0px;
+                }
+                QComboBox::down-arrow {
+                    image: none;
+                    width: 0px;
+                    height: 0px;
+                }
+                QSpinBox, QDoubleSpinBox {
+                    background-color: rgb(255, 255, 255);
+                    border: 1px solid rgb(200, 200, 200);
+                    border-radius: 3px;
+                    padding: 4px;
+                    color: rgb(0, 0, 0);
+                }
+                QSpinBox:focus, QDoubleSpinBox:focus {
+                    border: 2px solid rgb(0, 120, 215);
+                }
+                QSpinBox::up-button, QDoubleSpinBox::up-button {
+                    width: 0px;
+                    height: 0px;
+                }
+                QSpinBox::down-button, QDoubleSpinBox::down-button {
+                    width: 0px;
+                    height: 0px;
+                }
+                QCheckBox {
+                    color: rgb(0, 0, 0);
+                }
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                    border: 1px solid rgb(200, 200, 200);
+                    border-radius: 3px;
+                    background-color: rgb(255, 255, 255);
+                }
+                QCheckBox::indicator:checked {
+                    background-color: rgb(0, 120, 215);
+                    border: 1px solid rgb(0, 120, 215);
+                }
+                QScrollArea {
+                    border: none;
+                    background-color: rgb(240, 240, 240);
+                }
+                QScrollBar:vertical {
+                    background-color: rgb(240, 240, 240);
+                    width: 16px;
+                    border: none;
+                }
+                QScrollBar::handle:vertical {
+                    background-color: rgb(200, 200, 200);
+                    border-radius: 8px;
+                    min-height: 20px;
+                    margin: 2px;
+                }
+                QScrollBar::handle:vertical:hover {
+                    background-color: rgb(180, 180, 180);
+                }
+                QScrollBar::handle:vertical:pressed {
+                    background-color: rgb(160, 160, 160);
+                }
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    border: none;
+                    background: none;
+                }
+                QScrollBar:horizontal {
+                    background-color: rgb(240, 240, 240);
+                    height: 16px;
+                    border: none;
+                }
+                QScrollBar::handle:horizontal {
+                    background-color: rgb(200, 200, 200);
+                    border-radius: 8px;
+                    min-width: 20px;
+                    margin: 2px;
+                }
+                QScrollBar::handle:horizontal:hover {
+                    background-color: rgb(180, 180, 180);
+                }
+                QScrollBar::handle:horizontal:pressed {
+                    background-color: rgb(160, 160, 160);
+                }
+                QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                    border: none;
+                    background: none;
+                }
+                QFrame[frameShape="4"] {
+                    color: rgb(200, 200, 200);
+                }
+            """)
+        
+        # 更新"未选中组件"提示的样式
+        self.update_no_selection_style()
+    
+    def update_no_selection_style(self):
+        """更新未选中组件提示的样式"""
+        try:
+            if hasattr(self, 'no_selection_label') and self.no_selection_label and not self.no_selection_label.isHidden():
+                is_dark = self.is_dark_theme()
+                if is_dark:
+                    self.no_selection_label.setStyleSheet("""
+                        QLabel#noSelectionLabel {
+                            color: rgb(150, 150, 150);
+                            font-style: italic;
+                            padding: 20px;
+                            font-size: 14px;
+                        }
+                    """)
+                else:
+                    self.no_selection_label.setStyleSheet("""
+                        QLabel#noSelectionLabel {
+                            color: rgb(120, 120, 120);
+                            font-style: italic;
+                            padding: 20px;
+                            font-size: 14px;
+                        }
+                    """)
+        except RuntimeError:
+            # QLabel对象已被删除，忽略错误
+            pass

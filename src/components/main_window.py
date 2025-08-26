@@ -424,6 +424,10 @@ class MainWindow(QMainWindow):
             # 清空并重新添加组件以适应新主题
             self.component_palette.clear()
             self.component_palette.add_components()
+        
+        # 更新属性面板主题
+        if hasattr(self, 'properties_panel'):
+            self.properties_panel.update_theme_colors()
     
     def on_property_changed(self, component_type, prop_name, new_value):
         """处理组件属性变化事件"""

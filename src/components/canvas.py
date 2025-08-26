@@ -373,7 +373,109 @@ class NetworkCanvas(QGraphicsView):
             'point_index2': point_index2
         })
         
+        # 电表连接后自动获取测量元件信息
+        self._update_meter_properties_on_connection(item1, item2, point_index1, point_index2)
+        
         return True
+    
+    def _update_meter_properties_on_connection(self, item1, item2, point_index1, point_index2):
+        """电表连接后自动更新测量属性"""
+        meter_item = None
+        connected_item = None
+        connected_point_index = None
+        
+        # 确定哪个是电表，哪个是被连接的组件
+        if hasattr(item1, 'component_type') and item1.component_type == 'meter':
+            meter_item = item1
+            connected_item = item2
+            connected_point_index = point_index2
+        elif hasattr(item2, 'component_type') and item2.component_type == 'meter':
+            meter_item = item2
+            connected_item = item1
+            connected_point_index = point_index1
+        
+        if not meter_item or not connected_item:
+            return
+        
+        # 获取连接组件的类型和索引
+        connected_type = getattr(connected_item, 'component_type', None)
+        connected_index = getattr(connected_item, 'component_index', 0)
+        
+        if not connected_type:
+            return
+        
+        # 组件类型映射：将图形组件类型映射到pandapower元件类型
+        type_mapping = {
+            'transformer': 'trafo',
+            'static_generator': 'sgen',
+            'external_grid': 'ext_grid'
+        }
+        
+        # 转换组件类型
+        element_type = type_mapping.get(connected_type, connected_type)
+        
+        # 更新电表的测量属性
+        meter_item.properties['element_type'] = element_type
+        meter_item.properties['element'] = connected_index
+        
+        # 根据组件类型和连接点索引设置测量侧
+        side = self._determine_measurement_side(connected_item, connected_point_index)
+        meter_item.properties['side'] = side
+        
+        # 根据连接的组件类型设置合适的测量类型
+        # 除非手动指定，都设置为测量有功功率
+        meter_item.properties['meas_type'] = 'p'  # 默认测量有功功率
+        
+        print(f"电表 {meter_item.component_name} 已自动配置:")
+        print(f"  测量元件类型: {meter_item.properties['element_type']}")
+        print(f"  元件索引: {meter_item.properties['element']}")
+        print(f"  测量侧: {meter_item.properties['side']}")
+        print(f"  测量类型: {meter_item.properties['meas_type']}")
+        print(f"  连接点索引: {connected_point_index}")
+        
+        # 强制刷新属性面板显示
+        if hasattr(self, 'main_window') and self.main_window:
+            properties_panel = getattr(self.main_window, 'properties_panel', None)
+            if properties_panel:
+                # 如果电表当前被选中，立即刷新属性面板
+                if hasattr(properties_panel, 'current_item') and properties_panel.current_item == meter_item:
+                    properties_panel.update_properties(meter_item)
+                # 触发选择变化信号，确保属性面板能正确更新
+                self.selection_changed.emit(meter_item)
+        
+    def _determine_measurement_side(self, connected_item, point_index):
+        """根据连接的组件类型和连接点索引确定测量侧"""
+        if not hasattr(connected_item, 'component_type'):
+            return None
+            
+        component_type = connected_item.component_type
+        
+        # 对于变压器和线路，根据连接点索引确定测量侧
+        if component_type == 'transformer':
+            if point_index is not None:
+                # 通常第一个连接点(索引0)是高压侧，第二个连接点(索引1)是低压侧
+                if point_index == 0:
+                    return 'hv'  # 高压侧
+                elif point_index == 1:
+                    return 'lv'  # 低压侧
+                else:
+                    return 'hv'  # 默认高压侧
+            else:
+                return 'hv'  # 默认高压侧
+        elif component_type == 'line':
+            if point_index is not None:
+                # 通常第一个连接点(索引0)是from侧，第二个连接点(索引1)是to侧
+                if point_index == 0:
+                    return 'from'  # 从侧
+                elif point_index == 1:
+                    return 'to'  # 到侧
+                else:
+                    return 'from'  # 默认从侧
+            else:
+                return 'from'  # 默认从侧
+        else:
+            # 对于其他组件（bus、load、generator等），不需要侧别
+            return None
         
     def find_nearest_connection_point(self, source_item, target_item):
         """找到最近的可用连接点"""
