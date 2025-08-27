@@ -356,10 +356,12 @@ class PropertiesPanel(QWidget):
         properties = {
             'bus': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
-                'vn_kv': {'type': 'float', 'label': '电网电压等级 (kV)', 'default': 20.0, 'min': 0.1}
+                'vn_kv': {'type': 'float', 'label': '电网电压等级 (kV)', 'default': 20.0, 'min': 0.1},
+                'geodata': {'type': 'readonly', 'label': '位置'}
             },
             'line': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
+                'geodata': {'type': 'readonly', 'label': '位置'},
                 # 通用参数
                 'length_km': {'type': 'float', 'label': '长度 (km)', 'default': 1.0, 'min': 0.001, 'max': 1000.0, 'decimals': 3},
                 'use_standard_type': {'type': 'bool', 'label': '使用标准类型', 'default': True},
@@ -395,6 +397,7 @@ class PropertiesPanel(QWidget):
             },
             'transformer': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
+                'geodata': {'type': 'readonly', 'label': '位置'},
                 # 通用参数
                 'use_standard_type': {'type': 'bool', 'label': '使用标准类型', 'default': True},
                 
@@ -440,6 +443,7 @@ class PropertiesPanel(QWidget):
 
             'load': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
+                'geodata': {'type': 'readonly', 'label': '位置'},
                 # 通用参数
                 'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
                 
@@ -456,6 +460,7 @@ class PropertiesPanel(QWidget):
             },
             'storage': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
+                'geodata': {'type': 'readonly', 'label': '位置'},
                 'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 0.0, 'min': -10000.0, 'max': 10000.0, 'decimals': 3},
                 'max_e_mwh': {'type': 'float', 'label': '最大储能容量 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0, 'decimals': 3},
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
@@ -467,6 +472,7 @@ class PropertiesPanel(QWidget):
             },
             'charger': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
+                'geodata': {'type': 'readonly', 'label': '位置'},
                 # 通用参数
                 'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
                 
@@ -489,11 +495,13 @@ class PropertiesPanel(QWidget):
             },
             'external_grid': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
+                'geodata': {'type': 'readonly', 'label': '位置'},
                 # 显示连接的母线
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'generator': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
+                'geodata': {'type': 'readonly', 'label': '位置'},
                 # 通用参数
                 'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
                 
@@ -510,6 +518,7 @@ class PropertiesPanel(QWidget):
             },
             'static_generator': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
+                'geodata': {'type': 'readonly', 'label': '位置'},
                 # 通用参数
                 'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
                 
@@ -532,6 +541,7 @@ class PropertiesPanel(QWidget):
             },
             'meter': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
+                'geodata': {'type': 'readonly', 'label': '位置'},
                 'meas_type': {
                     'type': 'choice', 
                     'label': '测量类型', 

@@ -509,6 +509,8 @@ class MainWindow(QMainWindow):
     def enter_simulation_mode(self):
         """进入仿真模式"""
         try:
+            if not self.canvas.create_network_model():
+                return
             # 首先进行网络诊断
             if not self.validate_network():
                 return

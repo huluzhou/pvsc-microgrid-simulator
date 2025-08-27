@@ -60,7 +60,6 @@ class BaseNetworkItem(QGraphicsItem):
         self.component_type = "base"
         self.component_name = "基础组件"
         self.properties = {}
-        self.geodata = None  # 默认值为None，后续会更新为(x,y)元组
         
         # 索引将在子类中设置component_type后分配
         self.component_index = None
@@ -239,7 +238,23 @@ class BaseNetworkItem(QGraphicsItem):
             self.update_connections()
             # 更新geodata为当前位置的(x,y)元组
             pos = self.pos()
-            self.geodata = (pos.x(), pos.y())
+            self.properties["geodata"] = (pos.x(), pos.y())
+            
+            # 通知属性面板刷新
+            try:
+                scene = self.scene()
+                if scene:
+                    views = scene.views()
+                    if views:
+                        main_window = views[0].window()
+                        if hasattr(main_window, 'properties_panel'):
+                            # 如果当前组件被选中，刷新属性面板显示
+                            if main_window.properties_panel.current_item == self:
+                                main_window.properties_panel.update_properties(self)
+                            # 触发属性变化信号，确保主窗口能处理这个变化
+                            main_window.properties_panel.property_changed.emit(self.component_type, 'geodata', self.properties["geodata"])
+            except Exception as e:
+                print(f"刷新属性面板时出错: {e}")
         return super().itemChange(change, value)
         
     def update_connections(self):
@@ -587,16 +602,17 @@ class StorageItem(BaseNetworkItem):
         # 动态生成名称
         component_name = f"Storage {self.component_index}"
         self.properties = {
+            "name": component_name,  # 名称
             "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
             "p_mw": 10.0,  # 额定功率
             "max_e_mwh": 50.0,  # 最大储能容量
             "soc_percent": 50.0,  # 荷电状态百分比
-            "name": component_name,  # 名称
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
-            "ip": "",
-            "port": "",
+            "ip": "192.168.1.100",
+            "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText("母线")
         
@@ -631,14 +647,15 @@ class ChargerItem(BaseNetworkItem):
         component_name = f"Charger {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
             "p_mw": 5.0,  # 充电功率
             "efficiency": 0.95,  # 充电效率
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
-            "ip": "",
-            "port": "",
+            "ip": "192.168.1.100",
+            "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText("母线")
         
@@ -670,6 +687,7 @@ class BusItem(BaseNetworkItem):
         self.properties = {
             "index": self.component_index,  # 组件索引
             "vn_kv": 20.0,  # 电网电压等级 [kV]
+            "geodata": (0, 0),
         }
         self.label.setPlainText("母线")
         
@@ -700,6 +718,7 @@ class LineItem(BaseNetworkItem):
         self.component_index = self._get_next_index()
         self.properties = {
             "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
             # 通用参数
             "length_km": 1.0,  # 线路长度 [km]
             "use_standard_type": True,  # 使用标准类型
@@ -749,6 +768,7 @@ class TransformerItem(BaseNetworkItem):
         self.component_index = self._get_next_index()
         self.properties = {
             "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
             "use_standard_type": True,  # 使用标准类型
             
             # 标准类型参数
@@ -804,12 +824,13 @@ class GeneratorItem(BaseNetworkItem):
         self.component_index = self._get_next_index()
         self.properties = {
             "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
             "p_mw": 50.0,  # 有功功率
             "vm_pu": 1.0,  # 电压幅值
             "name": "Generator 1",  # 名称
             "bus": None,  # 连接的母线
-            "ip": "",
-            "port": "",
+            "ip": "192.168.1.100",
+            "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -838,12 +859,13 @@ class LoadItem(BaseNetworkItem):
         self.component_index = self._get_next_index()
         self.properties = {
             "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
             "p_mw": 20.0,  # 有功功率
             "q_mvar": 10.0,  # 无功功率
             "name": "Load 1",  # 名称
             "bus": None,  # 连接的母线
-            "ip": "",
-            "port": "",
+            "ip": "192.168.1.100",
+            "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -870,6 +892,7 @@ class ExternalGridItem(BaseNetworkItem):
         self.component_index = self._get_next_index()
         self.properties = {
             "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
             "vm_pu": 1.0,  # 电压标幺值
             "va_degree": 0.0,  # 电压角度
             "name": "External Grid 1",  # 名称
@@ -908,6 +931,7 @@ class StaticGeneratorItem(BaseNetworkItem):
         component_name = f"Static Generator {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
             # 通用参数
             "use_power_factor": False,  # 使用功率因数模式
             
@@ -928,8 +952,8 @@ class StaticGeneratorItem(BaseNetworkItem):
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
-            "ip": "",
-            "port": "",
+            "ip": "192.168.1.100",
+            "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -962,6 +986,7 @@ class MeterItem(BaseNetworkItem):
         # 初始化属性
         self.properties = {
             "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
             "meas_type": "p",  # 测量类型 - 默认测量有功功率
             "element_type": "bus",  # 测量元件类型
             "value": 0.0,  # 测量值
@@ -973,8 +998,8 @@ class MeterItem(BaseNetworkItem):
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
-            "ip": "",
-            "port": "",
+            "ip": "192.168.1.100",
+            "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText(self.properties["name"])
         

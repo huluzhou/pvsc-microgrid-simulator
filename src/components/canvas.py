@@ -224,6 +224,10 @@ class NetworkCanvas(QGraphicsView):
             if hasattr(item, 'label'):
                 item.label.setPlainText(auto_name)
             
+            # 更新geodata属性为实际放置位置
+            if hasattr(item, 'properties'):
+                item.properties['geodata'] = (pos.x(), pos.y())
+            
             self.scene.addItem(item)
             # 连接信号
             item.signals.itemSelected.connect(self.handle_item_selected)
@@ -231,10 +235,32 @@ class NetworkCanvas(QGraphicsView):
             return item
         
         return None
-        
+
     def handle_item_selected(self, item):
         """处理组件被选中的事件"""
         print(f"组件被选中: {item.component_type}")
+        # 如果已经有一个组件被选中，并且当前选中的是另一个组件，尝试连接它们
+        if (
+            hasattr(self, "first_selected_item")
+            and self.first_selected_item
+            and self.first_selected_item != item
+        ):
+            print(
+                f"尝试连接: {self.first_selected_item.component_type} 和 {item.component_type}"
+            )
+            # 如果两个组件都是可连接的，创建连接
+            if self.can_connect(self.first_selected_item, item):
+                print("可以连接，创建连接线")
+                self.connect_items(self.first_selected_item, item)
+            else:
+                print("不能连接这两个组件")
+
+            # 重置选中状态
+            self.first_selected_item = None
+        else:
+            # 记录第一个选中的组件
+            print(f"记录第一个选中的组件: {item.component_type}")
+            self.first_selected_item = item
     
     def create_network_model(self):
         """从画布上的图形组件创建pandapower网络模型"""
@@ -379,23 +405,8 @@ class NetworkCanvas(QGraphicsView):
                     if conn['item1'] in bus_map:
                         connected_buses.append(bus_map[conn['item1']])
         
-        # 如果已经有一个组件被选中，并且当前选中的是另一个组件，尝试连接它们
-        if hasattr(self, 'first_selected_item') and self.first_selected_item and self.first_selected_item != item:
-            print(f"尝试连接: {self.first_selected_item.component_type} 和 {item.component_type}")
-            # 如果两个组件都是可连接的，创建连接
-            if self.can_connect(self.first_selected_item, item):
-                print("可以连接，创建连接线")
-                self.connect_items(self.first_selected_item, item)
-            else:
-                print("不能连接这两个组件")
-            
-            # 重置选中状态
-            self.first_selected_item = None
-        else:
-            # 记录第一个选中的组件
-            print(f"记录第一个选中的组件: {item.component_type}")
-            self.first_selected_item = item
         return connected_buses
+
             
 
     

@@ -32,11 +32,12 @@ class NetworkModel:
             self.net,
             vn_kv=properties.get("vn_kv", 10.0),
             name=properties.get("name", "Bus"),
+            index=properties.get("index", None),
             type=properties.get("type", "b"),
             zone=properties.get("zone", None),
             in_service=properties.get("in_service", True),
-            max_vm_pu=properties.get("max_vm_pu", float('nan')),
-            min_vm_pu=properties.get("min_vm_pu", float('nan')),
+            max_vm_pu=properties.get("max_vm_pu", float("nan")),
+            min_vm_pu=properties.get("min_vm_pu", float("nan")),
         )
         self.component_map[item_id] = {"type": "bus", "idx": bus_idx}
         return bus_idx
