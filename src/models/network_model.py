@@ -34,7 +34,6 @@ class NetworkModel:
             name=properties.get("name", "Bus"),
             index=properties.get("index", None),
             type=properties.get("type", "b"),
-            zone=properties.get("zone", None),
             in_service=properties.get("in_service", True),
             max_vm_pu=properties.get("max_vm_pu", float("nan")),
             min_vm_pu=properties.get("min_vm_pu", float("nan")),
@@ -50,18 +49,38 @@ class NetworkModel:
             from_bus: 起始母线索引
             to_bus: 终止母线索引
             properties: 线路属性
+            is_std: 是否使用标准线路类型
         
         Returns:
             int: pandapower线路索引
         """
-        line_idx = pp.create_line(
-            self.net,
-            from_bus=from_bus,
-            to_bus=to_bus,
-            length_km=properties.get("length_km", 10.0),
-            std_type="NAYY 4x50 SE",  # 默认线路类型
-            name=properties.get("name", "Line"),
-        )
+        is_std = properties.get("use_standard_type", True)
+        if is_std:
+            line_idx = pp.create_line(
+                self.net,
+                from_bus=from_bus,
+                to_bus=to_bus,
+                length_km=properties.get("length_km", 10.0),
+                std_type="NAYY 4x50 SE",  # 默认线路类型
+                name=properties.get("name", "Line"),
+                index=properties.get("index", None),
+            )
+        else:
+            line_idx = pp.create_line_from_parameters(
+                self.net,
+                from_bus=from_bus,
+                to_bus=to_bus,
+                length_km=properties.get("length_km", 10.0),
+                r_ohm_per_km=properties.get("r_ohm_per_km", 0.1),
+                x_ohm_per_km=properties.get("x_ohm_per_km", 0.1),
+                c_nf_per_km=properties.get("c_nf_per_km", 0.0),
+                r0_ohm_per_km=properties.get("r0_ohm_per_km", 0.0),
+                x0_ohm_per_km=properties.get("x0_ohm_per_km", 0.0),
+                c0_nf_per_km=properties.get("c0_nf_per_km", 0.0),
+                max_i_ka=properties.get("max_i_ka", 1.0),
+                name=properties.get("name", "Line"),
+                index=properties.get("index", None),
+            )
         self.component_map[item_id] = {"type": "line", "idx": line_idx}
         return line_idx
 
@@ -77,13 +96,31 @@ class NetworkModel:
         Returns:
             int: pandapower变压器索引
         """
-        trafo_idx = pp.create_transformer(
-            self.net,
-            hv_bus=hv_bus,
-            lv_bus=lv_bus,
-            std_type="160 MVA 380/110 kV",  # 默认变压器类型
-            name=properties.get("name", "Transformer"),
-        )
+        is_std = properties.get("use_standard_type", True)
+        if is_std:
+            trafo_idx = pp.create_transformer(
+                self.net,
+                hv_bus=hv_bus,
+                lv_bus=lv_bus,
+                std_type="160 MVA 380/110 kV",  # 默认变压器类型
+                name=properties.get("name", "Transformer"),
+                index=properties.get("index", None),
+            )
+        else:
+            trafo_idx = pp.create_transformer_from_parameters(
+                self.net,
+                hv_bus=hv_bus,
+                lv_bus=lv_bus,
+                sn_mva=properties.get("sn_mva", 160.0),
+                vn_hv_kv=properties.get("vn_hv_kv", 380.0),
+                vn_lv_kv=properties.get("vn_lv_kv", 110.0),
+                vkr_percent=properties.get("vkr_percent", 0.0),
+                vk_percent=properties.get("vk_percent", 0.0),
+                pfe_kw=properties.get("pfe_kw", 0.0),
+                i0_percent=properties.get("i0_percent", 0.0),
+                name=properties.get("name", "Transformer"),
+                index=properties.get("index", None),
+            )
         self.component_map[item_id] = {"type": "transformer", "idx": trafo_idx}
         return trafo_idx
 
@@ -102,8 +139,9 @@ class NetworkModel:
             self.net,
             bus=bus,
             p_mw=properties.get("p_mw", 100.0),
-            vm_pu=properties.get("vm_pu", 1.0),
             name=properties.get("name", "Generator"),
+            index=properties.get("index", None),
+            in_service=properties.get("in_service", True),
         )
         self.component_map[item_id] = {"type": "generator", "idx": gen_idx}
         return gen_idx
@@ -126,7 +164,7 @@ class NetworkModel:
             # 使用功率因数模式 - 调用create_load_from_cosphi
             sn_mva = properties.get("sn_mva", 1.0)
             cos_phi = properties.get("cos_phi", 0.9)
-            mode = "underexcited"  # 默认为欠励磁模式（吸收无功功率）
+            mode = properties.get("mode", "underexcited")
             
             load_idx = pp.create_load_from_cosphi(
                 self.net,
@@ -134,7 +172,9 @@ class NetworkModel:
                 sn_mva=sn_mva,
                 cos_phi=cos_phi,
                 mode=mode,
-                name=properties.get("name", "Load")
+                name=properties.get("name", "Load"),
+                index=properties.get("index", None),
+                in_service=properties.get("in_service", True),
             )
         else:
             # 直接使用有功功率模式 - 调用create_load
@@ -144,7 +184,9 @@ class NetworkModel:
                 self.net,
                 bus=bus,
                 p_mw=p_mw,
-                name=properties.get("name", "Load")
+                name=properties.get("name", "Load"),
+                index=properties.get("index", None),
+                in_service=properties.get("in_service", True),
             )
         
         self.component_map[item_id] = {"type": "load", "idx": load_idx}
@@ -165,7 +207,10 @@ class NetworkModel:
             self.net,
             bus=bus,
             p_mw=properties.get("p_mw", 0.0),
-            max_e_mwh=properties.get("max_e_mwh", 1.0)
+            max_e_mwh=properties.get("max_e_mwh", 1.0),
+            name=properties.get("name", "Storage"),
+            index=properties.get("index", None),
+            in_service=properties.get("in_service", True),
         )
         self.component_map[item_id] = {"type": "storage", "idx": storage_idx}
         return storage_idx
@@ -185,25 +230,32 @@ class NetworkModel:
         use_power_factor = properties.get("use_power_factor", False)
         
         if use_power_factor:
-            # 使用功率因数模式创建充电桩
-            sn_mva = properties.get("sn_mva", 0.1)
+            # 使用功率因数模式 - 调用create_load_from_cosphi
+            sn_mva = properties.get("sn_mva", 1.0)
             cos_phi = properties.get("cos_phi", 0.9)
+            mode = properties.get("mode", "underexcited")  # 默认为欠励磁模式（吸收无功功率）
             
             charger_idx = pp.create_load_from_cosphi(
                 self.net,
                 bus=bus,
                 sn_mva=sn_mva,
                 cos_phi=cos_phi,
-                mode="ind",  # 感性负载
-                controllable=True
+                mode=mode,
+                name=properties.get("name", "Load"),
+                index=properties.get("index", None),
+                in_service=properties.get("in_service", True),
             )
         else:
-            # 使用直接功率模式创建充电桩
+            # 直接使用有功功率模式 - 调用create_load
+            p_mw = properties.get("p_mw", 1.0)
+            
             charger_idx = pp.create_load(
                 self.net,
                 bus=bus,
-                p_mw=properties.get("p_mw", 0.1),
-                controllable=True
+                p_mw=p_mw,
+                name=properties.get("name", "Load"),
+                index=properties.get("index", None),
+                in_service=properties.get("in_service", True),
             )
         self.component_map[item_id] = {"type": "charger", "idx": charger_idx}
         return charger_idx
@@ -221,7 +273,8 @@ class NetworkModel:
         """
         ext_grid_idx = pp.create_ext_grid(
             self.net,
-            bus=bus
+            bus=bus,
+            name=properties.get("name", "External Grid"),
         )
         self.component_map[item_id] = {"type": "external_grid", "idx": ext_grid_idx}
         return ext_grid_idx
@@ -244,22 +297,25 @@ class NetworkModel:
             # 使用功率因数模式
             sn_mva = properties.get("sn_mva", 1.0)
             cos_phi = properties.get("cos_phi", 0.9)
-            
-            # 根据功率因数计算有功功率，无功功率设为0（光伏发电通常不提供无功功率）
-            p_mw = sn_mva * cos_phi
-            q_mvar = 0.0
+            sgen_idx = pp.create_sgen_from_cosphi(
+                self.net,
+                bus=bus,
+                sn_mva=sn_mva,
+                cos_phi=cos_phi,
+                mode = properties.get("mode", "underexcited"),
+                name=properties.get("name", "Static Generator"),
+                index = properties.get("index", None),
+            )
         else:
             # 直接使用有功功率，无功功率设为0
             p_mw = properties.get("p_mw", 1.0)
-            q_mvar = 0.0
         
-        sgen_idx = pp.create_sgen(
+            sgen_idx = pp.create_sgen(
             self.net,
             bus=bus,
             p_mw=p_mw,
-            q_mvar=q_mvar,
             name=properties.get("name", "Static Generator"),
-            scaling=properties.get("scaling", 1.0),
+            index = properties.get("index", None),
             in_service=properties.get("in_service", True),
         )
         self.component_map[item_id] = {"type": "static_generator", "idx": sgen_idx}

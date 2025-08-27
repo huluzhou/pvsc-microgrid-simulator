@@ -453,7 +453,7 @@ class PropertiesPanel(QWidget):
                 # 功率因数模式参数
                 'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 1.0, 'min': 0.1, 'max': 10000.0},
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
-                
+                'mode': {'type': 'choice', 'label': '模式', 'choices': ['underexcited', 'overexcited'], 'default': 'underexcited'},
                 # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
@@ -482,6 +482,7 @@ class PropertiesPanel(QWidget):
                 # 功率因数模式参数
                 'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 0.1, 'min': 0.1, 'max': 1000.0},
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
+                'mode': {'type': 'choice', 'label': '模式', 'choices': ['underexcited', 'overexcited'], 'default': 'underexcited'},
                 
                 # 设备信息
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
@@ -528,7 +529,7 @@ class PropertiesPanel(QWidget):
                 # 功率因数模式参数
                 'sn_mva': {'type': 'float', 'label': '额定功率 (MVA)', 'default': 1.0, 'min': 0.1, 'max': 10000.0},
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
-                
+                'mode': {'type': 'choice', 'label': '模式', 'choices': ['underexcited', 'overexcited'], 'default': 'underexcited'},
                 # 设备信息
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
                 'brand': {'type': 'str', 'label': '品牌', 'default': ''},
