@@ -290,7 +290,7 @@ class MainWindow(QMainWindow):
             # 应用新的调色板
             app.setPalette(new_palette)
             
-            # 设置菜单栏样式表
+            # 设置菜单栏样式
             if is_dark_theme:
                 # 浅色主题菜单样式
                 menu_style = """
@@ -567,11 +567,6 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "网络诊断", "网络中没有母线组件，无法进行仿真。")
                 return False
             
-            # 检查网络连通性
-            bus_count = len(network_model.net.bus)
-            if bus_count < 2:
-                QMessageBox.warning(self, "网络诊断", "网络中母线数量不足，至少需要2个母线才能进行仿真。")
-                return False
             
             # 检查是否有电源
             has_power_source = (
@@ -620,7 +615,11 @@ class MainWindow(QMainWindow):
                 test_net = network_model.net.deepcopy()
                 
                 # 运行pandapower诊断
-                pp_diagnostic = pp.diagnostic(test_net, report_style='compact')
+                pp_diagnostic = pp.diagnostic(test_net)
+                
+                # 将pandapower诊断结果添加到诊断列表
+                if pp_diagnostic is not None and str(pp_diagnostic).strip():
+                    diagnostic_results.append(f"pandapower详细诊断:\n{str(pp_diagnostic)}")
                 
                 # 尝试运行一次潮流计算测试
                 pp.runpp(test_net, verbose=False)
