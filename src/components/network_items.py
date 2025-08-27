@@ -60,6 +60,7 @@ class BaseNetworkItem(QGraphicsItem):
         self.component_type = "base"
         self.component_name = "基础组件"
         self.properties = {}
+        self.geodata = None  # 默认值为None，后续会更新为(x,y)元组
         
         # 索引将在子类中设置component_type后分配
         self.component_index = None
@@ -229,13 +230,16 @@ class BaseNetworkItem(QGraphicsItem):
             y = round(value.y() / grid_size) * grid_size
             return QPointF(x, y)
         # 处理选择状态变化
-        elif change == QGraphicsItem.ItemSelectedChange and value == True:
+        elif change == QGraphicsItem.ItemSelectedChange and value:
             # 发出选中信号
             self.signals.itemSelected.emit(self)
         # 处理位置已经改变
         elif change == QGraphicsItem.ItemPositionHasChanged and self.scene():
             # 更新连接线
             self.update_connections()
+            # 更新geodata为当前位置的(x,y)元组
+            pos = self.pos()
+            self.geodata = (pos.x(), pos.y())
         return super().itemChange(change, value)
         
     def update_connections(self):
@@ -591,6 +595,8 @@ class StorageItem(BaseNetworkItem):
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
+            "ip": "",
+            "port": "",
         }
         self.label.setPlainText("母线")
         
@@ -631,6 +637,8 @@ class ChargerItem(BaseNetworkItem):
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
+            "ip": "",
+            "port": "",
         }
         self.label.setPlainText("母线")
         
@@ -800,6 +808,8 @@ class GeneratorItem(BaseNetworkItem):
             "vm_pu": 1.0,  # 电压幅值
             "name": "Generator 1",  # 名称
             "bus": None,  # 连接的母线
+            "ip": "",
+            "port": "",
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -832,6 +842,8 @@ class LoadItem(BaseNetworkItem):
             "q_mvar": 10.0,  # 无功功率
             "name": "Load 1",  # 名称
             "bus": None,  # 连接的母线
+            "ip": "",
+            "port": "",
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -916,6 +928,8 @@ class StaticGeneratorItem(BaseNetworkItem):
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
+            "ip": "",
+            "port": "",
         }
         self.label.setPlainText(self.properties["name"])
         
@@ -959,6 +973,8 @@ class MeterItem(BaseNetworkItem):
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
+            "ip": "",
+            "port": "",
         }
         self.label.setPlainText(self.properties["name"])
         

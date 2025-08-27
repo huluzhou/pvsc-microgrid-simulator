@@ -379,7 +379,6 @@ class NetworkCanvas(QGraphicsView):
                     if conn['item1'] in bus_map:
                         connected_buses.append(bus_map[conn['item1']])
         
-        return connected_buses
         # 如果已经有一个组件被选中，并且当前选中的是另一个组件，尝试连接它们
         if hasattr(self, 'first_selected_item') and self.first_selected_item and self.first_selected_item != item:
             print(f"尝试连接: {self.first_selected_item.component_type} 和 {item.component_type}")
@@ -396,6 +395,7 @@ class NetworkCanvas(QGraphicsView):
             # 记录第一个选中的组件
             print(f"记录第一个选中的组件: {item.component_type}")
             self.first_selected_item = item
+        return connected_buses
             
 
     

@@ -460,6 +460,9 @@ class PropertiesPanel(QWidget):
                 'max_e_mwh': {'type': 'float', 'label': '最大储能容量 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0, 'decimals': 3},
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
                 'brand': {'type': 'str', 'label': '品牌', 'default': ''},
+                'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
+                'port': {'type': 'str', 'label': '端口', 'default': ''},
+                'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
             'charger': {
@@ -477,6 +480,8 @@ class PropertiesPanel(QWidget):
                 # 设备信息
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
                 'brand': {'type': 'str', 'label': '品牌', 'default': ''},
+                'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
+                'port': {'type': 'str', 'label': '端口', 'default': ''},
                 
                 # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
@@ -518,6 +523,8 @@ class PropertiesPanel(QWidget):
                 # 设备信息
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
                 'brand': {'type': 'str', 'label': '品牌', 'default': ''},
+                'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
+                'port': {'type': 'str', 'label': '端口', 'default': ''},
                 
                 # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
@@ -573,6 +580,8 @@ class PropertiesPanel(QWidget):
                 # 设备信息
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
                 'brand': {'type': 'str', 'label': '品牌', 'default': ''},
+                'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
+                'port': {'type': 'str', 'label': '端口', 'default': ''},
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
             }
         }
