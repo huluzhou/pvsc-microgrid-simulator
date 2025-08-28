@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
     QScrollArea, QTreeWidget, QTreeWidgetItem, QTextEdit, QLabel,
     QGroupBox, QPushButton, QMessageBox, QProgressBar, QCheckBox, QSpinBox,
-    QTabWidget, QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QDialog
+    QTabWidget, QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QDialog,
+    QSizePolicy
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QPainter, QFont, QBrush, QColor
@@ -123,9 +124,13 @@ class SimulationWindow(QMainWindow):
         self.auto_calc_timer = QTimer()
         self.auto_calc_timer.timeout.connect(self.auto_power_flow_calculation)
         self.is_auto_calculating = False
-        self.power_history = deque(maxlen=100)  # 存储功率历史数据
+        self.power_history = {}  # 存储多个设备的功率历史数据 {device_key: deque}
         self.selected_device_id = None
         self.selected_device_type = None
+        self.monitored_devices = set()  # 存储要监控的设备集合
+        self.device_colors = {}  # 存储设备对应的颜色
+        self.color_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                             '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
         
         # 负载数据生成相关
         self.load_data_generator = LoadDataGenerator()
@@ -154,14 +159,19 @@ class SimulationWindow(QMainWindow):
         # 创建左侧设备树面板
         self.create_device_tree_panel(splitter)
         
-        # 创建中央滚动图像区域
+        # 创建中央功率曲线区域
         self.create_central_image_area(splitter)
         
         # 创建右侧仿真结果面板
         self.create_simulation_results_panel(splitter)
         
-        # 设置分割器比例
-        splitter.setSizes([250, 600, 350])
+        # 设置分割器比例，让中央区域有更大的权重
+        splitter.setSizes([250, 800, 300])
+        
+        # 设置分割器拉伸策略，让中央区域可以扩展
+        splitter.setStretchFactor(0, 0)   # 左侧不自动扩展
+        splitter.setStretchFactor(1, 1)   # 中央区域自动扩展
+        splitter.setStretchFactor(2, 0)   # 右侧不自动扩展
         
         # 创建状态栏
         self.statusBar().showMessage("仿真模式已就绪")
@@ -295,6 +305,7 @@ class SimulationWindow(QMainWindow):
         # 创建功率曲线容器
         curve_widget = QWidget()
         curve_layout = QVBoxLayout(curve_widget)
+        curve_layout.setContentsMargins(0, 0, 0, 0)
         
         # 标题
         curve_title = QLabel("功率曲线监控")
@@ -302,8 +313,10 @@ class SimulationWindow(QMainWindow):
         curve_layout.addWidget(curve_title)
         
         # 创建功率曲线显示区域 - 使用matplotlib交互式图表
-        self.figure = Figure(figsize=(10, 6), dpi=100)
+        # 使用更灵活的尺寸设置，让Figure自适应容器大小
+        self.figure = Figure(figsize=(8, 5), dpi=100, tight_layout=True)
         self.canvas_mpl = FigureCanvas(self.figure)
+        self.canvas_mpl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.ax = self.figure.add_subplot(111)
         
         # 设置中文字体
@@ -331,27 +344,7 @@ class SimulationWindow(QMainWindow):
         self.toolbar = NavigationToolbar(self.canvas_mpl, self)
         
         curve_layout.addWidget(self.toolbar)
-        curve_layout.addWidget(self.canvas_mpl)
-        
-        # 创建控制按钮区域
-        control_layout = QHBoxLayout()
-        
-        self.refresh_curve_btn = QPushButton("刷新曲线")
-        self.refresh_curve_btn.clicked.connect(self.refresh_power_curve)
-        self.refresh_curve_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 8px; }")
-        control_layout.addWidget(self.refresh_curve_btn)
-        
-        self.clear_curve_btn = QPushButton("清空历史")
-        self.clear_curve_btn.clicked.connect(self.clear_power_history)
-        self.clear_curve_btn.setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 8px; }")
-        control_layout.addWidget(self.clear_curve_btn)
-        
-        self.show_topology_btn = QPushButton("显示拓扑")
-        self.show_topology_btn.clicked.connect(self.show_topology_image)
-        self.show_topology_btn.setStyleSheet("QPushButton { background-color: #2196F3; color: white; font-weight: bold; padding: 8px; }")
-        control_layout.addWidget(self.show_topology_btn)
-        
-        curve_layout.addLayout(control_layout)
+        curve_layout.addWidget(self.canvas_mpl, 1)  # 设置stretch因子为1，让图表区域扩展
         
         parent.addWidget(curve_widget)
         
@@ -378,6 +371,31 @@ class SimulationWindow(QMainWindow):
         
         parent.addWidget(results_widget)
         
+    def create_monitor_control_panel(self, parent_layout):
+        """创建监控控制面板"""
+        # 创建监控控制组
+        monitor_group = QGroupBox("功率曲线监控")
+        monitor_layout = QVBoxLayout(monitor_group)
+        
+        # 当前设备监控开关
+        self.current_device_monitor = QCheckBox("监控当前设备")
+        self.current_device_monitor.stateChanged.connect(self.toggle_current_device_monitor)
+        monitor_layout.addWidget(self.current_device_monitor)
+        
+        # 已监控设备列表
+        self.monitored_devices_list = QTreeWidget()
+        self.monitored_devices_list.setHeaderLabels(["设备", "类型", "状态"])
+        self.monitored_devices_list.setMaximumHeight(150)
+        self.monitored_devices_list.itemChanged.connect(self.on_monitored_device_toggled)
+        monitor_layout.addWidget(self.monitored_devices_list)
+        
+        # 清除所有监控按钮
+        clear_btn = QPushButton("清除所有监控")
+        clear_btn.clicked.connect(self.clear_all_monitors)
+        monitor_layout.addWidget(clear_btn)
+        
+        parent_layout.addWidget(monitor_group)
+        
     def create_component_details_tab(self):
         """创建组件详情选项卡"""
         layout = QVBoxLayout(self.component_details_tab)
@@ -394,6 +412,9 @@ class SimulationWindow(QMainWindow):
         self.component_params_table.setHorizontalHeaderLabels(["参数", "值"])
         self.component_params_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.component_params_table)
+        
+        # 功率曲线监控控制面板
+        self.create_monitor_control_panel(layout)
         
     # 删除潮流结果和短路结果选项卡创建方法
         
@@ -564,6 +585,14 @@ class SimulationWindow(QMainWindow):
             return
             
         component_type, component_idx = data
+        self.selected_device_id = str(component_idx)
+        self.selected_device_type = self.get_component_type_chinese(component_type)
+        
+        # 更新当前设备监控复选框状态
+        device_key = f"{self.selected_device_type}_{self.selected_device_id}"
+        self.current_device_monitor.setChecked(device_key in self.monitored_devices)
+        
+        # 显示组件详情
         self.show_component_details(component_type, component_idx)
         
     def show_component_details(self, component_type, component_idx):
@@ -630,6 +659,8 @@ class SimulationWindow(QMainWindow):
                 if component_type == 'bus':
                     info_text += f"电压幅值: {result_data.get('vm_pu', 'N/A'):.4f} p.u.\n"
                     info_text += f"电压角度: {result_data.get('va_degree', 'N/A'):.2f}°\n"
+                    info_text += f"有功功率: {result_data.get('p_mw', 'N/A'):.3f} MW\n"
+                    info_text += f"无功功率: {result_data.get('q_mvar', 'N/A'):.3f} MVar\n"
                 elif component_type in ['line', 'trafo']:
                     info_text += f"有功功率(from): {result_data.get('p_from_mw', 'N/A'):.3f} MW\n"
                     info_text += f"无功功率(from): {result_data.get('q_from_mvar', 'N/A'):.3f} MVar\n"
@@ -1204,29 +1235,39 @@ class SimulationWindow(QMainWindow):
             self.selected_device_type = None
     
     def update_power_curve(self):
-        """更新功率曲线显示"""
-        if self.selected_device_id is None or self.selected_device_type is None:
-            return
-            
+        """更新所有监控设备的功率曲线数据"""
         try:
-            # 获取当前功率值
-            power_value = self.get_device_power(self.selected_device_id, self.selected_device_type)
+            # 为每个监控的设备更新功率数据
+            for device_key in self.monitored_devices:
+                try:
+                    device_type, device_id = device_key.split('_', 1)
+                    power_value = self.get_device_power(device_id, device_type)
+                    
+                    if power_value is not None:
+                        timestamp = time.time()
+                        
+                        # 如果该设备的历史数据不存在，创建新的deque
+                        if device_key not in self.power_history:
+                            self.power_history[device_key] = deque(maxlen=100)
+                        
+                        # 添加历史数据
+                        self.power_history[device_key].append((timestamp, power_value))
+                        
+                except Exception as e:
+                    print(f"更新设备 {device_key} 功率数据失败: {str(e)}")
             
-            if power_value is not None:
-                # 添加历史数据
-                timestamp = time.time()
-                self.power_history.append((timestamp, power_value))
-                
-                # 更新图像显示
-                self.display_power_curve()
-                
+            # 更新图像显示
+            self.display_power_curve()
+            
         except Exception as e:
             print(f"更新功率曲线失败: {str(e)}")
     
     def get_device_power(self, device_id, device_type):
         """获取设备的实际功率属性值"""
         try:
-            # 根据设备类型从实际属性中获取功率值
+            device_id = int(device_id)  # 确保device_id是整数
+            
+            # 根据设备类型从潮流计算结果中获取功率值
             if device_type == "母线":
                 # 母线本身不直接设置功率，但可以通过潮流计算结果获取总注入功率
                 if hasattr(self.network_model.net, 'res_bus') and device_id in self.network_model.net.res_bus.index:
@@ -1236,56 +1277,71 @@ class SimulationWindow(QMainWindow):
                     return 0.0
                 
             elif device_type == "线路":
-                # 从线路属性中获取功率（如果有的话）
-                lines = self.network_model.net.line
-                if device_id in lines.index and 'p_mw' in lines.columns:
-                    return abs(lines.loc[device_id, 'p_mw'])
+                # 从线路潮流计算结果中获取功率
+                if hasattr(self.network_model.net, 'res_line') and device_id in self.network_model.net.res_line.index:
+                    # 获取线路的有功功率（取两端功率的平均值或较大值）
+                    p_from = abs(self.network_model.net.res_line.loc[device_id, 'p_from_mw'])
+                    p_to = abs(self.network_model.net.res_line.loc[device_id, 'p_to_mw'])
+                    return max(p_from, p_to)  # 返回较大的功率值
                 else:
-                    # 如果没有功率属性，返回额定容量的百分比
-                    if device_id in lines.index:
-                        max_power = lines.loc[device_id, 'max_i_ka'] * lines.loc[device_id, 'vn_kv'] * 1.732  # 近似最大功率
-                        return max_power * 0.6  # 返回60%作为示例
+                    return 0.0
                     
             elif device_type == "变压器":
-                # 从变压器属性中获取功率
-                trafos = self.network_model.net.trafo
-                if device_id in trafos.index and 'p_mw' in trafos.columns:
-                    return abs(trafos.loc[device_id, 'p_mw'])
+                # 从变压器潮流计算结果中获取功率
+                if hasattr(self.network_model.net, 'res_trafo') and device_id in self.network_model.net.res_trafo.index:
+                    # 获取变压器的有功功率
+                    p_hv = abs(self.network_model.net.res_trafo.loc[device_id, 'p_hv_mw'])
+                    p_lv = abs(self.network_model.net.res_trafo.loc[device_id, 'p_lv_mw'])
+                    return max(p_hv, p_lv)
                 else:
-                    # 如果没有功率属性，返回额定容量的百分比
-                    if device_id in trafos.index:
-                        rated_power = trafos.loc[device_id, 'sn_mva']
-                        return rated_power * 0.7  # 返回70%负载作为示例
+                    return 0.0
                     
             elif device_type == "发电机":
-                # 从发电机属性中获取实际功率设置
-                gens = self.network_model.net.gen
-                if device_id in gens.index:
-                    return abs(gens.loc[device_id, 'p_mw'])
+                # 从发电机潮流计算结果中获取实际功率
+                if hasattr(self.network_model.net, 'res_gen') and device_id in self.network_model.net.res_gen.index:
+                    return abs(self.network_model.net.res_gen.loc[device_id, 'p_mw'])
+                else:
+                    # 如果潮流计算结果没有，使用设定值
+                    gens = self.network_model.net.gen
+                    if device_id in gens.index:
+                        return abs(gens.loc[device_id, 'p_mw'])
+                    return 0.0
                     
             elif device_type == "静态发电机":
-                # 从静态发电机属性中获取实际功率设置
-                sgens = self.network_model.net.sgen
-                if device_id in sgens.index:
-                    return abs(sgens.loc[device_id, 'p_mw'])
+                # 从静态发电机潮流计算结果中获取实际功率
+                if hasattr(self.network_model.net, 'res_sgen') and device_id in self.network_model.net.res_sgen.index:
+                    return abs(self.network_model.net.res_sgen.loc[device_id, 'p_mw'])
+                else:
+                    # 使用设定值
+                    sgens = self.network_model.net.sgen
+                    if device_id in sgens.index:
+                        return abs(sgens.loc[device_id, 'p_mw'])
+                    return 0.0
                     
             elif device_type == "负载":
-                # 从负载属性中获取实际功率设置
-                loads = self.network_model.net.load
-                if device_id in loads.index:
-                    return abs(loads.loc[device_id, 'p_mw'])
+                # 从负载潮流计算结果中获取实际功率
+                if hasattr(self.network_model.net, 'res_load') and device_id in self.network_model.net.res_load.index:
+                    return abs(self.network_model.net.res_load.loc[device_id, 'p_mw'])
+                else:
+                    # 使用设定值
+                    loads = self.network_model.net.load
+                    if device_id in loads.index:
+                        return abs(loads.loc[device_id, 'p_mw'])
+                    return 0.0
                     
             elif device_type == "储能":
-                # 从储能属性中获取实际功率设置
-                storage = self.network_model.net.storage
-                if device_id in storage.index:
-                    return abs(storage.loc[device_id, 'p_mw'])
+                # 从储能潮流计算结果中获取实际功率
+                if hasattr(self.network_model.net, 'res_storage') and device_id in self.network_model.net.res_storage.index:
+                    return abs(self.network_model.net.res_storage.loc[device_id, 'p_mw'])
+                else:
+                    # 使用设定值
+                    storage = self.network_model.net.storage
+                    if device_id in storage.index:
+                        return abs(storage.loc[device_id, 'p_mw'])
+                    return 0.0
                     
             elif device_type == "外部电网":
-                # 从外部电网属性中获取功率
-                ext_grids = self.network_model.net.ext_grid
-                # 外部电网通常作为平衡节点，功率由系统决定
-                # 在pandapower中，外部电网的功率通常通过潮流计算结果获取
+                # 从外部电网潮流计算结果中获取功率
                 if hasattr(self.network_model.net, 'res_ext_grid') and device_id in self.network_model.net.res_ext_grid.index:
                     return abs(self.network_model.net.res_ext_grid.loc[device_id, 'p_mw'])
                 else:
@@ -1297,15 +1353,14 @@ class SimulationWindow(QMainWindow):
         return 0.0
     
     def display_power_curve(self):
-        """显示功率曲线 - 使用交互式图表"""
+        """显示多条功率曲线 - 支持同时监控多个设备"""
         try:
-            if not self.selected_device_id or not self.selected_device_type:
-                return
-                
-            if len(self.power_history) < 2:
-                # 显示初始提示
-                self.ax.clear()
-                self.ax.text(0.5, 0.5, "等待数据收集...\n\n1. 选择要监控的设备\n2. 启用自动计算功能\n3. 数据将实时显示", 
+            # 清空当前图表
+            self.ax.clear()
+            
+            # 如果没有监控的设备，显示提示信息
+            if not self.monitored_devices or not self.power_history:
+                self.ax.text(0.5, 0.5, "等待数据收集...\n\n1. 在设备树中选择设备\n2. 勾选\"监控当前设备\"\n3. 启用自动计算功能\n4. 数据将实时显示", 
                              transform=self.ax.transAxes, ha='center', va='center', 
                              bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7),
                              fontsize=12)
@@ -1314,51 +1369,68 @@ class SimulationWindow(QMainWindow):
                 self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
                 self.canvas_mpl.draw()
                 return
+            
+            all_powers = []
+            
+            # 获取所有设备的时间戳，找到最早的时间
+            all_timestamps = []
+            for device_key, history in self.power_history.items():
+                if device_key in self.monitored_devices and history:
+                    all_timestamps.extend([item[0] for item in history])
+            
+            if not all_timestamps:
+                return
                 
-            # 提取时间和功率数据
-            timestamps = [item[0] for item in self.power_history]
-            powers = [item[1] for item in self.power_history]
+            start_time = min(all_timestamps)
             
-            # 转换为相对时间（秒）
-            start_time = timestamps[0]
-            relative_times = [t - start_time for t in timestamps]
+            # 为每个监控的设备绘制曲线
+            for device_key in self.monitored_devices:
+                if device_key in self.power_history and self.power_history[device_key]:
+                    history = self.power_history[device_key]
+                    timestamps = [item[0] for item in history]
+                    powers = [item[1] for item in history]
+                    
+                    # 转换为相对时间（秒）
+                    relative_times = [t - start_time for t in timestamps]
+                    
+                    # 获取设备类型和ID
+                    device_type, device_id = device_key.split('_', 1)
+                    
+                    # 使用预定义的颜色或生成新颜色
+                    if device_key not in self.device_colors:
+                        color_index = len(self.device_colors) % len(self.color_palette)
+                        self.device_colors[device_key] = self.color_palette[color_index]
+                    
+                    color = self.device_colors[device_key]
+                    
+                    # 绘制功率曲线
+                    self.ax.plot(relative_times, powers, color=color, linewidth=2,
+                                label=f'{device_type} {device_id}')
+                    
+                    all_powers.extend(powers)
             
-            # 清空当前图表
-            self.ax.clear()
-            
-            # 绘制功率曲线
-            self.ax.plot(relative_times, powers, 'b-', linewidth=2, 
-                        label=f'{self.selected_device_type} {self.selected_device_id}')
+            # 设置图表属性
             self.ax.set_xlabel('时间 (秒)', fontsize=12)
             self.ax.set_ylabel('功率 (MW)', fontsize=12)
-            self.ax.set_title(f'{self.selected_device_type} {self.selected_device_id} 功率曲线', 
-                            fontsize=14, fontweight='bold')
+            self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
             self.ax.grid(True, alpha=0.3)
             
             # 自动调整Y轴范围
-            if powers:
-                min_power = min(powers)
-                max_power = max(powers)
+            if all_powers:
+                min_power = min(all_powers)
+                max_power = max(all_powers)
                 padding = max((max_power - min_power) * 0.1, 0.1)
                 self.ax.set_ylim(max(0, min_power - padding), max_power + padding)
             else:
                 self.ax.set_ylim(0, 1)
             
-            # 添加统计信息
-            if powers:
-                max_power = max(powers)
-                min_power = min(powers)
-                avg_power = sum(powers) / len(powers)
-                
-                stats_text = f'最大功率: {max_power:.2f} MW\n最小功率: {min_power:.2f} MW\n平均功率: {avg_power:.2f} MW\n数据点数: {len(powers)}'
-                self.ax.text(0.02, 0.98, stats_text, transform=self.ax.transAxes, fontsize=10, 
-                           verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-            
-            self.ax.legend()
+            # 显示图例
+            if len(self.monitored_devices) > 0:
+                self.ax.legend()
             
             # 刷新图表
             self.canvas_mpl.draw()
-                
+            
         except Exception as e:
             self.ax.clear()
             self.ax.text(0.5, 0.5, f"显示功率曲线失败: {str(e)}", 
@@ -1367,73 +1439,7 @@ class SimulationWindow(QMainWindow):
             self.canvas_mpl.draw()
             print(f"显示功率曲线失败: {str(e)}")
     
-    # 删除设备树状态更新方法（与潮流计算结果相关）
 
-    def refresh_power_curve(self):
-        """刷新功率曲线显示"""
-        if self.selected_device_id is not None and self.selected_device_type is not None:
-            self.display_power_curve()
-        else:
-            QMessageBox.information(self, "提示", "请先选择要监控的设备")
-
-    def clear_power_history(self):
-        """清空功率历史数据"""
-        self.power_history.clear()
-        
-        # 清空图表并显示提示信息
-        self.ax.clear()
-        self.ax.text(0.5, 0.5, "功率历史数据已清空\n\n1. 选择要监控的设备\n2. 启用自动计算功能\n3. 数据将重新开始收集", 
-                     transform=self.ax.transAxes, ha='center', va='center', 
-                     bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7),
-                     fontsize=12)
-        self.ax.set_xlabel('时间 (秒)', fontsize=12)
-        self.ax.set_ylabel('功率 (MW)', fontsize=12)
-        self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
-        self.canvas_mpl.draw()
-        
-        # 清理临时文件（如果存在）
-        try:
-            if os.path.exists('temp_power_curve.png'):
-                os.remove('temp_power_curve.png')
-        except:
-            pass
-
-    def show_topology_image(self):
-        """显示网络拓扑图"""
-        try:
-            self.render_network_image()
-            if self.current_pixmap is not None:
-                # 创建拓扑图显示对话框
-                dialog = QDialog(self)
-                dialog.setWindowTitle("网络拓扑图")
-                dialog.setModal(False)
-                dialog.resize(800, 600)
-                
-                layout = QVBoxLayout(dialog)
-                
-                # 显示拓扑图
-                image_label = QLabel()
-                image_label.setPixmap(self.current_pixmap)
-                image_label.setScaledContents(True)
-                image_label.setAlignment(Qt.AlignCenter)
-                
-                scroll_area = QScrollArea()
-                scroll_area.setWidget(image_label)
-                scroll_area.setWidgetResizable(True)
-                
-                layout.addWidget(scroll_area)
-                
-                # 添加关闭按钮
-                close_btn = QPushButton("关闭")
-                close_btn.clicked.connect(dialog.close)
-                layout.addWidget(close_btn)
-                
-                dialog.exec_()
-            else:
-                QMessageBox.warning(self, "警告", "无法生成网络拓扑图")
-                
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"显示拓扑图失败: {str(e)}")
 
     def toggle_auto_calculation(self, state):
         """切换自动潮流计算状态"""
@@ -1476,9 +1482,8 @@ class SimulationWindow(QMainWindow):
                 # 更新设备树状态
                 self.update_device_tree_status()
                 
-                # 更新功率曲线
-                if self.selected_device_id is not None and self.selected_device_type is not None:
-                    self.update_power_curve()
+                # 更新功率曲线（仅更新监控设备的数据，不再自动显示）
+                self.update_power_curve()
                     
             except Exception as e:
                 self.statusBar().showMessage(f"潮流计算失败: {str(e)}")
@@ -1531,16 +1536,77 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             print(f"更新设备树状态失败: {str(e)}")
 
+    def toggle_current_device_monitor(self, state):
+        """切换当前设备监控状态"""
+        if not self.selected_device_id or not self.selected_device_type:
+            return
+            
+        device_key = f"{self.selected_device_type}_{self.selected_device_id}"
+        
+        if state == 2:  # 选中状态
+            if device_key not in self.monitored_devices:
+                self.monitored_devices.add(device_key)
+                self.update_monitored_devices_list()
+        else:  # 未选中状态
+            if device_key in self.monitored_devices:
+                self.monitored_devices.remove(device_key)
+                self.update_monitored_devices_list()
+                
+        # 更新图表显示
+        self.display_power_curve()
+    
+    def on_monitored_device_toggled(self, item, column):
+        """监控设备列表中的复选框状态改变"""
+        if column == 0:  # 第一列是复选框
+            device_key = item.data(0, Qt.UserRole)
+            if item.checkState(0) == Qt.Checked:
+                if device_key not in self.monitored_devices:
+                    self.monitored_devices.add(device_key)
+            else:
+                if device_key in self.monitored_devices:
+                    self.monitored_devices.remove(device_key)
+            
+            # 更新当前设备监控复选框状态
+            current_device_key = f"{self.selected_device_type}_{self.selected_device_id}" if self.selected_device_type and self.selected_device_id else ""
+            if current_device_key:
+                self.current_device_monitor.setChecked(current_device_key in self.monitored_devices)
+            
+            # 更新图表显示
+            self.display_power_curve()
+    
+    def update_monitored_devices_list(self):
+        """更新监控设备列表"""
+        self.monitored_devices_list.clear()
+        
+        for device_key in self.monitored_devices:
+            try:
+                device_type, device_id = device_key.split('_', 1)
+                
+                # 创建列表项
+                item = QTreeWidgetItem(self.monitored_devices_list)
+                item.setText(0, str(device_id))
+                item.setText(1, str(device_type))
+                item.setText(2, "监控中")
+                item.setData(0, Qt.UserRole, device_key)
+                item.setCheckState(0, Qt.Checked)
+                
+            except Exception as e:
+                print(f"更新监控设备列表失败: {str(e)}")
+    
+    def clear_all_monitors(self):
+        """清除所有监控设备"""
+        self.monitored_devices.clear()
+        self.device_colors.clear()
+        self.update_monitored_devices_list()
+        
+        # 更新当前设备监控复选框状态
+        self.current_device_monitor.setChecked(False)
+        
+        # 更新图表显示
+        self.display_power_curve()
+    
     def closeEvent(self, event):
         """窗口关闭事件"""
         # 停止自动计算定时器
         self.auto_calc_timer.stop()
-        
-        # 清理临时文件
-        try:
-            if os.path.exists('temp_power_curve.png'):
-                os.remove('temp_power_curve.png')
-        except:
-            pass
-            
         super().closeEvent(event)
