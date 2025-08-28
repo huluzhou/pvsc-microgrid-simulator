@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
     QLineEdit, QComboBox
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QPoint
-from PySide6.QtGui import QPixmap, QPainter, QFont, QWheelEvent, QMouseEvent
+from PySide6.QtGui import QPixmap, QPainter, QFont, QWheelEvent, QMouseEvent, QBrush, QColor
+from PySide6.QtCore import QRectF
 import pandas as pd
 import pandapower as pp
 
@@ -663,8 +664,9 @@ class SimulationWindow(QMainWindow):
                 
                 # 为仿真结果设置不同的背景色
                 if param.startswith("结果_"):
-                    param_item.setBackground(Qt.lightGray)
-                    value_item.setBackground(Qt.lightGray)
+                    from PySide6.QtGui import QColor
+                    param_item.setBackground(QColor(211, 211, 211))  # 浅灰色
+                    value_item.setBackground(QColor(211, 211, 211))  # 浅灰色
                     
                 self.component_params_table.setItem(i, 0, param_item)
                 self.component_params_table.setItem(i, 1, value_item)
@@ -925,14 +927,15 @@ class SimulationWindow(QMainWindow):
                         
                         # 为不同类型设置不同背景色
                         elif key == '类型':
+                            from PySide6.QtGui import QColor
                             if value == '母线':
-                                item.setBackground(Qt.lightBlue)
+                                item.setBackground(QColor(173, 216, 230))  # 浅蓝色
                             elif value in ['线路', '变压器']:
-                                item.setBackground(Qt.lightYellow)
+                                item.setBackground(QColor(255, 255, 224))  # 浅黄色
                             elif value in ['发电机', '静态发电机', '外部电网', '储能']:
-                                item.setBackground(Qt.lightGreen)
+                                item.setBackground(QColor(144, 238, 144))  # 浅绿色
                             elif value == '负载':
-                                item.setBackground(Qt.lightGray)
+                                item.setBackground(QColor(211, 211, 211))  # 浅灰色
                         
                         self.powerflow_table.setItem(i, j, item)
                 
