@@ -114,11 +114,7 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
-        # 快速仿真按钮
-        powerflow_action = QAction("潮流计算", self)
-        powerflow_action.setToolTip("运行潮流计算")
-        powerflow_action.triggered.connect(self.quick_powerflow)
-        toolbar.addAction(powerflow_action)
+        # 删除快速仿真按钮（潮流计算功能已移除）
 
     def create_menu(self):
         """创建菜单栏"""
@@ -483,27 +479,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"处理属性变化时出错: {e}")
     
-    def quick_powerflow(self):
-        """快速潮流计算"""
-        try:
-            # 检查网络模型
-            if not hasattr(self.canvas, 'network_model') or not self.canvas.network_model:
-                QMessageBox.warning(self, "警告", "当前没有网络模型，请先添加电网组件。")
-                return
-            
-            # 进行基本网络检查
-            if not self.validate_network_basic():
-                return
-            
-            # 运行潮流计算
-            import pandapower as pp
-            pp.runpp(self.canvas.network_model.net)
-            
-            QMessageBox.information(self, "潮流计算", "潮流计算完成！\n\n要查看详细结果，请进入仿真模式。")
-            self.statusBar().showMessage("潮流计算完成")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"潮流计算失败：{str(e)}")
+    # 删除快速潮流计算方法（潮流计算功能已移除）
     
     def enter_simulation_mode(self):
         """进入仿真模式"""
@@ -524,32 +500,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"进入仿真模式时发生错误：{str(e)}")
     
-    def validate_network_basic(self):
-        """基本网络验证（用于快速潮流计算）"""
-        try:
-            network_model = self.canvas.network_model
-            
-            # 检查是否有足够的组件
-            if network_model.net.bus.empty:
-                QMessageBox.warning(self, "网络检查", "网络中没有母线组件，无法进行潮流计算。")
-                return False
-            
-            # 检查是否有电源
-            has_power_source = (
-                not network_model.net.ext_grid.empty or 
-                not network_model.net.gen.empty or 
-                not network_model.net.sgen.empty
-            )
-            
-            if not has_power_source:
-                QMessageBox.warning(self, "网络检查", "网络中没有电源，无法进行潮流计算。")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            QMessageBox.critical(self, "网络检查错误", f"网络检查过程中发生错误：{str(e)}")
-            return False
+    # 删除基本网络验证方法（与潮流计算相关）
     
     def validate_network(self):
         """验证网络拓扑和参数"""
@@ -566,7 +517,6 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "网络诊断", "网络中没有母线组件，无法进行仿真。")
                 return False
             
-            
             # 检查是否有电源
             has_power_source = (
                 not network_model.net.ext_grid.empty or 
@@ -575,7 +525,7 @@ class MainWindow(QMainWindow):
             )
             
             if not has_power_source:
-                QMessageBox.warning(self, "网络诊断", "网络中没有电源（外部电网、发电机或静态发电机），无法进行潮流计算。")
+                QMessageBox.warning(self, "网络诊断", "网络中没有电源（外部电网、发电机或静态发电机）。")
                 return False
             
             # 检查网络连通性和拓扑
@@ -607,39 +557,13 @@ class MainWindow(QMainWindow):
             if invalid_connections:
                 diagnostic_results.append(f"发现无效的母线连接: {', '.join(invalid_connections)}")
             
-            # 尝试运行pandapower诊断
-            import pandapower as pp
-            try:
-                # 创建网络副本进行测试
-                test_net = network_model.net.deepcopy()
-                
-                # 运行pandapower诊断
-                pp_diagnostic = pp.diagnostic(test_net)
-                
-                # 将pandapower诊断结果添加到诊断列表
-                if pp_diagnostic is not None and str(pp_diagnostic).strip():
-                    diagnostic_results.append(f"pandapower详细诊断:\n{str(pp_diagnostic)}")
-                
-                # 尝试运行一次潮流计算测试
-                pp.runpp(test_net, verbose=False)
-                diagnostic_results.append("pandapower网络一致性检查通过")
-                diagnostic_results.append("潮流计算预检查通过")
-                
-            except Exception as e:
-                diagnostic_results.append(f"pandapower检查发现问题: {str(e)}")
-                if "convergence" in str(e).lower():
-                    diagnostic_results.append("建议检查: 1) 电源容量是否足够 2) 负载参数是否合理 3) 网络阻抗参数")
-                elif "isolated" in str(e).lower():
-                    diagnostic_results.append("建议检查网络连通性，确保所有组件都正确连接")
-            
             # 显示诊断结果
-            if any("问题" in result or "错误" in result for result in diagnostic_results):
+            if diagnostic_results:
                 result_text = "\n".join(diagnostic_results)
                 QMessageBox.warning(self, "网络诊断", f"网络诊断发现以下问题：\n\n{result_text}\n\n建议修复后再进入仿真模式。")
                 return False
             else:
-                result_text = "\n".join(diagnostic_results)
-                QMessageBox.information(self, "网络诊断", f"网络诊断通过！\n\n检查结果：\n{result_text}")
+                QMessageBox.information(self, "网络诊断", "网络诊断通过！")
                 return True
             
         except Exception as e:

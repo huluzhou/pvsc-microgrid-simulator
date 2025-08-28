@@ -496,33 +496,7 @@ class NetworkModel:
         # 从映射中删除
         del self.component_map[item_id]
 
-    def run_power_flow(self):
-        """运行潮流计算
-        
-        Returns:
-            bool: 计算是否成功
-        """
-        try:
-            pp.runpp(self.net)
-            return True
-        except Exception as e:
-            print(f"潮流计算错误: {e}")
-            return False
-
-    def get_results(self):
-        """获取潮流计算结果
-        
-        Returns:
-            dict: 计算结果
-        """
-        results = {
-            "bus": self.net.res_bus.copy() if hasattr(self.net, "res_bus") else None,
-            "line": self.net.res_line.copy() if hasattr(self.net, "res_line") else None,
-            "trafo": self.net.res_trafo.copy() if hasattr(self.net, "res_trafo") else None,
-            "gen": self.net.res_gen.copy() if hasattr(self.net, "res_gen") else None,
-            "load": self.net.res_load.copy() if hasattr(self.net, "res_load") else None,
-        }
-        return results
+    # 删除潮流计算相关方法（潮流计算功能已移除）
 
     def save_to_json(self, filename):
         """保存网络到JSON文件

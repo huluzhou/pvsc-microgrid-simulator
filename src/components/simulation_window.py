@@ -5,18 +5,109 @@
 仿真界面窗口
 """
 
+import os
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
     QScrollArea, QTreeWidget, QTreeWidgetItem, QTextEdit, QLabel,
-    QGroupBox, QFormLayout, QPushButton, QMessageBox, QProgressBar,
-    QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
-    QLineEdit, QComboBox
+    QGroupBox, QPushButton, QMessageBox, QProgressBar, QCheckBox, QSpinBox,
+    QTabWidget, QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QDialog
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QPoint
-from PySide6.QtGui import QPixmap, QPainter, QFont, QWheelEvent, QMouseEvent, QBrush, QColor
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPixmap, QPainter, QFont, QBrush, QColor
 from PySide6.QtCore import QRectF
-import pandas as pd
 import pandapower as pp
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import numpy as np
+from collections import deque
+import threading
+import time
+from datetime import datetime
+
+class LoadDataGenerator:
+    """负载数据生成器"""
+    
+    def __init__(self):
+        self.base_loads = {}
+        self.load_profiles = {}
+        
+    def generate_load_data(self, network_model):
+        """生成负载数据
+        
+        Args:
+            network_model: 网络模型
+            
+        Returns:
+            dict: 负载数据字典
+        """
+        if not network_model or not hasattr(network_model, 'net'):
+            return {}
+            
+        load_data = {}
+        
+        # 获取所有负载
+        if not network_model.net.load.empty:
+            for idx, load in network_model.net.load.iterrows():
+                # 基础负载值
+                base_p = load.get('p_mw', 1.0)
+                base_q = load.get('q_mvar', 0.5)
+                
+                # 生成随机负载变化（±20%范围内）
+                variation = np.random.uniform(0.8, 1.2)
+                new_p = base_p * variation
+                new_q = base_q * variation
+                
+                load_data[idx] = {
+                    'p_mw': new_p,
+                    'q_mvar': new_q,
+                    'name': load.get('name', f'Load_{idx}')
+                }
+        
+        return load_data
+    
+    def generate_daily_load_profile(self, network_model):
+        """生成日负载曲线数据
+        
+        Args:
+            network_model: 网络模型
+            
+        Returns:
+            dict: 日负载曲线数据
+        """
+        if not network_model or not hasattr(network_model, 'net'):
+            return {}
+            
+        load_profiles = {}
+        
+        # 24小时负载曲线模板（基于典型日负载模式）
+        daily_pattern = [
+            0.6, 0.5, 0.4, 0.3, 0.3, 0.4,  # 0-5时
+            0.5, 0.7, 0.8, 0.9, 0.95, 1.0,  # 6-11时
+            1.0, 0.95, 0.9, 0.85, 0.9, 1.0,  # 12-17时
+            1.1, 1.2, 1.1, 0.9, 0.8, 0.7   # 18-23时
+        ]
+        
+        if not network_model.net.load.empty:
+            for idx, load in network_model.net.load.iterrows():
+                base_p = load.get('p_mw', 1.0)
+                base_q = load.get('q_mvar', 0.5)
+                
+                # 根据当前时间选择负载值
+                current_hour = datetime.now().hour
+                pattern_index = current_hour % 24
+                multiplier = daily_pattern[pattern_index] * np.random.uniform(0.9, 1.1)
+                
+                load_profiles[idx] = {
+                    'p_mw': base_p * multiplier,
+                    'q_mvar': base_q * multiplier,
+                    'hour': current_hour,
+                    'multiplier': multiplier
+                }
+        
+        return load_profiles
 
 
 class SimulationWindow(QMainWindow):
@@ -28,8 +119,21 @@ class SimulationWindow(QMainWindow):
         self.parent_window = parent
         self.network_model = canvas.network_model if hasattr(canvas, 'network_model') else None
         
+        # 自动潮流计算相关属性
+        self.auto_calc_timer = QTimer()
+        self.auto_calc_timer.timeout.connect(self.auto_power_flow_calculation)
+        self.is_auto_calculating = False
+        self.power_history = deque(maxlen=100)  # 存储功率历史数据
+        self.selected_device_id = None
+        self.selected_device_type = None
+        
+        # 负载数据生成相关
+        self.load_data_generator = LoadDataGenerator()
+        self.current_load_index = 0
+        
         self.init_ui()
         self.load_network_data()
+        self.update_device_combo()
         
     def init_ui(self):
         """初始化用户界面"""
@@ -121,19 +225,7 @@ class SimulationWindow(QMainWindow):
         self.device_stats_label.setStyleSheet("font-size: 12px; color: #666; padding: 5px;")
         tree_layout.addWidget(self.device_stats_label)
         
-        # 仿真控制按钮
-        control_group = QGroupBox("仿真控制")
-        control_layout = QVBoxLayout(control_group)
-        
-        self.run_powerflow_btn = QPushButton("运行潮流计算")
-        self.run_powerflow_btn.clicked.connect(self.run_power_flow)
-        self.run_powerflow_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 8px; }")
-        control_layout.addWidget(self.run_powerflow_btn)
-        
-        self.run_shortcircuit_btn = QPushButton("短路分析")
-        self.run_shortcircuit_btn.clicked.connect(self.run_short_circuit)
-        self.run_shortcircuit_btn.setStyleSheet("QPushButton { background-color: #FF9800; color: white; font-weight: bold; padding: 8px; }")
-        control_layout.addWidget(self.run_shortcircuit_btn)
+        # 删除仿真控制按钮（潮流计算和短路分析功能已移除）
         
         # 导出按钮组
         export_group = QGroupBox("结果导出")
@@ -149,56 +241,119 @@ class SimulationWindow(QMainWindow):
         self.export_excel_btn.setStyleSheet("QPushButton { background-color: #009688; color: white; font-weight: bold; padding: 6px; }")
         export_layout.addWidget(self.export_excel_btn)
         
-        control_layout.addWidget(export_group)
+        # 自动计算控制面板
+        auto_group = QGroupBox("自动计算")
+        auto_layout = QVBoxLayout(auto_group)
         
-        # 进度条
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        control_layout.addWidget(self.progress_bar)
+        # 自动计算开关
+        auto_calc_layout = QHBoxLayout()
+        auto_calc_layout.addWidget(QLabel("自动计算:"))
+        self.auto_calc_checkbox = QCheckBox()
+        self.auto_calc_checkbox.stateChanged.connect(self.toggle_auto_calculation)
+        auto_calc_layout.addWidget(self.auto_calc_checkbox)
+        auto_layout.addLayout(auto_calc_layout)
         
-        tree_layout.addWidget(control_group)
+        # 计算间隔
+        interval_layout = QHBoxLayout()
+        interval_layout.addWidget(QLabel("间隔(秒):"))
+        self.calc_interval_spinbox = QSpinBox()
+        self.calc_interval_spinbox.setRange(1, 60)
+        self.calc_interval_spinbox.setValue(5)
+        interval_layout.addWidget(self.calc_interval_spinbox)
+        auto_layout.addLayout(interval_layout)
+        
+        # 负载数据生成开关
+        load_data_layout = QHBoxLayout()
+        load_data_layout.addWidget(QLabel("生成负载数据:"))
+        self.load_data_checkbox = QCheckBox()
+        self.load_data_checkbox.setChecked(True)
+        load_data_layout.addWidget(self.load_data_checkbox)
+        auto_layout.addLayout(load_data_layout)
+        
+        # 功率曲线显示开关
+        curve_layout = QHBoxLayout()
+        curve_layout.addWidget(QLabel("显示功率曲线:"))
+        self.show_curve_checkbox = QCheckBox()
+        self.show_curve_checkbox.setChecked(True)
+        curve_layout.addWidget(self.show_curve_checkbox)
+        auto_layout.addLayout(curve_layout)
+        
+        # 选择设备下拉框
+        device_layout = QHBoxLayout()
+        device_layout.addWidget(QLabel("监控设备:"))
+        self.device_combo = QComboBox()
+        self.device_combo.currentTextChanged.connect(self.on_device_selection_changed)
+        device_layout.addWidget(self.device_combo)
+        auto_layout.addLayout(device_layout)
+        
+        tree_layout.addWidget(auto_group)
         
         parent.addWidget(tree_widget)
         
     def create_central_image_area(self, parent):
-        """创建中央滚动图像区域"""
-        # 创建增强的滚动区域
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        """创建中央功率曲线显示区域"""
+        # 创建功率曲线容器
+        curve_widget = QWidget()
+        curve_layout = QVBoxLayout(curve_widget)
         
-        # 创建图像显示容器
-        self.image_container = QWidget()
-        self.image_container.setMinimumSize(1200, 800)
+        # 标题
+        curve_title = QLabel("功率曲线监控")
+        curve_title.setFont(QFont("Arial", 12, QFont.Bold))
+        curve_layout.addWidget(curve_title)
         
-        # 创建图像标签
-        self.image_label = QLabel(self.image_container)
-        self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setText("网络图像将在此显示\n\n提示：\n- 鼠标滚轮：缩放\n- 鼠标拖拽：平移\n- 双击：适应窗口")
-        self.image_label.setStyleSheet("border: 1px solid gray; background-color: white; font-size: 14px; color: #666;")
-        self.image_label.setMinimumSize(1200, 800)
+        # 创建功率曲线显示区域 - 使用matplotlib交互式图表
+        self.figure = Figure(figsize=(10, 6), dpi=100)
+        self.canvas_mpl = FigureCanvas(self.figure)
+        self.ax = self.figure.add_subplot(111)
         
-        # 设置图像标签的几何位置
-        self.image_label.setGeometry(0, 0, 1200, 800)
+        # 设置中文字体
+        try:
+            # 尝试设置支持中文的字体
+            plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans', 'SimSun', 'Arial Unicode MS']
+            plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+        except:
+            pass
         
-        self.scroll_area.setWidget(self.image_container)
+        # 初始化图表
+        self.ax.set_xlabel('时间 (秒)', fontsize=12)
+        self.ax.set_ylabel('功率 (MW)', fontsize=12)
+        self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
+        self.ax.grid(True, alpha=0.3)
+        self.ax.set_ylim(bottom=0)
         
-        # 图像显示相关属性
-        self.current_pixmap = None
-        self.scale_factor = 1.0
-        self.min_scale = 0.1
-        self.max_scale = 5.0
-        self.last_pan_point = None
+        # 创建曲线对象
+        self.power_line, = self.ax.plot([], [], 'b-', linewidth=2, label='有功功率')
+        self.power_line_q, = self.ax.plot([], [], 'r-', linewidth=2, label='无功功率')
+        self.ax.legend()
         
-        # 为滚动区域安装事件过滤器
-        self.scroll_area.installEventFilter(self)
-        self.image_label.installEventFilter(self)
+        # 创建工具栏
+        from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+        self.toolbar = NavigationToolbar(self.canvas_mpl, self)
         
-        # 渲染网络图像
-        self.render_network_image()
+        curve_layout.addWidget(self.toolbar)
+        curve_layout.addWidget(self.canvas_mpl)
         
-        parent.addWidget(self.scroll_area)
+        # 创建控制按钮区域
+        control_layout = QHBoxLayout()
+        
+        self.refresh_curve_btn = QPushButton("刷新曲线")
+        self.refresh_curve_btn.clicked.connect(self.refresh_power_curve)
+        self.refresh_curve_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 8px; }")
+        control_layout.addWidget(self.refresh_curve_btn)
+        
+        self.clear_curve_btn = QPushButton("清空历史")
+        self.clear_curve_btn.clicked.connect(self.clear_power_history)
+        self.clear_curve_btn.setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 8px; }")
+        control_layout.addWidget(self.clear_curve_btn)
+        
+        self.show_topology_btn = QPushButton("显示拓扑")
+        self.show_topology_btn.clicked.connect(self.show_topology_image)
+        self.show_topology_btn.setStyleSheet("QPushButton { background-color: #2196F3; color: white; font-weight: bold; padding: 8px; }")
+        control_layout.addWidget(self.show_topology_btn)
+        
+        curve_layout.addLayout(control_layout)
+        
+        parent.addWidget(curve_widget)
         
     def create_simulation_results_panel(self, parent):
         """创建右侧仿真结果面板"""
@@ -214,20 +369,10 @@ class SimulationWindow(QMainWindow):
         # 创建选项卡
         self.results_tabs = QTabWidget()
         
-        # 组件详情选项卡
+        # 组件详情选项卡（仅保留此选项卡）
         self.component_details_tab = QWidget()
         self.create_component_details_tab()
         self.results_tabs.addTab(self.component_details_tab, "组件详情")
-        
-        # 潮流结果选项卡
-        self.powerflow_results_tab = QWidget()
-        self.create_powerflow_results_tab()
-        self.results_tabs.addTab(self.powerflow_results_tab, "潮流结果")
-        
-        # 短路结果选项卡
-        self.shortcircuit_results_tab = QWidget()
-        self.create_shortcircuit_results_tab()
-        self.results_tabs.addTab(self.shortcircuit_results_tab, "短路结果")
         
         results_layout.addWidget(self.results_tabs)
         
@@ -250,21 +395,7 @@ class SimulationWindow(QMainWindow):
         self.component_params_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.component_params_table)
         
-    def create_powerflow_results_tab(self):
-        """创建潮流结果选项卡"""
-        layout = QVBoxLayout(self.powerflow_results_tab)
-        
-        # 潮流结果表格
-        self.powerflow_table = QTableWidget()
-        layout.addWidget(self.powerflow_table)
-        
-    def create_shortcircuit_results_tab(self):
-        """创建短路结果选项卡"""
-        layout = QVBoxLayout(self.shortcircuit_results_tab)
-        
-        # 短路结果表格
-        self.shortcircuit_table = QTableWidget()
-        layout.addWidget(self.shortcircuit_table)
+    # 删除潮流结果和短路结果选项卡创建方法
         
     def load_network_data(self):
         """加载网络数据到设备树"""
@@ -375,14 +506,10 @@ class SimulationWindow(QMainWindow):
             target_rect = QRectF(margin, margin, scene_rect.width(), scene_rect.height())
             scene.render(painter, target_rect, scene_rect)
             
-            # 检查是否有潮流计算结果
-            has_results = hasattr(self.network_model.net, 'res_bus') and not self.network_model.net.res_bus.empty
+            # 简化网络图像渲染，移除潮流计算结果
+            has_results = False
             
-            # 在图像上叠加潮流计算结果
-            if has_results:
-                self.overlay_powerflow_results(painter, scene_rect, margin)
-            
-            # 添加图例和状态信息
+            # 添加基础图例和状态信息
             self.draw_image_legend(painter, pixmap.width(), pixmap.height(), has_results)
             
             painter.end()
@@ -395,119 +522,7 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             self.image_label.setText(f"渲染网络图像时出错: {str(e)}")
     
-    def overlay_powerflow_results(self, painter, scene_rect, margin):
-        """在网络图上叠加潮流计算结果"""
-        try:
-            # 设置字体
-            font = QFont("Arial", 8)
-            painter.setFont(font)
-            
-            # 获取场景中的所有图形项
-            scene = self.canvas.scene
-            items = scene.items()
-            
-            # 为每个组件添加结果标签
-            for item in items:
-                if hasattr(item, 'component_type') and hasattr(item, 'component_id'):
-                    component_type = item.component_type
-                    component_id = item.component_id
-                    
-                    # 获取项目在场景中的位置
-                    item_pos = item.pos()
-                    item_rect = item.boundingRect()
-                    
-                    # 转换到图像坐标
-                    x = item_pos.x() + margin
-                    y = item_pos.y() + margin
-                    
-                    # 根据组件类型显示相应的结果
-                    result_text = self.get_component_result_text(component_type, component_id)
-                    if result_text:
-                        # 设置结果文本的背景和颜色
-                        painter.setPen(Qt.black)
-                        painter.setBrush(QBrush(QColor(255, 255, 255, 200)))  # 半透明白色背景
-                        
-                        # 计算文本位置（在组件旁边）
-                        text_x = x + item_rect.width() + 5
-                        text_y = y + item_rect.height() / 2
-                        
-                        # 绘制背景矩形
-                        text_rect = painter.fontMetrics().boundingRect(result_text)
-                        bg_rect = QRectF(text_x - 2, text_y - text_rect.height() - 2, 
-                                       text_rect.width() + 4, text_rect.height() + 4)
-                        painter.drawRect(bg_rect)
-                        
-                        # 绘制文本
-                        painter.drawText(text_x, text_y, result_text)
-                        
-        except Exception as e:
-            print(f"叠加潮流结果时出错: {str(e)}")
-    
-    def get_component_result_text(self, component_type, component_id):
-        """获取组件的结果文本"""
-        try:
-            result_text = ""
-            
-            if component_type == 'bus' and hasattr(self.network_model.net, 'res_bus'):
-                if component_id in self.network_model.net.res_bus.index:
-                    res = self.network_model.net.res_bus.loc[component_id]
-                    voltage = res['vm_pu']
-                    angle = res['va_degree']
-                    result_text = f"V: {voltage:.3f}p.u.\n∠: {angle:.1f}°"
-                    
-            elif component_type == 'line' and hasattr(self.network_model.net, 'res_line'):
-                if component_id in self.network_model.net.res_line.index:
-                    res = self.network_model.net.res_line.loc[component_id]
-                    p_flow = res['p_from_mw']
-                    loading = res['loading_percent']
-                    result_text = f"P: {p_flow:.1f}MW\nLoad: {loading:.1f}%"
-                    
-            elif component_type == 'trafo' and hasattr(self.network_model.net, 'res_trafo'):
-                if component_id in self.network_model.net.res_trafo.index:
-                    res = self.network_model.net.res_trafo.loc[component_id]
-                    p_flow = res['p_hv_mw']
-                    loading = res['loading_percent']
-                    result_text = f"P: {p_flow:.1f}MW\nLoad: {loading:.1f}%"
-                    
-            elif component_type == 'load' and hasattr(self.network_model.net, 'res_load'):
-                if component_id in self.network_model.net.res_load.index:
-                    res = self.network_model.net.res_load.loc[component_id]
-                    p_load = res['p_mw']
-                    q_load = res['q_mvar']
-                    result_text = f"P: {p_load:.1f}MW\nQ: {q_load:.1f}MVar"
-                    
-            elif component_type == 'gen' and hasattr(self.network_model.net, 'res_gen'):
-                if component_id in self.network_model.net.res_gen.index:
-                    res = self.network_model.net.res_gen.loc[component_id]
-                    p_gen = res['p_mw']
-                    q_gen = res['q_mvar']
-                    result_text = f"P: {p_gen:.1f}MW\nQ: {q_gen:.1f}MVar"
-                    
-            elif component_type == 'sgen' and hasattr(self.network_model.net, 'res_sgen'):
-                if component_id in self.network_model.net.res_sgen.index:
-                    res = self.network_model.net.res_sgen.loc[component_id]
-                    p_sgen = res['p_mw']
-                    q_sgen = res['q_mvar']
-                    result_text = f"P: {p_sgen:.1f}MW\nQ: {q_sgen:.1f}MVar"
-                    
-            elif component_type == 'ext_grid' and hasattr(self.network_model.net, 'res_ext_grid'):
-                if component_id in self.network_model.net.res_ext_grid.index:
-                    res = self.network_model.net.res_ext_grid.loc[component_id]
-                    p_ext = res['p_mw']
-                    q_ext = res['q_mvar']
-                    result_text = f"P: {p_ext:.1f}MW\nQ: {q_ext:.1f}MVar"
-                    
-            elif component_type == 'storage' and hasattr(self.network_model.net, 'res_storage'):
-                if component_id in self.network_model.net.res_storage.index:
-                    res = self.network_model.net.res_storage.loc[component_id]
-                    p_storage = res['p_mw']
-                    q_storage = res['q_mvar']
-                    result_text = f"P: {p_storage:.1f}MW\nQ: {q_storage:.1f}MVar"
-                    
-            return result_text
-            
-        except Exception as e:
-            return ""
+    # 删除潮流结果叠加和组件结果文本获取方法
     
     def draw_image_legend(self, painter, width, height, has_results):
         """绘制图像图例和状态信息"""
@@ -517,28 +532,13 @@ class SimulationWindow(QMainWindow):
             painter.setPen(Qt.black)
             
             # 绘制标题
-            title = "电力系统网络拓扑图 - 潮流计算结果可视化" if has_results else "电力系统网络拓扑图"
+            title = "电力系统网络拓扑图"
             painter.drawText(10, 20, title)
             
             # 绘制状态信息
             painter.setFont(QFont("Arial", 9))
-            if has_results:
-                painter.setPen(Qt.darkGreen)
-                painter.drawText(10, 40, "✓ 潮流计算已完成，显示实时结果")
-                
-                # 绘制图例
-                legend_y = height - 120
-                painter.setPen(Qt.black)
-                painter.drawText(10, legend_y, "图例:")
-                painter.drawText(10, legend_y + 20, "• V: 电压幅值 (p.u.)")
-                painter.drawText(10, legend_y + 35, "• ∠: 电压角度 (度)")
-                painter.drawText(10, legend_y + 50, "• P: 有功功率 (MW)")
-                painter.drawText(10, legend_y + 65, "• Q: 无功功率 (MVar)")
-                painter.drawText(10, legend_y + 80, "• Load: 负载率 (%)")
-                
-            else:
-                painter.setPen(Qt.darkRed)
-                painter.drawText(10, 40, "⚠ 未运行潮流计算，请先执行潮流分析")
+            painter.setPen(Qt.darkGreen)
+            painter.drawText(10, 40, "✓ 网络拓扑图已生成")
                 
             # 绘制网络统计信息
             stats_x = width - 200
@@ -688,269 +688,6 @@ class SimulationWindow(QMainWindow):
         }
         return type_map.get(component_type, component_type)
             
-    def run_power_flow(self):
-        """运行潮流计算"""
-        try:
-            self.progress_bar.setVisible(True)
-            self.progress_bar.setRange(0, 0)  # 不确定进度
-            self.run_powerflow_btn.setEnabled(False)
-            
-            # 首先从画布创建网络模型
-            self.statusBar().showMessage("正在创建网络模型...")
-            if not self.canvas.create_network_model():
-                QMessageBox.warning(self, "警告", "无法从画布组件创建网络模型，请检查网络连接")
-                return
-            
-            # 更新仿真窗口的网络模型引用
-            self.network_model = self.canvas.network_model
-            
-            # 重新加载网络数据到设备树
-            self.load_network_data()
-            
-            # 基本网络验证
-            if not self.validate_network():
-                return
-            
-            self.statusBar().showMessage("正在运行潮流计算...")
-            
-            # 运行潮流计算
-            pp.runpp(self.network_model.net)
-            
-            # 显示结果
-            self.show_powerflow_results()
-            
-            # 重新渲染网络图像以显示结果
-            self.render_network_image()
-            
-            self.statusBar().showMessage("潮流计算完成")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"潮流计算失败: {str(e)}")
-            
-        finally:
-            self.progress_bar.setVisible(False)
-            self.run_powerflow_btn.setEnabled(True)
-    
-    def validate_network(self):
-        """验证网络模型的有效性"""
-        try:
-            if not self.network_model or not self.network_model.net:
-                QMessageBox.warning(self, "网络验证", "网络模型为空")
-                return False
-            
-            net = self.network_model.net
-            
-            # 检查是否有母线
-            if net.bus.empty:
-                QMessageBox.warning(self, "网络验证", "网络中没有母线组件，无法进行潮流计算")
-                return False
-            
-            # 检查是否有电源
-            has_power_source = (
-                not net.ext_grid.empty or 
-                not net.gen.empty or 
-                not net.sgen.empty
-            )
-            
-            if not has_power_source:
-                QMessageBox.warning(self, "网络验证", "网络中没有电源（外部电网、发电机或静态发电机），无法进行潮流计算")
-                return False
-            
-            # 检查网络连通性（简单检查）
-            if len(net.bus) > 1 and net.line.empty and net.trafo.empty:
-                QMessageBox.warning(self, "网络验证", "网络中有多个母线但没有连接线路或变压器，可能存在孤立母线")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            QMessageBox.critical(self, "网络验证错误", f"网络验证过程中发生错误：{str(e)}")
-            return False
-            
-    def show_powerflow_results(self):
-        """显示潮流计算结果"""
-        if not self.network_model:
-            return
-            
-        try:
-            # 检查是否有潮流计算结果
-            if not hasattr(self.network_model.net, 'res_bus') or self.network_model.net.res_bus.empty:
-                self.powerflow_table.setRowCount(1)
-                self.powerflow_table.setColumnCount(1)
-                self.powerflow_table.setHorizontalHeaderLabels(["状态"])
-                self.powerflow_table.setItem(0, 0, QTableWidgetItem("没有潮流计算结果，请先运行潮流计算"))
-                return
-            
-            # 创建综合结果表格
-            all_results = []
-            
-            # 母线结果
-            if hasattr(self.network_model.net, 'res_bus') and not self.network_model.net.res_bus.empty:
-                for idx, row in self.network_model.net.res_bus.iterrows():
-                    bus_name = self.network_model.net.bus.loc[idx, 'name'] if 'name' in self.network_model.net.bus.columns else f"Bus_{idx}"
-                    voltage_status = "正常" if 0.95 <= row['vm_pu'] <= 1.05 else "异常"
-                    all_results.append({
-                        '类型': '母线',
-                        '名称': bus_name,
-                        '有功功率(MW)': '-',
-                        '无功功率(MVar)': '-',
-                        '电压幅值(p.u.)': f"{row['vm_pu']:.4f}",
-                        '电压角度(°)': f"{row['va_degree']:.2f}",
-                        '负载率(%)': '-',
-                        '状态': voltage_status
-                    })
-            
-            # 线路结果
-            if hasattr(self.network_model.net, 'res_line') and not self.network_model.net.res_line.empty:
-                for idx, row in self.network_model.net.res_line.iterrows():
-                    line_name = self.network_model.net.line.loc[idx, 'name'] if 'name' in self.network_model.net.line.columns else f"Line_{idx}"
-                    loading_status = "正常" if row['loading_percent'] <= 100 else "过载"
-                    all_results.append({
-                        '类型': '线路',
-                        '名称': line_name,
-                        '有功功率(MW)': f"{row['p_from_mw']:.3f}",
-                        '无功功率(MVar)': f"{row['q_from_mvar']:.3f}",
-                        '电压幅值(p.u.)': '-',
-                        '电压角度(°)': '-',
-                        '负载率(%)': f"{row['loading_percent']:.1f}",
-                        '状态': loading_status
-                    })
-            
-            # 变压器结果
-            if hasattr(self.network_model.net, 'res_trafo') and not self.network_model.net.res_trafo.empty:
-                for idx, row in self.network_model.net.res_trafo.iterrows():
-                    trafo_name = self.network_model.net.trafo.loc[idx, 'name'] if 'name' in self.network_model.net.trafo.columns else f"Trafo_{idx}"
-                    loading_status = "正常" if row['loading_percent'] <= 100 else "过载"
-                    all_results.append({
-                        '类型': '变压器',
-                        '名称': trafo_name,
-                        '有功功率(MW)': f"{row['p_hv_mw']:.3f}",
-                        '无功功率(MVar)': f"{row['q_hv_mvar']:.3f}",
-                        '电压幅值(p.u.)': '-',
-                        '电压角度(°)': '-',
-                        '负载率(%)': f"{row['loading_percent']:.1f}",
-                        '状态': loading_status
-                    })
-            
-            # 发电机结果
-            if hasattr(self.network_model.net, 'res_gen') and not self.network_model.net.res_gen.empty:
-                for idx, row in self.network_model.net.res_gen.iterrows():
-                    gen_name = self.network_model.net.gen.loc[idx, 'name'] if 'name' in self.network_model.net.gen.columns else f"Gen_{idx}"
-                    all_results.append({
-                        '类型': '发电机',
-                        '名称': gen_name,
-                        '有功功率(MW)': f"{row['p_mw']:.3f}",
-                        '无功功率(MVar)': f"{row['q_mvar']:.3f}",
-                        '电压幅值(p.u.)': '-',
-                        '电压角度(°)': '-',
-                        '负载率(%)': '-',
-                        '状态': '运行'
-                    })
-            
-            # 静态发电机结果
-            if hasattr(self.network_model.net, 'res_sgen') and not self.network_model.net.res_sgen.empty:
-                for idx, row in self.network_model.net.res_sgen.iterrows():
-                    sgen_name = self.network_model.net.sgen.loc[idx, 'name'] if 'name' in self.network_model.net.sgen.columns else f"SGen_{idx}"
-                    all_results.append({
-                        '类型': '静态发电机',
-                        '名称': sgen_name,
-                        '有功功率(MW)': f"{row['p_mw']:.3f}",
-                        '无功功率(MVar)': f"{row['q_mvar']:.3f}",
-                        '电压幅值(p.u.)': '-',
-                        '电压角度(°)': '-',
-                        '负载率(%)': '-',
-                        '状态': '运行'
-                    })
-            
-            # 负载结果
-            if hasattr(self.network_model.net, 'res_load') and not self.network_model.net.res_load.empty:
-                for idx, row in self.network_model.net.res_load.iterrows():
-                    load_name = self.network_model.net.load.loc[idx, 'name'] if 'name' in self.network_model.net.load.columns else f"Load_{idx}"
-                    all_results.append({
-                        '类型': '负载',
-                        '名称': load_name,
-                        '有功功率(MW)': f"{row['p_mw']:.3f}",
-                        '无功功率(MVar)': f"{row['q_mvar']:.3f}",
-                        '电压幅值(p.u.)': '-',
-                        '电压角度(°)': '-',
-                        '负载率(%)': '-',
-                        '状态': '运行'
-                    })
-            
-            # 外部电网结果
-            if hasattr(self.network_model.net, 'res_ext_grid') and not self.network_model.net.res_ext_grid.empty:
-                for idx, row in self.network_model.net.res_ext_grid.iterrows():
-                    ext_grid_name = self.network_model.net.ext_grid.loc[idx, 'name'] if 'name' in self.network_model.net.ext_grid.columns else f"ExtGrid_{idx}"
-                    all_results.append({
-                        '类型': '外部电网',
-                        '名称': ext_grid_name,
-                        '有功功率(MW)': f"{row['p_mw']:.3f}",
-                        '无功功率(MVar)': f"{row['q_mvar']:.3f}",
-                        '电压幅值(p.u.)': '-',
-                        '电压角度(°)': '-',
-                        '负载率(%)': '-',
-                        '状态': '运行'
-                    })
-            
-            # 储能结果
-            if hasattr(self.network_model.net, 'res_storage') and not self.network_model.net.res_storage.empty:
-                for idx, row in self.network_model.net.res_storage.iterrows():
-                    storage_name = self.network_model.net.storage.loc[idx, 'name'] if 'name' in self.network_model.net.storage.columns else f"Storage_{idx}"
-                    all_results.append({
-                        '类型': '储能',
-                        '名称': storage_name,
-                        '有功功率(MW)': f"{row['p_mw']:.3f}",
-                        '无功功率(MVar)': f"{row['q_mvar']:.3f}",
-                        '电压幅值(p.u.)': '-',
-                        '电压角度(°)': '-',
-                        '负载率(%)': '-',
-                        '状态': '运行'
-                    })
-            
-            # 填充表格
-            if all_results:
-                self.powerflow_table.setRowCount(len(all_results))
-                headers = list(all_results[0].keys())
-                self.powerflow_table.setColumnCount(len(headers))
-                self.powerflow_table.setHorizontalHeaderLabels(headers)
-                
-                for i, result in enumerate(all_results):
-                    for j, (key, value) in enumerate(result.items()):
-                        item = QTableWidgetItem(str(value))
-                        
-                        # 为不同状态设置不同颜色
-                        if key == '状态':
-                            if value == '异常' or value == '过载':
-                                item.setBackground(Qt.red)
-                            elif value == '正常' or value == '运行':
-                                item.setBackground(Qt.green)
-                        
-                        # 为不同类型设置不同背景色
-                        elif key == '类型':
-                            from PySide6.QtGui import QColor
-                            if value == '母线':
-                                item.setBackground(QColor(173, 216, 230))  # 浅蓝色
-                            elif value in ['线路', '变压器']:
-                                item.setBackground(QColor(255, 255, 224))  # 浅黄色
-                            elif value in ['发电机', '静态发电机', '外部电网', '储能']:
-                                item.setBackground(QColor(144, 238, 144))  # 浅绿色
-                            elif value == '负载':
-                                item.setBackground(QColor(211, 211, 211))  # 浅灰色
-                        
-                        self.powerflow_table.setItem(i, j, item)
-                
-                # 调整列宽
-                self.powerflow_table.resizeColumnsToContents()
-            
-            # 切换到潮流结果选项卡
-            self.results_tabs.setCurrentIndex(1)
-            
-        except Exception as e:
-            QMessageBox.warning(self, "警告", f"显示潮流结果时出错: {str(e)}")
-            
-    def run_short_circuit(self):
-        """运行短路分析"""
-        QMessageBox.information(self, "信息", "短路分析功能正在开发中...")
         
     def eventFilter(self, obj, event):
         """事件过滤器，处理图像缩放和平移"""
@@ -1161,7 +898,6 @@ class SimulationWindow(QMainWindow):
         try:
             from PyQt5.QtWidgets import QFileDialog
             import pandas as pd
-            import os
             from datetime import datetime
             
             # 选择保存路径
@@ -1389,5 +1125,422 @@ class SimulationWindow(QMainWindow):
     
     def closeEvent(self, event):
         """窗口关闭事件"""
+        self.auto_calc_timer.stop()
         self.parent_window.statusBar().showMessage("已退出仿真模式")
         event.accept()
+    
+    # 删除自动潮流计算方法（潮流计算功能已移除）
+    
+    # 删除自动潮流计算方法
+    
+    def update_device_combo(self):
+        """更新设备选择下拉框"""
+        if not self.network_model:
+            return
+            
+        self.device_combo.clear()
+        self.device_combo.addItem("-- 选择设备 --")
+        
+        # 添加所有可监控的设备
+        device_list = []
+        
+        # 母线
+        if not self.network_model.net.bus.empty:
+            for idx, bus in self.network_model.net.bus.iterrows():
+                name = bus.get('name', f'Bus_{idx}')
+                device_list.append(f"母线-{name}-{idx}")
+        
+        # 线路
+        if not self.network_model.net.line.empty:
+            for idx, line in self.network_model.net.line.iterrows():
+                name = line.get('name', f'Line_{idx}')
+                device_list.append(f"线路-{name}-{idx}")
+        
+        # 变压器
+        if not self.network_model.net.trafo.empty:
+            for idx, trafo in self.network_model.net.trafo.iterrows():
+                name = trafo.get('name', f'Trafo_{idx}')
+                device_list.append(f"变压器-{name}-{idx}")
+        
+        # 发电机
+        if not self.network_model.net.gen.empty:
+            for idx, gen in self.network_model.net.gen.iterrows():
+                name = gen.get('name', f'Gen_{idx}')
+                device_list.append(f"发电机-{name}-{idx}")
+        
+        # 负载
+        if not self.network_model.net.load.empty:
+            for idx, load in self.network_model.net.load.iterrows():
+                name = load.get('name', f'Load_{idx}')
+                device_list.append(f"负载-{name}-{idx}")
+        
+        # 排序并添加到下拉框
+        device_list.sort()
+        for device in device_list:
+            self.device_combo.addItem(device)
+    
+    def on_device_selection_changed(self, text):
+        """设备选择变更处理"""
+        if not text or text == "-- 选择设备 --":
+            self.selected_device_id = None
+            self.selected_device_type = None
+            return
+        
+        try:
+            parts = text.split('-', 2)
+            if len(parts) >= 3:
+                self.selected_device_type = parts[0]
+                self.selected_device_id = int(parts[2])
+                
+                # 清空历史数据
+                self.power_history.clear()
+                
+                # 如果自动计算已启动，立即更新一次
+                if self.is_auto_calculating:
+                    self.update_power_curve()
+                    
+        except Exception as e:
+            self.selected_device_id = None
+            self.selected_device_type = None
+    
+    def update_power_curve(self):
+        """更新功率曲线显示"""
+        if self.selected_device_id is None or self.selected_device_type is None:
+            return
+            
+        try:
+            # 获取当前功率值
+            power_value = self.get_device_power(self.selected_device_id, self.selected_device_type)
+            
+            if power_value is not None:
+                # 添加历史数据
+                timestamp = time.time()
+                self.power_history.append((timestamp, power_value))
+                
+                # 更新图像显示
+                self.display_power_curve()
+                
+        except Exception as e:
+            print(f"更新功率曲线失败: {str(e)}")
+    
+    def get_device_power(self, device_id, device_type):
+        """获取设备的实际功率属性值"""
+        try:
+            # 根据设备类型从实际属性中获取功率值
+            if device_type == "母线":
+                # 母线本身不直接设置功率，但可以通过潮流计算结果获取总注入功率
+                if hasattr(self.network_model.net, 'res_bus') and device_id in self.network_model.net.res_bus.index:
+                    # 获取该母线的总注入功率（发电减负荷）
+                    return abs(self.network_model.net.res_bus.loc[device_id, 'p_mw'])
+                else:
+                    return 0.0
+                
+            elif device_type == "线路":
+                # 从线路属性中获取功率（如果有的话）
+                lines = self.network_model.net.line
+                if device_id in lines.index and 'p_mw' in lines.columns:
+                    return abs(lines.loc[device_id, 'p_mw'])
+                else:
+                    # 如果没有功率属性，返回额定容量的百分比
+                    if device_id in lines.index:
+                        max_power = lines.loc[device_id, 'max_i_ka'] * lines.loc[device_id, 'vn_kv'] * 1.732  # 近似最大功率
+                        return max_power * 0.6  # 返回60%作为示例
+                    
+            elif device_type == "变压器":
+                # 从变压器属性中获取功率
+                trafos = self.network_model.net.trafo
+                if device_id in trafos.index and 'p_mw' in trafos.columns:
+                    return abs(trafos.loc[device_id, 'p_mw'])
+                else:
+                    # 如果没有功率属性，返回额定容量的百分比
+                    if device_id in trafos.index:
+                        rated_power = trafos.loc[device_id, 'sn_mva']
+                        return rated_power * 0.7  # 返回70%负载作为示例
+                    
+            elif device_type == "发电机":
+                # 从发电机属性中获取实际功率设置
+                gens = self.network_model.net.gen
+                if device_id in gens.index:
+                    return abs(gens.loc[device_id, 'p_mw'])
+                    
+            elif device_type == "静态发电机":
+                # 从静态发电机属性中获取实际功率设置
+                sgens = self.network_model.net.sgen
+                if device_id in sgens.index:
+                    return abs(sgens.loc[device_id, 'p_mw'])
+                    
+            elif device_type == "负载":
+                # 从负载属性中获取实际功率设置
+                loads = self.network_model.net.load
+                if device_id in loads.index:
+                    return abs(loads.loc[device_id, 'p_mw'])
+                    
+            elif device_type == "储能":
+                # 从储能属性中获取实际功率设置
+                storage = self.network_model.net.storage
+                if device_id in storage.index:
+                    return abs(storage.loc[device_id, 'p_mw'])
+                    
+            elif device_type == "外部电网":
+                # 从外部电网属性中获取功率
+                ext_grids = self.network_model.net.ext_grid
+                # 外部电网通常作为平衡节点，功率由系统决定
+                # 在pandapower中，外部电网的功率通常通过潮流计算结果获取
+                if hasattr(self.network_model.net, 'res_ext_grid') and device_id in self.network_model.net.res_ext_grid.index:
+                    return abs(self.network_model.net.res_ext_grid.loc[device_id, 'p_mw'])
+                else:
+                    return 0.0
+                    
+        except Exception as e:
+            print(f"获取设备功率失败: {str(e)}")
+        
+        return 0.0
+    
+    def display_power_curve(self):
+        """显示功率曲线 - 使用交互式图表"""
+        try:
+            if not self.selected_device_id or not self.selected_device_type:
+                return
+                
+            if len(self.power_history) < 2:
+                # 显示初始提示
+                self.ax.clear()
+                self.ax.text(0.5, 0.5, "等待数据收集...\n\n1. 选择要监控的设备\n2. 启用自动计算功能\n3. 数据将实时显示", 
+                             transform=self.ax.transAxes, ha='center', va='center', 
+                             bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7),
+                             fontsize=12)
+                self.ax.set_xlabel('时间 (秒)', fontsize=12)
+                self.ax.set_ylabel('功率 (MW)', fontsize=12)
+                self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
+                self.canvas_mpl.draw()
+                return
+                
+            # 提取时间和功率数据
+            timestamps = [item[0] for item in self.power_history]
+            powers = [item[1] for item in self.power_history]
+            
+            # 转换为相对时间（秒）
+            start_time = timestamps[0]
+            relative_times = [t - start_time for t in timestamps]
+            
+            # 清空当前图表
+            self.ax.clear()
+            
+            # 绘制功率曲线
+            self.ax.plot(relative_times, powers, 'b-', linewidth=2, 
+                        label=f'{self.selected_device_type} {self.selected_device_id}')
+            self.ax.set_xlabel('时间 (秒)', fontsize=12)
+            self.ax.set_ylabel('功率 (MW)', fontsize=12)
+            self.ax.set_title(f'{self.selected_device_type} {self.selected_device_id} 功率曲线', 
+                            fontsize=14, fontweight='bold')
+            self.ax.grid(True, alpha=0.3)
+            
+            # 自动调整Y轴范围
+            if powers:
+                min_power = min(powers)
+                max_power = max(powers)
+                padding = max((max_power - min_power) * 0.1, 0.1)
+                self.ax.set_ylim(max(0, min_power - padding), max_power + padding)
+            else:
+                self.ax.set_ylim(0, 1)
+            
+            # 添加统计信息
+            if powers:
+                max_power = max(powers)
+                min_power = min(powers)
+                avg_power = sum(powers) / len(powers)
+                
+                stats_text = f'最大功率: {max_power:.2f} MW\n最小功率: {min_power:.2f} MW\n平均功率: {avg_power:.2f} MW\n数据点数: {len(powers)}'
+                self.ax.text(0.02, 0.98, stats_text, transform=self.ax.transAxes, fontsize=10, 
+                           verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            
+            self.ax.legend()
+            
+            # 刷新图表
+            self.canvas_mpl.draw()
+                
+        except Exception as e:
+            self.ax.clear()
+            self.ax.text(0.5, 0.5, f"显示功率曲线失败: {str(e)}", 
+                         transform=self.ax.transAxes, ha='center', va='center', 
+                         bbox=dict(boxstyle='round', facecolor='red', alpha=0.5))
+            self.canvas_mpl.draw()
+            print(f"显示功率曲线失败: {str(e)}")
+    
+    # 删除设备树状态更新方法（与潮流计算结果相关）
+
+    def refresh_power_curve(self):
+        """刷新功率曲线显示"""
+        if self.selected_device_id is not None and self.selected_device_type is not None:
+            self.display_power_curve()
+        else:
+            QMessageBox.information(self, "提示", "请先选择要监控的设备")
+
+    def clear_power_history(self):
+        """清空功率历史数据"""
+        self.power_history.clear()
+        
+        # 清空图表并显示提示信息
+        self.ax.clear()
+        self.ax.text(0.5, 0.5, "功率历史数据已清空\n\n1. 选择要监控的设备\n2. 启用自动计算功能\n3. 数据将重新开始收集", 
+                     transform=self.ax.transAxes, ha='center', va='center', 
+                     bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7),
+                     fontsize=12)
+        self.ax.set_xlabel('时间 (秒)', fontsize=12)
+        self.ax.set_ylabel('功率 (MW)', fontsize=12)
+        self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
+        self.canvas_mpl.draw()
+        
+        # 清理临时文件（如果存在）
+        try:
+            if os.path.exists('temp_power_curve.png'):
+                os.remove('temp_power_curve.png')
+        except:
+            pass
+
+    def show_topology_image(self):
+        """显示网络拓扑图"""
+        try:
+            self.render_network_image()
+            if self.current_pixmap is not None:
+                # 创建拓扑图显示对话框
+                dialog = QDialog(self)
+                dialog.setWindowTitle("网络拓扑图")
+                dialog.setModal(False)
+                dialog.resize(800, 600)
+                
+                layout = QVBoxLayout(dialog)
+                
+                # 显示拓扑图
+                image_label = QLabel()
+                image_label.setPixmap(self.current_pixmap)
+                image_label.setScaledContents(True)
+                image_label.setAlignment(Qt.AlignCenter)
+                
+                scroll_area = QScrollArea()
+                scroll_area.setWidget(image_label)
+                scroll_area.setWidgetResizable(True)
+                
+                layout.addWidget(scroll_area)
+                
+                # 添加关闭按钮
+                close_btn = QPushButton("关闭")
+                close_btn.clicked.connect(dialog.close)
+                layout.addWidget(close_btn)
+                
+                dialog.exec_()
+            else:
+                QMessageBox.warning(self, "警告", "无法生成网络拓扑图")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"显示拓扑图失败: {str(e)}")
+
+    def toggle_auto_calculation(self, state):
+        """切换自动潮流计算状态"""
+        if state == 2: 
+            if not self.network_model:
+                QMessageBox.warning(self, "警告", "没有可用的网络模型")
+                self.auto_calc_checkbox.setChecked(False)
+                return
+                
+            interval = self.calc_interval_spinbox.value() * 1000  # 转换为毫秒
+            self.auto_calc_timer.start(interval)
+            self.is_auto_calculating = True
+            self.statusBar().showMessage("自动潮流计算已启动")
+        else:
+            self.auto_calc_timer.stop()
+            self.is_auto_calculating = False
+            self.statusBar().showMessage("自动潮流计算已停止")
+    
+    def auto_power_flow_calculation(self):
+        """自动潮流计算主方法"""
+        try:
+            if not self.network_model or not hasattr(self.network_model, 'net'):
+                return
+                
+            # 生成负载数据
+            if self.load_data_checkbox.isChecked():
+                load_data = self.load_data_generator.generate_load_data(self.network_model)
+                
+                # 更新网络中的负载值
+                for load_idx, load_values in load_data.items():
+                    if load_idx in self.network_model.net.load.index:
+                        self.network_model.net.load.loc[load_idx, 'p_mw'] = load_values['p_mw']
+                        self.network_model.net.load.loc[load_idx, 'q_mvar'] = load_values['q_mvar']
+            
+            # 运行潮流计算
+            try:
+                pp.runpp(self.network_model.net)
+                self.statusBar().showMessage("潮流计算成功")
+                
+                # 更新设备树状态
+                self.update_device_tree_status()
+                
+                # 更新功率曲线
+                if self.selected_device_id is not None and self.selected_device_type is not None:
+                    self.update_power_curve()
+                    
+            except Exception as e:
+                self.statusBar().showMessage(f"潮流计算失败: {str(e)}")
+                
+        except Exception as e:
+            print(f"自动潮流计算错误: {str(e)}")
+            self.statusBar().showMessage("自动潮流计算发生错误")
+    
+    def update_device_tree_status(self):
+        """更新设备树状态"""
+        try:
+            if not hasattr(self.network_model.net, 'res_bus') or self.network_model.net.res_bus.empty:
+                return
+                
+            # 遍历设备树并更新状态
+            root = self.device_tree.invisibleRootItem()
+            
+            def update_item_status(item):
+                data = item.data(0, Qt.UserRole)
+                if data:
+                    device_type, device_id = data
+                    
+                    try:
+                        if device_type == 'bus' and hasattr(self.network_model.net, 'res_bus'):
+                            if device_id in self.network_model.net.res_bus.index:
+                                item.setText(2, "正常")
+                        elif device_type == 'line' and hasattr(self.network_model.net, 'res_line'):
+                            if device_id in self.network_model.net.res_line.index:
+                                item.setText(2, "正常")
+                        elif device_type == 'trafo' and hasattr(self.network_model.net, 'res_trafo'):
+                            if device_id in self.network_model.net.res_trafo.index:
+                                item.setText(2, "正常")
+                        elif device_type == 'load' and hasattr(self.network_model.net, 'res_load'):
+                            if device_id in self.network_model.net.res_load.index:
+                                item.setText(2, "正常")
+                        elif device_type == 'gen' and hasattr(self.network_model.net, 'res_gen'):
+                            if device_id in self.network_model.net.res_gen.index:
+                                item.setText(2, "正常")
+                    except:
+                        item.setText(2, "异常")
+                
+                # 递归更新子项
+                for i in range(item.childCount()):
+                    update_item_status(item.child(i))
+            
+            # 更新所有根项
+            for i in range(root.childCount()):
+                update_item_status(root.child(i))
+                
+        except Exception as e:
+            print(f"更新设备树状态失败: {str(e)}")
+
+    def closeEvent(self, event):
+        """窗口关闭事件"""
+        # 停止自动计算定时器
+        self.auto_calc_timer.stop()
+        
+        # 清理临时文件
+        try:
+            if os.path.exists('temp_power_curve.png'):
+                os.remove('temp_power_curve.png')
+        except:
+            pass
+            
+        super().closeEvent(event)
