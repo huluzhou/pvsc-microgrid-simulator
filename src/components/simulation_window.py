@@ -27,88 +27,8 @@ from collections import deque
 import threading
 import time
 from datetime import datetime
+from .data_generators import DataGeneratorManager
 
-class LoadDataGenerator:
-    """负载数据生成器"""
-    
-    def __init__(self):
-        self.base_loads = {}
-        self.load_profiles = {}
-        
-    def generate_load_data(self, network_model):
-        """生成负载数据
-        
-        Args:
-            network_model: 网络模型
-            
-        Returns:
-            dict: 负载数据字典
-        """
-        if not network_model or not hasattr(network_model, 'net'):
-            return {}
-            
-        load_data = {}
-        
-        # 获取所有负载
-        if not network_model.net.load.empty:
-            for idx, load in network_model.net.load.iterrows():
-                # 基础负载值
-                base_p = load.get('p_mw', 1.0)
-                base_q = load.get('q_mvar', 0.5)
-                
-                # 生成随机负载变化（±20%范围内）
-                variation = np.random.uniform(0.8, 1.2)
-                new_p = base_p * variation
-                new_q = base_q * variation
-                
-                load_data[idx] = {
-                    'p_mw': new_p,
-                    'q_mvar': new_q,
-                    'name': load.get('name', f'Load_{idx}')
-                }
-        
-        return load_data
-    
-    def generate_daily_load_profile(self, network_model):
-        """生成日负载曲线数据
-        
-        Args:
-            network_model: 网络模型
-            
-        Returns:
-            dict: 日负载曲线数据
-        """
-        if not network_model or not hasattr(network_model, 'net'):
-            return {}
-            
-        load_profiles = {}
-        
-        # 24小时负载曲线模板（基于典型日负载模式）
-        daily_pattern = [
-            0.6, 0.5, 0.4, 0.3, 0.3, 0.4,  # 0-5时
-            0.5, 0.7, 0.8, 0.9, 0.95, 1.0,  # 6-11时
-            1.0, 0.95, 0.9, 0.85, 0.9, 1.0,  # 12-17时
-            1.1, 1.2, 1.1, 0.9, 0.8, 0.7   # 18-23时
-        ]
-        
-        if not network_model.net.load.empty:
-            for idx, load in network_model.net.load.iterrows():
-                base_p = load.get('p_mw', 1.0)
-                base_q = load.get('q_mvar', 0.5)
-                
-                # 根据当前时间选择负载值
-                current_hour = datetime.now().hour
-                pattern_index = current_hour % 24
-                multiplier = daily_pattern[pattern_index] * np.random.uniform(0.9, 1.1)
-                
-                load_profiles[idx] = {
-                    'p_mw': base_p * multiplier,
-                    'q_mvar': base_q * multiplier,
-                    'hour': current_hour,
-                    'multiplier': multiplier
-                }
-        
-        return load_profiles
 
 
 class SimulationWindow(QMainWindow):
@@ -128,17 +48,17 @@ class SimulationWindow(QMainWindow):
         self.selected_device_id = None
         self.selected_device_type = None
         self.monitored_devices = set()  # 存储要监控的设备集合
+        self.generated_devices = set()
         self.device_colors = {}  # 存储设备对应的颜色
         self.color_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
                              '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
         
-        # 负载数据生成相关
-        self.load_data_generator = LoadDataGenerator()
+        # 数据生成器管理
+        self.data_generator_manager = DataGeneratorManager()
         self.current_load_index = 0
         
         self.init_ui()
         self.load_network_data()
-        self.update_device_combo()
         
     def init_ui(self):
         """初始化用户界面"""
@@ -235,22 +155,6 @@ class SimulationWindow(QMainWindow):
         self.device_stats_label.setStyleSheet("font-size: 12px; color: #666; padding: 5px;")
         tree_layout.addWidget(self.device_stats_label)
         
-        # 删除仿真控制按钮（潮流计算和短路分析功能已移除）
-        
-        # 导出按钮组
-        export_group = QGroupBox("结果导出")
-        export_layout = QHBoxLayout(export_group)
-        
-        self.export_csv_btn = QPushButton("导出CSV")
-        self.export_csv_btn.clicked.connect(self.export_results_csv)
-        self.export_csv_btn.setStyleSheet("QPushButton { background-color: #2196F3; color: white; font-weight: bold; padding: 6px; }")
-        export_layout.addWidget(self.export_csv_btn)
-        
-        self.export_excel_btn = QPushButton("导出Excel")
-        self.export_excel_btn.clicked.connect(self.export_results_excel)
-        self.export_excel_btn.setStyleSheet("QPushButton { background-color: #009688; color: white; font-weight: bold; padding: 6px; }")
-        export_layout.addWidget(self.export_excel_btn)
-        
         # 自动计算控制面板
         auto_group = QGroupBox("自动计算")
         auto_layout = QVBoxLayout(auto_group)
@@ -271,31 +175,6 @@ class SimulationWindow(QMainWindow):
         self.calc_interval_spinbox.setValue(5)
         interval_layout.addWidget(self.calc_interval_spinbox)
         auto_layout.addLayout(interval_layout)
-        
-        # 负载数据生成开关
-        load_data_layout = QHBoxLayout()
-        load_data_layout.addWidget(QLabel("生成负载数据:"))
-        self.load_data_checkbox = QCheckBox()
-        self.load_data_checkbox.setChecked(True)
-        load_data_layout.addWidget(self.load_data_checkbox)
-        auto_layout.addLayout(load_data_layout)
-        
-        # 功率曲线显示开关
-        curve_layout = QHBoxLayout()
-        curve_layout.addWidget(QLabel("显示功率曲线:"))
-        self.show_curve_checkbox = QCheckBox()
-        self.show_curve_checkbox.setChecked(True)
-        curve_layout.addWidget(self.show_curve_checkbox)
-        auto_layout.addLayout(curve_layout)
-        
-        # 选择设备下拉框
-        device_layout = QHBoxLayout()
-        device_layout.addWidget(QLabel("监控设备:"))
-        self.device_combo = QComboBox()
-        self.device_combo.currentTextChanged.connect(self.on_device_selection_changed)
-        device_layout.addWidget(self.device_combo)
-        auto_layout.addLayout(device_layout)
-        
         tree_layout.addWidget(auto_group)
         
         parent.addWidget(tree_widget)
@@ -396,15 +275,38 @@ class SimulationWindow(QMainWindow):
         
         parent_layout.addWidget(monitor_group)
         
+    def create_data_generation_panel(self, parent_layout):
+        """创建数据生成控制面板"""
+        # 创建数据生成控制组
+        data_group = QGroupBox("数据生成控制")
+        data_layout = QVBoxLayout(data_group)
+        
+        # 负载变化幅度
+        variation_layout = QHBoxLayout()
+        variation_layout.addWidget(QLabel("变化幅度(%)"))
+        self.variation_spinbox = QSpinBox()
+        self.variation_spinbox.setRange(5, 50)
+        self.variation_spinbox.setValue(20)
+        data_layout.addLayout(variation_layout)
+        
+        # 操作按钮
+        button_layout = QHBoxLayout()
+        
+        self.start_generation_btn = QPushButton("开始生成")
+        self.start_generation_btn.clicked.connect(self.start_load_data_generation)
+        button_layout.addWidget(self.start_generation_btn)
+        
+        self.stop_generation_btn = QPushButton("停止生成")
+        self.stop_generation_btn.clicked.connect(self.stop_load_data_generation)
+        button_layout.addWidget(self.stop_generation_btn)
+        
+        data_layout.addLayout(button_layout)
+        
+        parent_layout.addWidget(data_group)
+        
     def create_component_details_tab(self):
         """创建组件详情选项卡"""
         layout = QVBoxLayout(self.component_details_tab)
-        
-        # 组件信息显示
-        self.component_info = QTextEdit()
-        self.component_info.setReadOnly(True)
-        self.component_info.setMaximumHeight(200)
-        layout.addWidget(self.component_info)
         
         # 组件参数表格
         self.component_params_table = QTableWidget()
@@ -413,8 +315,17 @@ class SimulationWindow(QMainWindow):
         self.component_params_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.component_params_table)
         
+        # 创建控制面板容器
+        control_container = QWidget()
+        control_layout = QVBoxLayout(control_container)
+        
         # 功率曲线监控控制面板
-        self.create_monitor_control_panel(layout)
+        self.create_monitor_control_panel(control_layout)
+        
+        # 数据生成控制面板
+        self.create_data_generation_panel(control_layout)
+        
+        layout.addWidget(control_container)
         
     # 删除潮流结果和短路结果选项卡创建方法
         
@@ -595,6 +506,9 @@ class SimulationWindow(QMainWindow):
         # 显示组件详情
         self.show_component_details(component_type, component_idx)
         
+        self.enable_device_data_generation(component_type, component_idx)
+
+        
     def show_component_details(self, component_type, component_idx):
         """显示组件详细信息"""
         if not self.network_model:
@@ -648,34 +562,6 @@ class SimulationWindow(QMainWindow):
             else:
                 return
                 
-            # 显示组件基本信息
-            info_text = f"组件类型: {self.get_component_type_chinese(component_type)}\n"
-            info_text += f"组件索引: {component_idx}\n"
-            info_text += f"组件名称: {component_data.get('name', 'N/A')}\n"
-            
-            # 添加工作状态信息
-            if result_data is not None:
-                info_text += "\n=== 仿真结果 ===\n"
-                if component_type == 'bus':
-                    info_text += f"电压幅值: {result_data.get('vm_pu', 'N/A'):.4f} p.u.\n"
-                    info_text += f"电压角度: {result_data.get('va_degree', 'N/A'):.2f}°\n"
-                    info_text += f"有功功率: {result_data.get('p_mw', 'N/A'):.3f} MW\n"
-                    info_text += f"无功功率: {result_data.get('q_mvar', 'N/A'):.3f} MVar\n"
-                elif component_type in ['line', 'trafo']:
-                    info_text += f"有功功率(from): {result_data.get('p_from_mw', 'N/A'):.3f} MW\n"
-                    info_text += f"无功功率(from): {result_data.get('q_from_mvar', 'N/A'):.3f} MVar\n"
-                    info_text += f"有功功率(to): {result_data.get('p_to_mw', 'N/A'):.3f} MW\n"
-                    info_text += f"无功功率(to): {result_data.get('q_to_mvar', 'N/A'):.3f} MVar\n"
-                    if 'loading_percent' in result_data:
-                        info_text += f"负载率: {result_data['loading_percent']:.1f}%\n"
-                elif component_type in ['load', 'gen', 'sgen', 'ext_grid', 'storage']:
-                    info_text += f"有功功率: {result_data.get('p_mw', 'N/A'):.3f} MW\n"
-                    info_text += f"无功功率: {result_data.get('q_mvar', 'N/A'):.3f} MVar\n"
-            else:
-                info_text += "\n仿真结果: 未运行潮流计算\n"
-                
-            self.component_info.setText(info_text)
-            
             # 填充参数表格（组合组件参数和仿真结果）
             all_params = {}
             
@@ -703,7 +589,60 @@ class SimulationWindow(QMainWindow):
                 self.component_params_table.setItem(i, 1, value_item)
                 
         except Exception as e:
-            self.component_info.setText(f"显示组件详情时出错: {str(e)}")
+            # 显示错误信息在状态栏
+            self.parent_window.statusBar().showMessage(f"显示组件详情时出错: {str(e)}")
+
+    def enable_device_data_generation(self, component_type, component_idx):
+        """标记需要生成数据的设备
+        
+        该函数用于标记指定设备为需要生成数据的设备，使其在数据生成过程中
+        被包含在数据生成范围内。支持负载(load)和静态发电机(sgen)设备。
+        
+        Args:
+            component_type (str): 组件类型 ('load', 'sgen')
+            component_idx (int): 组件索引ID
+        """
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            return
+        
+        # 只支持负载和静态发电机
+        if component_type not in ['load', 'sgen']:
+            return
+
+        try:
+            # 创建设备唯一标识符
+            device_key = f"{component_type}_{component_idx}"
+            
+            # 检查设备是否存在于网络模型中
+            if component_type == 'load':
+                if component_idx not in self.network_model.net.load.index:
+                    self.statusBar().showMessage(f"负载设备 {component_idx} 不存在")
+                    return
+            elif component_type == 'sgen':
+                if component_idx not in self.network_model.net.sgen.index:
+                    self.statusBar().showMessage(f"静态发电机设备 {component_idx} 不存在")
+                    return
+
+            # 检查设备是否已存在于监控列表中
+            if device_key not in self.generated_devices:
+                # 将设备添加到监控设备集合
+                self.generated_devices.add(device_key)
+                
+                # 启动对应的数据生成器
+                self.data_generator_manager.start_generation(component_type)
+                
+                # 显示成功消息
+                device_name = "负载" if component_type == "load" else "光伏"
+                self.statusBar().showMessage(f"已将{device_name}设备 {component_idx} 标记为数据生成设备")
+                
+            else:
+                # 设备已存在，显示提示信息
+                device_name = "负载" if component_type == "load" else "光伏"
+                self.statusBar().showMessage(f"{device_name}设备 {component_idx} 已在数据生成列表中")
+                
+        except Exception as e:
+            self.statusBar().showMessage(f"标记设备数据生成时出错: {str(e)}")
+            print(f"Error in enable_device_data_generation: {str(e)}")
     
     def get_component_type_chinese(self, component_type):
         """获取组件类型的中文名称"""
@@ -1160,80 +1099,6 @@ class SimulationWindow(QMainWindow):
         self.parent_window.statusBar().showMessage("已退出仿真模式")
         event.accept()
     
-    # 删除自动潮流计算方法（潮流计算功能已移除）
-    
-    # 删除自动潮流计算方法
-    
-    def update_device_combo(self):
-        """更新设备选择下拉框"""
-        if not self.network_model:
-            return
-            
-        self.device_combo.clear()
-        self.device_combo.addItem("-- 选择设备 --")
-        
-        # 添加所有可监控的设备
-        device_list = []
-        
-        # 母线
-        if not self.network_model.net.bus.empty:
-            for idx, bus in self.network_model.net.bus.iterrows():
-                name = bus.get('name', f'Bus_{idx}')
-                device_list.append(f"母线-{name}-{idx}")
-        
-        # 线路
-        if not self.network_model.net.line.empty:
-            for idx, line in self.network_model.net.line.iterrows():
-                name = line.get('name', f'Line_{idx}')
-                device_list.append(f"线路-{name}-{idx}")
-        
-        # 变压器
-        if not self.network_model.net.trafo.empty:
-            for idx, trafo in self.network_model.net.trafo.iterrows():
-                name = trafo.get('name', f'Trafo_{idx}')
-                device_list.append(f"变压器-{name}-{idx}")
-        
-        # 发电机
-        if not self.network_model.net.gen.empty:
-            for idx, gen in self.network_model.net.gen.iterrows():
-                name = gen.get('name', f'Gen_{idx}')
-                device_list.append(f"发电机-{name}-{idx}")
-        
-        # 负载
-        if not self.network_model.net.load.empty:
-            for idx, load in self.network_model.net.load.iterrows():
-                name = load.get('name', f'Load_{idx}')
-                device_list.append(f"负载-{name}-{idx}")
-        
-        # 排序并添加到下拉框
-        device_list.sort()
-        for device in device_list:
-            self.device_combo.addItem(device)
-    
-    def on_device_selection_changed(self, text):
-        """设备选择变更处理"""
-        if not text or text == "-- 选择设备 --":
-            self.selected_device_id = None
-            self.selected_device_type = None
-            return
-        
-        try:
-            parts = text.split('-', 2)
-            if len(parts) >= 3:
-                self.selected_device_type = parts[0]
-                self.selected_device_id = int(parts[2])
-                
-                # 清空历史数据
-                self.power_history.clear()
-                
-                # 如果自动计算已启动，立即更新一次
-                if self.is_auto_calculating:
-                    self.update_power_curve()
-                    
-        except Exception as e:
-            self.selected_device_id = None
-            self.selected_device_type = None
-    
     def update_power_curve(self):
         """更新所有监控设备的功率曲线数据"""
         try:
@@ -1464,16 +1329,25 @@ class SimulationWindow(QMainWindow):
             if not self.network_model or not hasattr(self.network_model, 'net'):
                 return
                 
-            # 生成负载数据
-            if self.load_data_checkbox.isChecked():
-                load_data = self.load_data_generator.generate_load_data(self.network_model)
+            for device in self.generated_devices:
+                device_type, device_idx = device.split('_', 1)
+                device_idx = int(device_idx)
                 
-                # 更新网络中的负载值
-                for load_idx, load_values in load_data.items():
-                    if load_idx in self.network_model.net.load.index:
-                        self.network_model.net.load.loc[load_idx, 'p_mw'] = load_values['p_mw']
-                        self.network_model.net.load.loc[load_idx, 'q_mvar'] = load_values['q_mvar']
-            
+                if device_type == 'load':
+                    if device_idx in self.network_model.net.load.index:
+                        load_data = self.data_generator_manager.generate_device_data('load', device_idx, self.network_model)
+                        if device_idx in load_data:
+                            load_values = load_data[device_idx]
+                            self.network_model.net.load.loc[device_idx, 'p_mw'] = load_values['p_mw']
+                            self.network_model.net.load.loc[device_idx, 'q_mvar'] = load_values['q_mvar']
+                            
+                elif device_type == 'sgen':
+                    if device_idx in self.network_model.net.sgen.index:
+                        sgen_data = self.data_generator_manager.generate_device_data('sgen', device_idx, self.network_model)
+                        if device_idx in sgen_data:
+                            sgen_values = sgen_data[device_idx]
+                            self.network_model.net.sgen.loc[device_idx, 'p_mw'] = sgen_values['p_mw']
+                            self.network_model.net.sgen.loc[device_idx, 'q_mvar'] = sgen_values['q_mvar']
             # 运行潮流计算
             try:
                 pp.runpp(self.network_model.net)
@@ -1613,6 +1487,44 @@ class SimulationWindow(QMainWindow):
         
         # 更新图表显示
         self.display_power_curve()
+        
+    def start_load_data_generation(self):
+        """开始数据生成"""
+        self.data_generator_manager.start_generation()
+        self.start_generation_btn.setEnabled(False)
+        self.stop_generation_btn.setEnabled(True)
+        
+    def stop_load_data_generation(self):
+        """停止数据生成"""
+        self.data_generator_manager.stop_generation()
+        self.start_generation_btn.setEnabled(True)
+        self.stop_generation_btn.setEnabled(False)
+        self.parent_window.statusBar().showMessage("已停止数据生成")
+        
+    def generate_and_update_load_data(self):
+        """生成并更新负载数据"""
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            return
+            
+        # 生成新的负载数据
+        new_load_data = self.data_generator_manager.load_generator.generate_daily_load_profile(self.network_model)
+        
+        if new_load_data:
+            # 更新网络模型中的负载数据
+            for idx, load_data in new_load_data.items():
+                if idx < len(self.network_model.net.load):
+                    self.network_model.net.load.loc[idx, 'p_mw'] = load_data['p_mw']
+                    self.network_model.net.load.loc[idx, 'q_mvar'] = load_data['q_mvar']
+            
+            # 更新设备树显示
+            self.update_device_tree_status()
+            
+            # 如果启用了自动计算，执行潮流计算
+            if hasattr(self, 'auto_calc_checkbox') and self.auto_calc_checkbox.isChecked():
+                self.auto_power_flow_calculation()
+            
+            self.parent_window.statusBar().showMessage(
+                f"已更新负载数据 - 更新于 {datetime.now().strftime('%H:%M:%S')}")
     
     def closeEvent(self, event):
         """窗口关闭事件"""
