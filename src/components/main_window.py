@@ -200,8 +200,6 @@ class MainWindow(QMainWindow):
         sim_menu.addAction(simulation_mode_action)
         
         sim_menu.addSeparator()
-        sim_menu.addAction("运行潮流计算")
-        sim_menu.addAction("短路分析")
         
         # 帮助菜单
         help_menu = self.menuBar().addMenu("帮助")

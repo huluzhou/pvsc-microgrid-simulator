@@ -1522,6 +1522,15 @@ class SimulationWindow(QMainWindow):
                         elif device_type == 'gen' and hasattr(self.network_model.net, 'res_gen'):
                             if device_id in self.network_model.net.res_gen.index:
                                 item.setText(2, "正常")
+                        elif device_type == 'sgen' and hasattr(self.network_model.net, 'res_sgen'):
+                            if device_id in self.network_model.net.res_sgen.index:
+                                item.setText(2, "正常")
+                        elif device_type == 'ext_grid' and hasattr(self.network_model.net, 'res_ext_grid'):
+                            if device_id in self.network_model.net.res_ext_grid.index:
+                                item.setText(2, "正常")
+                        elif device_type == 'storage' and hasattr(self.network_model.net, 'res_storage'):
+                            if device_id in self.network_model.net.res_storage.index:
+                                item.setText(2, "正常")
                     except:
                         item.setText(2, "异常")
                 
