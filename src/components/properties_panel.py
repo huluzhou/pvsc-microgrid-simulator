@@ -146,7 +146,7 @@ class PropertiesPanel(QWidget):
                 elif prop_name in ['vk0_percent', 'vkr0_percent', 'mag0_percent', 'mag0_rx', 'si0_hv_partial']:
                     pass  # 显示
             
-            # 对于静态发电机组件，根据use_power_factor控制显示
+            # 对于光伏组件，根据use_power_factor控制显示
             elif item.component_type == 'static_generator':
                 use_power_factor = item.properties.get('use_power_factor', False)
                 
@@ -323,7 +323,7 @@ class PropertiesPanel(QWidget):
                 self.update_properties(self.current_item)
                 return  # 避免重复发出信号
             
-            # 特殊处理静态发电机的use_power_factor属性改变
+            # 特殊处理光伏的use_power_factor属性改变
             if prop_name == 'use_power_factor' and self.current_item.component_type == 'static_generator':
                 # 重新刷新属性面板显示
                 self.update_properties(self.current_item)
@@ -566,7 +566,7 @@ class PropertiesPanel(QWidget):
                         ('trafo3w', '三绕组变压器'),
                         ('load', '负载'),
                         ('gen', '发电机'),
-                        ('sgen', '静态发电机'),
+                        ('sgen', '光伏'),
                         ('shunt', '并联电抗器'),
                         ('ward', 'Ward等值'),
                         ('xward', '扩展Ward等值'),

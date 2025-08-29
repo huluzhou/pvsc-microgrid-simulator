@@ -98,7 +98,7 @@ class ComponentPalette(QListWidget):
             {"name": "母线", "type": "bus", "icon": "bus.svg"},
             {"name": "线路", "type": "line", "icon": "line.svg"},
             {"name": "变压器", "type": "transformer", "icon": "transformer.svg"},
-            {"name": "静态发电机", "type": "static_generator", "icon": "static_generator.svg"},
+            {"name": "光伏", "type": "static_generator", "icon": "static_generator.svg"},
             {"name": "负载", "type": "load", "icon": "load.svg"},
             {"name": "储能", "type": "storage", "icon": "storage.svg"},
             {"name": "充电站", "type": "charger", "icon": "charger.svg"},

@@ -244,7 +244,7 @@ class PVDataGenerator(BaseDataGenerator):
             from datetime import datetime
             current_hour = datetime.now().hour
             
-            # 基础光伏曲线（晴天模式）
+            # 基础光伏功率曲线（MW，晴天模式下的标准1MW光伏电站输出）
             base_pv_curve = [
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.05,   # 0-5时
                 0.2, 0.4, 0.6, 0.8, 0.95, 1.0,   # 6-11时
@@ -271,25 +271,23 @@ class PVDataGenerator(BaseDataGenerator):
             # 云层影响
             cloud_factor = 1.0 - (self.cloud_cover * 0.5)
             
-            # 计算最终倍数
-            base_multiplier = base_pv_curve[current_hour]
-            final_multiplier = base_multiplier * weather_factor * season_multiplier * cloud_factor
+            # 获取基础功率（当前时段的标准输出）
+            base_power_mw = base_pv_curve[current_hour]
+            
+            # 应用各种调整因子
+            adjusted_power = base_power_mw * weather_factor * season_multiplier * cloud_factor
             
             # 添加随机变化
             variation_factor = self.variation / 100.0
             random_factor = np.random.uniform(1.0 - variation_factor, 1.0 + variation_factor)
-            final_multiplier *= random_factor
+            adjusted_power *= random_factor
             
             # 确保非负
-            final_multiplier = max(0.0, final_multiplier)
+            adjusted_power = max(0.0, adjusted_power)
             
-            # 基础光伏容量
-            base_p = sgen.get('p_mw', 1.0)
-            base_q = sgen.get('q_mvar', 0.0)
-            
-            # 计算新的光伏值
-            new_p = base_p * final_multiplier
-            new_q = base_q * final_multiplier
+            # 计算新的光伏值（无功功率设为0）
+            new_p = adjusted_power
+            new_q = 0.0
             
             pv_data[index] = {
                 'p_mw': new_p,
@@ -297,7 +295,7 @@ class PVDataGenerator(BaseDataGenerator):
             }
             
         except (KeyError, AttributeError):
-            print(f"光伏索引 {index} 不存在")
+            pass
             
         return pv_data
     

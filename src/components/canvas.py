@@ -332,7 +332,7 @@ class NetworkCanvas(QGraphicsView):
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
                             )
-                            print(f"创建静态发电机: {item.component_name} -> 母线 {bus_idx}")
+                            print(f"创建光伏: {item.component_name} -> 母线 {bus_idx}")
                     
                     elif item.component_type == 'storage':
                         if connected_buses:
@@ -433,7 +433,7 @@ class NetworkCanvas(QGraphicsView):
                 return True
             return False
             
-        # 负载、存储、充电器、外部电网、静态发电机可以连接到母线或电表
+        # 负载、存储、充电器、外部电网、光伏可以连接到母线或电表
         if type1 in ["load", "storage", "charger", "external_grid", "static_generator"] or type2 in ["load", "storage", "charger", "external_grid", "static_generator"]:
             # 如果其中一个是母线或电表，则允许连接
             if type1 in ["bus", "meter"] or type2 in ["bus", "meter"]:

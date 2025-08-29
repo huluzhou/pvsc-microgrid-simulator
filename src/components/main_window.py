@@ -527,7 +527,7 @@ class MainWindow(QMainWindow):
             )
             
             if not has_power_source:
-                QMessageBox.warning(self, "网络诊断", "网络中没有电源（外部电网、发电机或静态发电机）。")
+                QMessageBox.warning(self, "网络诊断", "网络中没有电源（外部电网、发电机或光伏）。")
                 return False
             
             # 检查网络连通性和拓扑

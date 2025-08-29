@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QTreeWidget, QTreeWidgetItem, QTextEdit, QLabel,
     QGroupBox, QPushButton, QMessageBox, QProgressBar, QCheckBox, QSpinBox,
     QTabWidget, QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QDialog,
-    QSizePolicy, QApplication
+    QSizePolicy, QApplication, QFormLayout, QDoubleSpinBox
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QPainter, QFont, QBrush, QColor, QPalette
@@ -262,10 +262,15 @@ class SimulationWindow(QMainWindow):
         # 创建选项卡
         self.results_tabs = QTabWidget()
         
-        # 组件详情选项卡（仅保留此选项卡）
+        # 组件详情选项卡
         self.component_details_tab = QWidget()
         self.create_component_details_tab()
         self.results_tabs.addTab(self.component_details_tab, "组件详情")
+        
+        # 数据生成控制选项卡
+        self.data_generation_tab = QWidget()
+        self.create_data_generation_tab()
+        self.results_tabs.addTab(self.data_generation_tab, "数据生成控制")
         
         results_layout.addWidget(self.results_tabs)
         
@@ -343,10 +348,126 @@ class SimulationWindow(QMainWindow):
         # 功率曲线监控控制面板
         self.create_monitor_control_panel(control_layout)
         
-        # 数据生成控制面板
-        self.create_data_generation_panel(control_layout)
-        
         layout.addWidget(control_container)
+        
+    def create_data_generation_tab(self):
+        """创建数据生成控制选项卡"""
+        layout = QVBoxLayout(self.data_generation_tab)
+        
+        # 当前选择设备信息
+        current_device_group = QGroupBox("当前选择设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+        
+        self.current_device_label = QLabel("未选择设备")
+        self.current_device_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        current_device_layout.addWidget(self.current_device_label)
+        
+        # 设备数据生成控制
+        device_control_layout = QHBoxLayout()
+        self.enable_device_generation_checkbox = QCheckBox("启用当前设备数据生成")
+        self.enable_device_generation_checkbox.stateChanged.connect(self.toggle_device_data_generation)
+        device_control_layout.addWidget(self.enable_device_generation_checkbox)
+        
+        current_device_layout.addLayout(device_control_layout)
+        layout.addWidget(current_device_group)
+        
+        # 数据生成参数设置
+        params_group = QGroupBox("生成参数设置")
+        params_layout = QFormLayout(params_group)
+        
+        # 变化幅度
+        self.variation_spinbox = QDoubleSpinBox()
+        self.variation_spinbox.setRange(0.0, 50.0)
+        self.variation_spinbox.setValue(10.0)
+        self.variation_spinbox.setSuffix("%")
+        params_layout.addRow("变化幅度:", self.variation_spinbox)
+        
+        # 季节因子
+        self.season_combo = QComboBox()
+        self.season_combo.addItems(["春季", "夏季", "秋季", "冬季"])
+        self.season_combo.setCurrentText("夏季")
+        params_layout.addRow("季节因子:", self.season_combo)
+        
+        # 天气类型（仅对光伏有效）
+        self.weather_combo = QComboBox()
+        self.weather_combo.addItems(["晴天", "多云", "阴天"])
+        self.weather_combo.setCurrentText("晴天")
+        params_layout.addRow("天气类型:", self.weather_combo)
+        
+        layout.addWidget(params_group)
+        
+        # 全局数据生成控制
+        global_control_group = QGroupBox("全局数据生成控制")
+        global_control_layout = QVBoxLayout(global_control_group)
+        
+        # 控制按钮
+        button_layout = QHBoxLayout()
+        self.start_generation_btn = QPushButton("开始生成")
+        self.start_generation_btn.clicked.connect(self.start_load_data_generation)
+        button_layout.addWidget(self.start_generation_btn)
+        
+        self.stop_generation_btn = QPushButton("停止生成")
+        self.stop_generation_btn.clicked.connect(self.stop_load_data_generation)
+        button_layout.addWidget(self.stop_generation_btn)
+        
+        global_control_layout.addLayout(button_layout)
+        layout.addWidget(global_control_group)
+        
+        # 添加弹性空间
+        layout.addStretch()
+        
+    def update_current_device_info(self, component_type, component_idx):
+        """更新当前选择设备信息"""
+        if component_type and component_idx is not None:
+            device_name = f"{component_type}_{component_idx}"
+            self.current_device_label.setText(f"当前设备: {device_name}")
+            
+            # 检查当前设备是否启用了数据生成
+            is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+            self.enable_device_generation_checkbox.setChecked(is_enabled)
+            self.enable_device_generation_checkbox.setEnabled(True)
+        else:
+            self.current_device_label.setText("未选择设备")
+            self.enable_device_generation_checkbox.setChecked(False)
+            self.enable_device_generation_checkbox.setEnabled(False)
+    
+    def is_device_generation_enabled(self, component_type, component_idx):
+        """检查指定设备是否启用了数据生成"""
+        device_key = f"{component_type}_{component_idx}"
+        return device_key in self.generated_devices
+    
+    def toggle_device_data_generation(self, state):
+        """切换当前设备的数据生成状态"""
+        if hasattr(self, 'current_component_type') and hasattr(self, 'current_component_idx'):
+            if self.current_component_type and self.current_component_idx is not None:
+                device_key = f"{self.current_component_type}_{self.current_component_idx}"
+                device_name = f"{self.current_component_type}_{self.current_component_idx}"
+                
+                if state == 2:  # Qt.Checked
+                    # 启用设备数据生成
+                    if device_key not in self.generated_devices:
+                        self.generated_devices.add(device_key)
+                        # 启动对应的数据生成器
+                        self.data_generator_manager.start_generation(self.current_component_type)
+                        device_type_name = "负载" if self.current_component_type == "load" else "光伏"
+                        self.statusBar().showMessage(f"已启用{device_type_name}设备 {self.current_component_idx} 的数据生成")
+                        print(f"启用设备 {device_name} 的数据生成")
+                    else:
+                        self.statusBar().showMessage(f"设备 {device_name} 已在数据生成列表中")
+                else:
+                    # 禁用设备数据生成
+                    if device_key in self.generated_devices:
+                        self.generated_devices.remove(device_key)
+                        device_type_name = "负载" if self.current_component_type == "load" else "光伏"
+                        self.statusBar().showMessage(f"已禁用{device_type_name}设备 {self.current_component_idx} 的数据生成")
+                        print(f"禁用设备 {device_name} 的数据生成")
+                        
+                        # 如果该类型的设备都被禁用了，停止对应的数据生成器
+                        type_devices = [key for key in self.generated_devices if key.startswith(f"{self.current_component_type}_")]
+                        if not type_devices:
+                            self.data_generator_manager.stop_generation(self.current_component_type)
+                    else:
+                        self.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
         
     # 删除潮流结果和短路结果选项卡创建方法
         
@@ -402,13 +523,13 @@ class SimulationWindow(QMainWindow):
                 gen_item = QTreeWidgetItem(gen_root, [f"Gen {idx}: {gen_name}", "发电机", status])
                 gen_item.setData(0, Qt.UserRole, ('gen', idx))
                 
-        # 添加静态发电机
+        # 添加光伏
         if not self.network_model.net.sgen.empty:
-            sgen_root = QTreeWidgetItem(self.device_tree, ["静态发电机", "分类", "-"])
+            sgen_root = QTreeWidgetItem(self.device_tree, ["光伏", "分类", "-"])
             for idx, sgen in self.network_model.net.sgen.iterrows():
                 sgen_name = sgen.get('name', f'SGen_{idx}')
                 status = "正常" if hasattr(self.network_model.net, 'res_sgen') and not self.network_model.net.res_sgen.empty and idx in self.network_model.net.res_sgen.index else "未计算"
-                sgen_item = QTreeWidgetItem(sgen_root, [f"SGen {idx}: {sgen_name}", "静态发电机", status])
+                sgen_item = QTreeWidgetItem(sgen_root, [f"SGen {idx}: {sgen_name}", "光伏", status])
                 sgen_item.setData(0, Qt.UserRole, ('sgen', idx))
                 
         # 添加外部电网
@@ -538,6 +659,9 @@ class SimulationWindow(QMainWindow):
         # 记录当前显示的组件信息，用于自动更新
         self.current_component_type = component_type
         self.current_component_idx = component_idx
+        
+        # 更新数据生成控制标签页中的当前设备信息
+        self.update_current_device_info(component_type, component_idx)
             
         try:
             # 获取组件数据
@@ -632,7 +756,7 @@ class SimulationWindow(QMainWindow):
         """标记需要生成数据的设备
         
         该函数用于标记指定设备为需要生成数据的设备，使其在数据生成过程中
-        被包含在数据生成范围内。支持负载(load)和静态发电机(sgen)设备。
+        被包含在数据生成范围内。支持负载(load)和光伏(sgen)设备。
         
         Args:
             component_type (str): 组件类型 ('load', 'sgen')
@@ -641,7 +765,7 @@ class SimulationWindow(QMainWindow):
         if not self.network_model or not hasattr(self.network_model, 'net'):
             return
         
-        # 只支持负载和静态发电机
+        # 只支持负载和光伏
         if component_type not in ['load', 'sgen']:
             return
 
@@ -656,7 +780,7 @@ class SimulationWindow(QMainWindow):
                     return
             elif component_type == 'sgen':
                 if component_idx not in self.network_model.net.sgen.index:
-                    self.statusBar().showMessage(f"静态发电机设备 {component_idx} 不存在")
+                    self.statusBar().showMessage(f"光伏设备 {component_idx} 不存在")
                     return
 
             # 检查设备是否已存在于监控列表中
@@ -680,6 +804,47 @@ class SimulationWindow(QMainWindow):
             self.statusBar().showMessage(f"标记设备数据生成时出错: {str(e)}")
             print(f"Error in enable_device_data_generation: {str(e)}")
     
+    def disable_device_data_generation(self, component_type, component_idx):
+        """禁用指定设备的数据生成
+        
+        Args:
+            component_type (str): 组件类型 ('load', 'sgen')
+            component_idx (int): 组件索引ID
+        """
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            return
+        
+        # 只支持负载和静态发电机
+        if component_type not in ['load', 'sgen']:
+            return
+
+        try:
+            # 创建设备唯一标识符
+            device_key = f"{component_type}_{component_idx}"
+            
+            # 检查设备是否在生成列表中
+            if device_key in self.generated_devices:
+                # 从生成设备集合中移除
+                self.generated_devices.remove(device_key)
+                
+                # 显示成功消息
+                device_name = "负载" if component_type == "load" else "光伏"
+                self.statusBar().showMessage(f"已禁用{device_name}设备 {component_idx} 的数据生成")
+                
+                # 如果该类型的设备都被禁用了，停止对应的数据生成器
+                type_devices = [key for key in self.generated_devices if key.startswith(f"{component_type}_")]
+                if not type_devices:
+                    self.data_generator_manager.stop_generation(component_type)
+                    
+            else:
+                # 设备不在生成列表中，显示提示信息
+                device_name = "负载" if component_type == "load" else "光伏"
+                self.statusBar().showMessage(f"{device_name}设备 {component_idx} 未在数据生成列表中")
+                
+        except Exception as e:
+            self.statusBar().showMessage(f"禁用设备数据生成时出错: {str(e)}")
+            print(f"Error in disable_device_data_generation: {str(e)}")
+    
     def get_component_type_chinese(self, component_type):
         """获取组件类型的中文名称"""
         type_map = {
@@ -688,7 +853,7 @@ class SimulationWindow(QMainWindow):
             'trafo': '变压器',
             'load': '负载',
             'gen': '发电机',
-            'sgen': '静态发电机',
+            'sgen': '光伏',
             'ext_grid': '外部电网',
             'storage': '储能'
         }
@@ -844,7 +1009,7 @@ class SimulationWindow(QMainWindow):
             "母线": ["母线"],
             "线路": ["线路"],
             "变压器": ["变压器"],
-            "发电设备": ["发电机", "静态发电机", "外部电网"],
+            "发电设备": ["发电机", "光伏", "外部电网"],
             "负载设备": ["负载"],
             "储能设备": ["储能"]
         }
@@ -878,7 +1043,7 @@ class SimulationWindow(QMainWindow):
             "变压器": len(self.network_model.net.trafo),
             "负载": len(self.network_model.net.load),
             "发电机": len(self.network_model.net.gen),
-            "静态发电机": len(self.network_model.net.sgen),
+            "光伏": len(self.network_model.net.sgen),
             "外部电网": len(self.network_model.net.ext_grid),
             "储能": len(self.network_model.net.storage)
         }
@@ -1110,7 +1275,7 @@ class SimulationWindow(QMainWindow):
                 
                 # 网络统计工作表
                 network_stats = {
-                    '组件类型': ['母线', '线路', '变压器', '负载', '发电机', '静态发电机', '外部电网', '储能'],
+                    '组件类型': ['母线', '线路', '变压器', '负载', '发电机', '光伏', '外部电网', '储能'],
                     '数量': [
                         len(self.network_model.net.bus),
                         len(self.network_model.net.line),
@@ -1435,8 +1600,8 @@ class SimulationWindow(QMainWindow):
                         return abs(gens.loc[device_id, 'p_mw'])
                     return 0.0
                     
-            elif device_type == "静态发电机":
-                # 从静态发电机潮流计算结果中获取实际功率
+            elif device_type == "光伏":
+                # 从光伏潮流计算结果中获取实际功率
                 if hasattr(self.network_model.net, 'res_sgen') and device_id in self.network_model.net.res_sgen.index:
                     return abs(self.network_model.net.res_sgen.loc[device_id, 'p_mw'])
                 else:
@@ -1591,6 +1756,8 @@ class SimulationWindow(QMainWindow):
         try:
             if not self.network_model or not hasattr(self.network_model, 'net'):
                 return
+            
+
                 
             for device in self.generated_devices:
                 device_type, device_idx = device.split('_', 1)

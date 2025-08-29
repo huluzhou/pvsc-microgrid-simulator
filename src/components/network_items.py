@@ -919,12 +919,12 @@ class ExternalGridItem(BaseNetworkItem):
 
 
 class StaticGeneratorItem(BaseNetworkItem):
-    """静态发电机组件（光伏等）"""
+    """光伏组件"""
 
     def __init__(self, pos, parent=None):
         super().__init__(pos, parent)
         self.component_type = "static_generator"
-        self.component_name = "静态发电机"
+        self.component_name = "光伏"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
         # 动态生成名称
@@ -957,7 +957,7 @@ class StaticGeneratorItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         
-        # 连接约束：静态发电机可以连接一个母线和一个电表
+        # 连接约束：光伏可以连接一个母线和一个电表
         self.max_connections = 2
         self.min_connections = 1
         

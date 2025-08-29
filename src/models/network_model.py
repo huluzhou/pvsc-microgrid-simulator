@@ -280,15 +280,15 @@ class NetworkModel:
         return ext_grid_idx
 
     def create_static_generator(self, item_id, bus, properties):
-        """创建静态发电机
+        """创建光伏
         
         Args:
             item_id: 图形项ID
             bus: 母线索引
-            properties: 静态发电机属性
+            properties: 光伏属性
         
         Returns:
-            int: pandapower静态发电机索引
+            int: pandapower光伏索引
         """
         # 根据use_power_factor参数决定使用哪种创建方式
         use_power_factor = properties.get("use_power_factor", False)

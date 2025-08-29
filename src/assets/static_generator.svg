@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <!-- 静态发电机 - 圆圈内含PV文本，逆时针旋转90度 -->
+  <!-- 光伏 - 圆圈内含PV文本，逆时针旋转90度 -->
   <g transform="rotate(-90 32 32)">
     <circle cx="32" cy="32" r="16" fill="none" stroke="#000000" stroke-width="2" />
     <!-- PV文本 - 单独顺时针旋转90度 -->
