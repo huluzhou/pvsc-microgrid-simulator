@@ -108,8 +108,8 @@ class LoadDataGenerator(BaseDataGenerator):
         current_hour = datetime.now().hour
         pattern_index = current_hour % 24
         
-        # 计算基于时间曲线的基准倍数
-        time_based_multiplier = daily_pattern[pattern_index]
+        # 计算基于时间曲线的基准值
+        time_based_base_value = daily_pattern[pattern_index]
         
         # 根据负载类型调整模式
         if self.load_type == 'commercial':
@@ -120,7 +120,7 @@ class LoadDataGenerator(BaseDataGenerator):
                 1.0, 1.0, 0.9, 0.9, 0.9, 0.8,  # 12-17时
                 0.6, 0.4, 0.3, 0.3, 0.3, 0.3   # 18-23时
             ]
-            time_based_multiplier = commercial_pattern[pattern_index]
+            time_based_base_value = commercial_pattern[pattern_index]
         elif self.load_type == 'industrial':
             # 工业负载：相对平稳
             industrial_pattern = [
@@ -129,7 +129,7 @@ class LoadDataGenerator(BaseDataGenerator):
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,  # 12-17时
                 0.9, 0.8, 0.7, 0.7, 0.7, 0.7   # 18-23时
             ]
-            time_based_multiplier = industrial_pattern[pattern_index]
+            time_based_base_value = industrial_pattern[pattern_index]
         
         # 计算变化范围（基于用户设置的variation参数）
         variation_factor = self.variation / 100.0
@@ -138,21 +138,15 @@ class LoadDataGenerator(BaseDataGenerator):
         
         # 在曲线模板基础上添加随机变化
         random_variation = np.random.uniform(min_variation, max_variation)
-        final_multiplier = time_based_multiplier * random_variation
+        final_base_value = time_based_base_value * random_variation
         
         try:
-            load = network_model.net.load.loc[index]
-            # 基础负载值
-            base_p = load.get('p_mw', 1.0)
-            base_q = load.get('q_mvar', 0.5)
             
             # 根据时间曲线和随机变化计算新的负载值
-            new_p = base_p * final_multiplier
-            new_q = base_q * final_multiplier
             
             load_data[index] = {
-                'p_mw': new_p,
-                'q_mvar': new_q,
+                'p_mw': final_base_value,
+                'q_mvar': 0,
             }
             
         except (KeyError, AttributeError):
