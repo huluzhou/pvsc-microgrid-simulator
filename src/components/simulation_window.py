@@ -57,6 +57,10 @@ class SimulationWindow(QMainWindow):
         self.data_generator_manager = DataGeneratorManager()
         self.current_load_index = 0
         
+        # 当前显示的组件信息（用于自动更新组件参数表格）
+        self.current_component_type = None
+        self.current_component_idx = None
+        
         self.init_ui()
         self.load_network_data()
         
@@ -531,6 +535,10 @@ class SimulationWindow(QMainWindow):
         if not self.network_model:
             return
             
+        # 记录当前显示的组件信息，用于自动更新
+        self.current_component_type = component_type
+        self.current_component_idx = component_idx
+            
         try:
             # 获取组件数据
             component_data = None
@@ -608,6 +616,17 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             # 显示错误信息在状态栏
             self.parent_window.statusBar().showMessage(f"显示组件详情时出错: {str(e)}")
+
+    def update_component_params_table(self):
+        """更新组件参数表格 - 在自动计算时刷新当前显示的组件详情"""
+        try:
+            # 检查是否有当前选中的组件
+            if hasattr(self, 'current_component_type') and hasattr(self, 'current_component_idx'):
+                if self.current_component_type and self.current_component_idx is not None:
+                    # 重新显示当前组件的详情，这会自动更新表格内容
+                    self.show_component_details(self.current_component_type, self.current_component_idx)
+        except Exception as e:
+            print(f"更新组件参数表格时出错: {str(e)}")
 
     def enable_device_data_generation(self, component_type, component_idx):
         """标记需要生成数据的设备
@@ -1602,6 +1621,9 @@ class SimulationWindow(QMainWindow):
                 
                 # 更新功率曲线（仅更新监控设备的数据，不再自动显示）
                 self.update_power_curve()
+                
+                # 更新组件参数表格
+                self.update_component_params_table()
                     
             except Exception as e:
                 self.statusBar().showMessage(f"潮流计算失败: {str(e)}")
