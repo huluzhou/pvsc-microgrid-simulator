@@ -444,6 +444,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'canvas'):
             self.canvas.update_theme_colors()
         
+        # 更新仿真窗口主题
+        if hasattr(self, 'simulation_window') and self.simulation_window:
+            self.simulation_window.update_theme_colors()
+        
         # 更新组件面板主题
         if hasattr(self, 'component_palette'):
             # 清空并重新添加组件以适应新主题

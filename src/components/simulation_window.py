@@ -12,10 +12,10 @@ from PySide6.QtWidgets import (
     QScrollArea, QTreeWidget, QTreeWidgetItem, QTextEdit, QLabel,
     QGroupBox, QPushButton, QMessageBox, QProgressBar, QCheckBox, QSpinBox,
     QTabWidget, QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QDialog,
-    QSizePolicy
+    QSizePolicy, QApplication
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap, QPainter, QFont, QBrush, QColor
+from PySide6.QtGui import QPixmap, QPainter, QFont, QBrush, QColor, QPalette
 from PySide6.QtCore import QRectF
 import pandapower as pp
 import matplotlib.pyplot as plt
@@ -59,6 +59,9 @@ class SimulationWindow(QMainWindow):
         
         self.init_ui()
         self.load_network_data()
+        
+        # 应用当前主题
+        self.update_theme_colors()
         
     def init_ui(self):
         """初始化用户界面"""
@@ -157,24 +160,38 @@ class SimulationWindow(QMainWindow):
         
         # 自动计算控制面板
         auto_group = QGroupBox("自动计算")
+        auto_group.setMinimumHeight(100)  # 设置最小高度确保显示完整
         auto_layout = QVBoxLayout(auto_group)
+        auto_layout.setContentsMargins(10, 10, 10, 10)  # 设置内边距
+        auto_layout.setSpacing(8)  # 设置控件间距
         
         # 自动计算开关
         auto_calc_layout = QHBoxLayout()
-        auto_calc_layout.addWidget(QLabel("自动计算:"))
+        auto_calc_layout.setContentsMargins(0, 0, 0, 0)
+        auto_calc_label = QLabel("自动计算:")
+        auto_calc_label.setMinimumWidth(60)  # 设置标签最小宽度
+        auto_calc_layout.addWidget(auto_calc_label)
         self.auto_calc_checkbox = QCheckBox()
         self.auto_calc_checkbox.stateChanged.connect(self.toggle_auto_calculation)
         auto_calc_layout.addWidget(self.auto_calc_checkbox)
+        auto_calc_layout.addStretch()  # 添加弹性空间
         auto_layout.addLayout(auto_calc_layout)
         
         # 计算间隔
         interval_layout = QHBoxLayout()
-        interval_layout.addWidget(QLabel("间隔(秒):"))
+        interval_layout.setContentsMargins(0, 0, 0, 0)
+        interval_label = QLabel("间隔(秒):")
+        interval_label.setMinimumWidth(60)  # 设置标签最小宽度
+        interval_layout.addWidget(interval_label)
         self.calc_interval_spinbox = QSpinBox()
         self.calc_interval_spinbox.setRange(1, 60)
         self.calc_interval_spinbox.setValue(5)
+        self.calc_interval_spinbox.setMinimumWidth(80)  # 增加宽度确保箭头显示
+        self.calc_interval_spinbox.setMaximumWidth(120)  # 设置最大宽度
         interval_layout.addWidget(self.calc_interval_spinbox)
+        interval_layout.addStretch()  # 添加弹性空间
         auto_layout.addLayout(interval_layout)
+        
         tree_layout.addWidget(auto_group)
         
         parent.addWidget(tree_widget)
@@ -1092,6 +1109,233 @@ class SimulationWindow(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "错误", f"导出Excel文件失败:\n{str(e)}")
+    
+    def update_theme_colors(self):
+        """更新主题相关的所有颜色"""
+        app = QApplication.instance()
+        if app:
+            palette = app.palette()
+            bg_color = palette.color(QPalette.Window)
+            is_dark_theme = bg_color.lightness() < 128
+            
+            # 更新自动计算控件的样式
+            if hasattr(self, 'auto_calc_checkbox'):
+                if is_dark_theme:
+                    # 深色主题样式
+                    checkbox_style = """
+                        QCheckBox {
+                            spacing: 5px;
+                            color: rgb(255, 255, 255);
+                        }
+                        QCheckBox::indicator {
+                            width: 18px;
+                            height: 18px;
+                            border: 2px solid #888;
+                            border-radius: 3px;
+                            background-color: rgb(53, 53, 53);
+                        }
+                        QCheckBox::indicator:checked {
+                            background-color: #4CAF50;
+                            border-color: #4CAF50;
+                        }
+                        QCheckBox::indicator:checked:pressed {
+                            background-color: #45a049;
+                        }
+                    """
+                else:
+                    # 浅色主题样式
+                    checkbox_style = """
+                        QCheckBox {
+                            spacing: 5px;
+                            color: rgb(0, 0, 0);
+                        }
+                        QCheckBox::indicator {
+                            width: 18px;
+                            height: 18px;
+                            border: 2px solid #555;
+                            border-radius: 3px;
+                            background-color: white;
+                        }
+                        QCheckBox::indicator:checked {
+                            background-color: #4CAF50;
+                            border-color: #4CAF50;
+                        }
+                        QCheckBox::indicator:checked:pressed {
+                            background-color: #45a049;
+                        }
+                    """
+                self.auto_calc_checkbox.setStyleSheet(checkbox_style)
+            
+            # 更新SpinBox样式
+            if hasattr(self, 'calc_interval_spinbox'):
+                if is_dark_theme:
+                    # 深色主题样式
+                    spinbox_style = """
+                        QSpinBox {
+                            padding-right: 15px;
+                            border: 1px solid #666;
+                            border-radius: 3px;
+                            background-color: rgb(53, 53, 53);
+                            color: rgb(255, 255, 255);
+                        }
+                        QSpinBox::up-button {
+                            subcontrol-origin: border;
+                            subcontrol-position: top right;
+                            width: 16px;
+                            border-left-width: 1px;
+                            border-left-color: #666;
+                            border-left-style: solid;
+                            border-top-right-radius: 3px;
+                            background-color: #666;
+                        }
+                        QSpinBox::down-button {
+                            subcontrol-origin: border;
+                            subcontrol-position: bottom right;
+                            width: 16px;
+                            border-left-width: 1px;
+                            border-left-color: #666;
+                            border-left-style: solid;
+                            border-bottom-right-radius: 3px;
+                            background-color: #666;
+                        }
+                        QSpinBox::up-arrow {
+                            image: none;
+                            border-left: 4px solid transparent;
+                            border-right: 4px solid transparent;
+                            border-bottom: 4px solid #ccc;
+                            width: 0px;
+                            height: 0px;
+                        }
+                        QSpinBox::down-arrow {
+                            image: none;
+                            border-left: 4px solid transparent;
+                            border-right: 4px solid transparent;
+                            border-top: 4px solid #ccc;
+                            width: 0px;
+                            height: 0px;
+                        }
+                    """
+                else:
+                    # 浅色主题样式
+                    spinbox_style = """
+                        QSpinBox {
+                            padding-right: 15px;
+                            border: 1px solid #ccc;
+                            border-radius: 3px;
+                            background-color: white;
+                            color: rgb(0, 0, 0);
+                        }
+                        QSpinBox::up-button {
+                            subcontrol-origin: border;
+                            subcontrol-position: top right;
+                            width: 16px;
+                            border-left-width: 1px;
+                            border-left-color: #ccc;
+                            border-left-style: solid;
+                            border-top-right-radius: 3px;
+                            background-color: #f0f0f0;
+                        }
+                        QSpinBox::down-button {
+                            subcontrol-origin: border;
+                            subcontrol-position: bottom right;
+                            width: 16px;
+                            border-left-width: 1px;
+                            border-left-color: #ccc;
+                            border-left-style: solid;
+                            border-bottom-right-radius: 3px;
+                            background-color: #f0f0f0;
+                        }
+                        QSpinBox::up-arrow {
+                            image: none;
+                            border-left: 4px solid transparent;
+                            border-right: 4px solid transparent;
+                            border-bottom: 4px solid #666;
+                            width: 0px;
+                            height: 0px;
+                        }
+                        QSpinBox::down-arrow {
+                            image: none;
+                            border-left: 4px solid transparent;
+                            border-right: 4px solid transparent;
+                            border-top: 4px solid #666;
+                            width: 0px;
+                            height: 0px;
+                        }
+                    """
+                self.calc_interval_spinbox.setStyleSheet(spinbox_style)
+            
+            # 更新设备树样式
+            if hasattr(self, 'device_tree'):
+                if is_dark_theme:
+                    # 深色主题样式
+                    tree_style = """
+                        QTreeWidget {
+                            background-color: rgb(53, 53, 53);
+                            color: rgb(255, 255, 255);
+                            border: 1px solid #666;
+                            alternate-background-color: rgb(60, 60, 60);
+                            selection-background-color: rgb(42, 130, 218);
+                            selection-color: rgb(255, 255, 255);
+                        }
+                        QTreeWidget::item {
+                            padding: 2px;
+                            border: none;
+                        }
+                        QTreeWidget::item:selected {
+                            background-color: rgb(42, 130, 218);
+                            color: rgb(255, 255, 255);
+                        }
+                        QTreeWidget::item:hover {
+                            background-color: rgb(70, 70, 70);
+                        }
+
+
+                        QTreeWidget {
+                            color: rgb(255, 255, 255);
+                        }
+                        QHeaderView::section {
+                            background-color: rgb(60, 60, 60);
+                            color: rgb(255, 255, 255);
+                            border: 1px solid #666;
+                            padding: 4px;
+                        }
+                    """
+                else:
+                    # 浅色主题样式
+                    tree_style = """
+                        QTreeWidget {
+                            background-color: white;
+                            color: rgb(0, 0, 0);
+                            border: 1px solid #ccc;
+                            alternate-background-color: rgb(245, 245, 245);
+                            selection-background-color: rgb(0, 120, 215);
+                            selection-color: rgb(255, 255, 255);
+                        }
+                        QTreeWidget::item {
+                            padding: 2px;
+                            border: none;
+                        }
+                        QTreeWidget::item:selected {
+                            background-color: rgb(0, 120, 215);
+                            color: rgb(255, 255, 255);
+                        }
+                        QTreeWidget::item:hover {
+                            background-color: rgb(230, 230, 230);
+                        }
+
+
+                        QHeaderView::section {
+                            background-color: rgb(240, 240, 240);
+                            color: rgb(0, 0, 0);
+                            border: 1px solid #ccc;
+                            padding: 4px;
+                        }
+                    """
+                self.device_tree.setStyleSheet(tree_style)
+            
+            # 更新监控设备列表样式
+            if hasattr(self, 'monitored_devices_list'):
+                self.monitored_devices_list.setStyleSheet(tree_style if hasattr(self, 'device_tree') else "")
     
     def closeEvent(self, event):
         """窗口关闭事件"""
