@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QTreeWidget, QTreeWidgetItem, QTextEdit, QLabel,
     QGroupBox, QPushButton, QMessageBox, QProgressBar, QCheckBox, QSpinBox,
     QTabWidget, QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QDialog,
-    QSizePolicy, QApplication, QFormLayout, QDoubleSpinBox
+    QSizePolicy, QApplication, QFormLayout, QDoubleSpinBox, QRadioButton, QSlider
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QPainter, QFont, QBrush, QColor, QPalette
@@ -267,10 +267,17 @@ class SimulationWindow(QMainWindow):
         self.create_component_details_tab()
         self.results_tabs.addTab(self.component_details_tab, "组件详情")
         
-        # 数据生成控制选项卡
-        self.data_generation_tab = QWidget()
-        self.create_data_generation_tab()
-        self.results_tabs.addTab(self.data_generation_tab, "数据生成控制")
+        # 为不同设备类型创建独立的数据生成控制选项卡
+        self.sgen_data_tab = QWidget()  # 光伏设备选项卡
+        self.load_data_tab = QWidget()  # 负载设备选项卡
+        self.storage_data_tab = QWidget()  # 储能设备选项卡
+        
+        # 创建各设备类型的选项卡内容
+        self.create_sgen_data_generation_tab()
+        self.create_load_data_generation_tab()
+        self.create_storage_data_generation_tab()
+        
+        # 注意：不在这里添加选项卡，而是在show_component_details中根据设备类型动态添加
         
         results_layout.addWidget(self.results_tabs)
         
@@ -301,34 +308,7 @@ class SimulationWindow(QMainWindow):
         
         parent_layout.addWidget(monitor_group)
         
-    def create_data_generation_panel(self, parent_layout):
-        """创建数据生成控制面板"""
-        # 创建数据生成控制组
-        data_group = QGroupBox("数据生成控制")
-        data_layout = QVBoxLayout(data_group)
-        
-        # 负载变化幅度
-        variation_layout = QHBoxLayout()
-        variation_layout.addWidget(QLabel("变化幅度(%)"))
-        self.variation_spinbox = QSpinBox()
-        self.variation_spinbox.setRange(5, 50)
-        self.variation_spinbox.setValue(20)
-        data_layout.addLayout(variation_layout)
-        
-        # 操作按钮
-        button_layout = QHBoxLayout()
-        
-        self.start_generation_btn = QPushButton("开始生成")
-        self.start_generation_btn.clicked.connect(self.start_load_data_generation)
-        button_layout.addWidget(self.start_generation_btn)
-        
-        self.stop_generation_btn = QPushButton("停止生成")
-        self.stop_generation_btn.clicked.connect(self.stop_load_data_generation)
-        button_layout.addWidget(self.stop_generation_btn)
-        
-        data_layout.addLayout(button_layout)
-        
-        parent_layout.addWidget(data_group)
+
         
     def create_component_details_tab(self):
         """创建组件详情选项卡"""
@@ -396,60 +376,473 @@ class SimulationWindow(QMainWindow):
         
         layout.addWidget(params_group)
         
-        # 全局数据生成控制
-        global_control_group = QGroupBox("全局数据生成控制")
-        global_control_layout = QVBoxLayout(global_control_group)
+        # 手动数据生成控制
+        manual_control_group = QGroupBox("手动数据生成控制")
+        manual_control_layout = QVBoxLayout(manual_control_group)
         
-        # 控制按钮
-        button_layout = QHBoxLayout()
-        self.start_generation_btn = QPushButton("开始生成")
-        self.start_generation_btn.clicked.connect(self.start_load_data_generation)
-        button_layout.addWidget(self.start_generation_btn)
+        # 数据生成模式选择
+        mode_layout = QHBoxLayout()
+        self.auto_mode_radio = QRadioButton("自动生成")
+        self.manual_mode_radio = QRadioButton("手动控制")
+        self.auto_mode_radio.setChecked(True)
+        self.auto_mode_radio.toggled.connect(self.on_generation_mode_changed)
+        self.manual_mode_radio.toggled.connect(self.on_generation_mode_changed)
+        mode_layout.addWidget(self.auto_mode_radio)
+        mode_layout.addWidget(self.manual_mode_radio)
+        manual_control_layout.addLayout(mode_layout)
         
-        self.stop_generation_btn = QPushButton("停止生成")
-        self.stop_generation_btn.clicked.connect(self.stop_load_data_generation)
-        button_layout.addWidget(self.stop_generation_btn)
+        # 手动控制面板（初始隐藏）
+        self.manual_control_panel = QWidget()
+        manual_panel_layout = QFormLayout(self.manual_control_panel)
         
-        global_control_layout.addLayout(button_layout)
-        layout.addWidget(global_control_group)
+        # 有功功率控制
+        self.power_slider = QSlider(Qt.Horizontal)
+        self.power_slider.setRange(0, 200)  # 0-200% 范围
+        self.power_slider.setValue(100)
+        self.power_slider.setMinimumWidth(300)  # 设置最小宽度
+        self.power_slider.valueChanged.connect(self.on_manual_power_changed)
+        
+        self.power_spinbox = QDoubleSpinBox()
+        self.power_spinbox.setRange(0.0, 100.0)  # 增加范围
+        self.power_spinbox.setValue(1.0)
+        self.power_spinbox.setSuffix(" MW")
+        self.power_spinbox.setDecimals(3)  # 增加精度
+        self.power_spinbox.valueChanged.connect(self.on_manual_power_spinbox_changed)
+        
+        power_control_layout = QHBoxLayout()
+        power_control_layout.addWidget(self.power_slider)
+        power_control_layout.addWidget(self.power_spinbox)
+        manual_panel_layout.addRow("有功功率:", power_control_layout)
+        
+        # 无功功率控制（仅对负载有效）
+        self.reactive_power_slider = QSlider(Qt.Horizontal)
+        self.reactive_power_slider.setRange(0, 200)
+        self.reactive_power_slider.setValue(100)
+        self.reactive_power_slider.setMinimumWidth(300)  # 设置最小宽度
+        self.reactive_power_slider.valueChanged.connect(self.on_manual_reactive_power_changed)
+        
+        self.reactive_power_spinbox = QDoubleSpinBox()
+        self.reactive_power_spinbox.setRange(0.0, 50.0)  # 增加范围
+        self.reactive_power_spinbox.setValue(0.5)
+        self.reactive_power_spinbox.setSuffix(" MVar")
+        self.reactive_power_spinbox.setDecimals(3)  # 增加精度
+        self.reactive_power_spinbox.valueChanged.connect(self.on_manual_reactive_power_spinbox_changed)
+        
+        reactive_power_control_layout = QHBoxLayout()
+        reactive_power_control_layout.addWidget(self.reactive_power_slider)
+        reactive_power_control_layout.addWidget(self.reactive_power_spinbox)
+        manual_panel_layout.addRow("无功功率:", reactive_power_control_layout)
+        
+        # 应用按钮
+        self.apply_manual_btn = QPushButton("应用手动设置")
+        self.apply_manual_btn.clicked.connect(self.apply_manual_power_settings)
+        manual_panel_layout.addRow("", self.apply_manual_btn)
+        
+        self.manual_control_panel.setVisible(False)
+        manual_control_layout.addWidget(self.manual_control_panel)
+        
+        layout.addWidget(manual_control_group)
         
         # 添加弹性空间
         layout.addStretch()
         
-    def update_current_device_info(self, component_type, component_idx):
-        """更新当前选择设备信息"""
+    def create_sgen_data_generation_tab(self):
+        """创建光伏设备专用的数据生成控制选项卡"""
+        layout = QVBoxLayout(self.sgen_data_tab)
+        
+        # 当前选择设备信息
+        current_device_group = QGroupBox("当前选择光伏设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+        
+        self.sgen_current_device_label = QLabel("未选择光伏设备")
+        self.sgen_current_device_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        current_device_layout.addWidget(self.sgen_current_device_label)
+        
+        # 设备数据生成控制
+        device_control_layout = QHBoxLayout()
+        self.sgen_enable_generation_checkbox = QCheckBox("启用光伏设备数据生成")
+        self.sgen_enable_generation_checkbox.stateChanged.connect(self.toggle_sgen_data_generation)
+        device_control_layout.addWidget(self.sgen_enable_generation_checkbox)
+        
+        current_device_layout.addLayout(device_control_layout)
+        layout.addWidget(current_device_group)
+        
+        # 光伏专用参数设置
+        sgen_params_group = QGroupBox("光伏发电参数设置")
+        sgen_params_layout = QFormLayout(sgen_params_group)
+        
+        # 变化幅度
+        self.sgen_variation_spinbox = QDoubleSpinBox()
+        self.sgen_variation_spinbox.setRange(0.0, 50.0)
+        self.sgen_variation_spinbox.setValue(15.0)
+        self.sgen_variation_spinbox.setSuffix("%")
+        sgen_params_layout.addRow("功率变化幅度:", self.sgen_variation_spinbox)
+        
+        # 季节因子
+        self.sgen_season_combo = QComboBox()
+        self.sgen_season_combo.addItems(["春季", "夏季", "秋季", "冬季"])
+        self.sgen_season_combo.setCurrentText("夏季")
+        sgen_params_layout.addRow("季节因子:", self.sgen_season_combo)
+        
+        # 天气类型（光伏专用）
+        self.sgen_weather_combo = QComboBox()
+        self.sgen_weather_combo.addItems(["晴天", "多云", "阴天", "雨天"])
+        self.sgen_weather_combo.setCurrentText("晴天")
+        sgen_params_layout.addRow("天气类型:", self.sgen_weather_combo)
+        
+        # 光照强度系数
+        self.sgen_irradiance_spinbox = QDoubleSpinBox()
+        self.sgen_irradiance_spinbox.setRange(0.1, 1.5)
+        self.sgen_irradiance_spinbox.setValue(1.0)
+        self.sgen_irradiance_spinbox.setDecimals(2)
+        sgen_params_layout.addRow("光照强度系数:", self.sgen_irradiance_spinbox)
+        
+        layout.addWidget(sgen_params_group)
+        
+        # 光伏手动控制
+        sgen_manual_group = QGroupBox("光伏手动功率控制")
+        sgen_manual_layout = QVBoxLayout(sgen_manual_group)
+        
+        # 控制模式选择
+        sgen_mode_layout = QHBoxLayout()
+        self.sgen_auto_mode_radio = QRadioButton("自动发电")
+        self.sgen_manual_mode_radio = QRadioButton("手动控制")
+        self.sgen_auto_mode_radio.setChecked(True)
+        self.sgen_auto_mode_radio.toggled.connect(self.on_sgen_mode_changed)
+        self.sgen_manual_mode_radio.toggled.connect(self.on_sgen_mode_changed)
+        sgen_mode_layout.addWidget(self.sgen_auto_mode_radio)
+        sgen_mode_layout.addWidget(self.sgen_manual_mode_radio)
+        sgen_manual_layout.addLayout(sgen_mode_layout)
+        
+        # 手动控制面板
+        self.sgen_manual_panel = QWidget()
+        sgen_manual_panel_layout = QFormLayout(self.sgen_manual_panel)
+        
+        # 有功功率控制
+        self.sgen_power_slider = QSlider(Qt.Horizontal)
+        self.sgen_power_slider.setRange(0, 200)
+        self.sgen_power_slider.setValue(100)
+        self.sgen_power_slider.setMinimumWidth(300)
+        self.sgen_power_slider.valueChanged.connect(self.on_sgen_power_changed)
+        
+        self.sgen_power_spinbox = QDoubleSpinBox()
+        self.sgen_power_spinbox.setRange(0.0, 20.0)
+        self.sgen_power_spinbox.setValue(10.0)
+        self.sgen_power_spinbox.setSuffix(" MW")
+        self.sgen_power_spinbox.setDecimals(1)
+        self.sgen_power_spinbox.valueChanged.connect(self.on_sgen_power_spinbox_changed)
+        
+        sgen_power_layout = QHBoxLayout()
+        sgen_power_layout.addWidget(self.sgen_power_slider)
+        sgen_power_layout.addWidget(self.sgen_power_spinbox)
+        sgen_manual_panel_layout.addRow("发电功率:", sgen_power_layout)
+        
+        # 应用按钮
+        self.sgen_apply_btn = QPushButton("应用光伏设置")
+        self.sgen_apply_btn.clicked.connect(self.apply_sgen_settings)
+        sgen_manual_panel_layout.addRow("", self.sgen_apply_btn)
+        
+        self.sgen_manual_panel.setVisible(False)
+        sgen_manual_layout.addWidget(self.sgen_manual_panel)
+        
+        layout.addWidget(sgen_manual_group)
+        layout.addStretch()
+        
+    def create_load_data_generation_tab(self):
+        """创建负载设备专用的数据生成控制选项卡"""
+        layout = QVBoxLayout(self.load_data_tab)
+        
+        # 当前选择设备信息
+        current_device_group = QGroupBox("当前选择负载设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+        
+        self.load_current_device_label = QLabel("未选择负载设备")
+        self.load_current_device_label.setStyleSheet("font-weight: bold; color: #F44336;")
+        current_device_layout.addWidget(self.load_current_device_label)
+        
+        # 设备数据生成控制
+        device_control_layout = QHBoxLayout()
+        self.load_enable_generation_checkbox = QCheckBox("启用负载设备数据生成")
+        self.load_enable_generation_checkbox.stateChanged.connect(self.toggle_load_data_generation)
+        device_control_layout.addWidget(self.load_enable_generation_checkbox)
+        
+        current_device_layout.addLayout(device_control_layout)
+        layout.addWidget(current_device_group)
+        
+        # 负载专用参数设置
+        load_params_group = QGroupBox("负载用电参数设置")
+        load_params_layout = QFormLayout(load_params_group)
+        
+        # 变化幅度
+        self.load_variation_spinbox = QDoubleSpinBox()
+        self.load_variation_spinbox.setRange(0.0, 50.0)
+        self.load_variation_spinbox.setValue(10.0)
+        self.load_variation_spinbox.setSuffix("%")
+        load_params_layout.addRow("功率变化幅度:", self.load_variation_spinbox)
+        
+        # 季节因子
+        self.load_season_combo = QComboBox()
+        self.load_season_combo.addItems(["春季", "夏季", "秋季", "冬季"])
+        self.load_season_combo.setCurrentText("夏季")
+        load_params_layout.addRow("季节因子:", self.load_season_combo)
+        
+        # 负载类型（负载专用）
+        self.load_type_combo = QComboBox()
+        self.load_type_combo.addItems(["居民负载", "工业负载", "商业负载", "农业负载"])
+        self.load_type_combo.setCurrentText("居民负载")
+        load_params_layout.addRow("负载类型:", self.load_type_combo)
+        
+        # 功率因数
+        self.load_power_factor_spinbox = QDoubleSpinBox()
+        self.load_power_factor_spinbox.setRange(0.7, 1.0)
+        self.load_power_factor_spinbox.setValue(0.9)
+        self.load_power_factor_spinbox.setDecimals(2)
+        load_params_layout.addRow("功率因数:", self.load_power_factor_spinbox)
+        
+        layout.addWidget(load_params_group)
+        
+        # 负载手动控制
+        load_manual_group = QGroupBox("负载手动功率控制")
+        load_manual_layout = QVBoxLayout(load_manual_group)
+        
+        # 控制模式选择
+        load_mode_layout = QHBoxLayout()
+        self.load_auto_mode_radio = QRadioButton("自动用电")
+        self.load_manual_mode_radio = QRadioButton("手动控制")
+        self.load_auto_mode_radio.setChecked(True)
+        self.load_auto_mode_radio.toggled.connect(self.on_load_mode_changed)
+        self.load_manual_mode_radio.toggled.connect(self.on_load_mode_changed)
+        load_mode_layout.addWidget(self.load_auto_mode_radio)
+        load_mode_layout.addWidget(self.load_manual_mode_radio)
+        load_manual_layout.addLayout(load_mode_layout)
+        
+        # 手动控制面板
+        self.load_manual_panel = QWidget()
+        load_manual_panel_layout = QFormLayout(self.load_manual_panel)
+        
+        # 有功功率控制
+        self.load_power_slider = QSlider(Qt.Horizontal)
+        self.load_power_slider.setRange(0, 200)
+        self.load_power_slider.setValue(100)
+        self.load_power_slider.setMinimumWidth(300)
+        self.load_power_slider.valueChanged.connect(self.on_load_power_changed)
+        
+        self.load_power_spinbox = QDoubleSpinBox()
+        self.load_power_spinbox.setRange(0.0, 100.0)
+        self.load_power_spinbox.setValue(1.0)
+        self.load_power_spinbox.setSuffix(" MW")
+        self.load_power_spinbox.setDecimals(3)
+        self.load_power_spinbox.valueChanged.connect(self.on_load_power_spinbox_changed)
+        
+        load_power_layout = QHBoxLayout()
+        load_power_layout.addWidget(self.load_power_slider)
+        load_power_layout.addWidget(self.load_power_spinbox)
+        load_manual_panel_layout.addRow("有功功率:", load_power_layout)
+        
+        # 无功功率控制（负载专用）
+        self.load_reactive_power_slider = QSlider(Qt.Horizontal)
+        self.load_reactive_power_slider.setRange(0, 200)
+        self.load_reactive_power_slider.setValue(100)
+        self.load_reactive_power_slider.setMinimumWidth(300)
+        self.load_reactive_power_slider.valueChanged.connect(self.on_load_reactive_power_changed)
+        
+        self.load_reactive_power_spinbox = QDoubleSpinBox()
+        self.load_reactive_power_spinbox.setRange(0.0, 50.0)
+        self.load_reactive_power_spinbox.setValue(0.5)
+        self.load_reactive_power_spinbox.setSuffix(" MVar")
+        self.load_reactive_power_spinbox.setDecimals(3)
+        self.load_reactive_power_spinbox.valueChanged.connect(self.on_load_reactive_power_spinbox_changed)
+        
+        load_reactive_power_layout = QHBoxLayout()
+        load_reactive_power_layout.addWidget(self.load_reactive_power_slider)
+        load_reactive_power_layout.addWidget(self.load_reactive_power_spinbox)
+        load_manual_panel_layout.addRow("无功功率:", load_reactive_power_layout)
+        
+        # 应用按钮
+        self.load_apply_btn = QPushButton("应用负载设置")
+        self.load_apply_btn.clicked.connect(self.apply_load_settings)
+        load_manual_panel_layout.addRow("", self.load_apply_btn)
+        
+        self.load_manual_panel.setVisible(False)
+        load_manual_layout.addWidget(self.load_manual_panel)
+        
+        layout.addWidget(load_manual_group)
+        layout.addStretch()
+        
+    def create_storage_data_generation_tab(self):
+        """创建储能设备专用的手动控制选项卡"""
+        layout = QVBoxLayout(self.storage_data_tab)
+        
+        # 当前选择设备信息
+        current_device_group = QGroupBox("当前选择储能设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+        
+        self.storage_current_device_label = QLabel("未选择储能设备")
+        self.storage_current_device_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        current_device_layout.addWidget(self.storage_current_device_label)
+        
+        layout.addWidget(current_device_group)
+        
+        # 储能手动控制
+        storage_manual_group = QGroupBox("储能手动功率控制")
+        storage_manual_layout = QVBoxLayout(storage_manual_group)
+        
+        # 手动控制面板
+        self.storage_manual_panel = QWidget()
+        storage_manual_panel_layout = QFormLayout(self.storage_manual_panel)
+        
+        # 有功功率控制（正值为放电，负值为充电）
+        self.storage_power_slider = QSlider(Qt.Horizontal)
+        self.storage_power_slider.setRange(-1000, 1000)  # 滑块范围：-100.0到100.0MW（乘以10）
+        self.storage_power_slider.setValue(0)
+        self.storage_power_slider.setMinimumWidth(300)
+        self.storage_power_slider.valueChanged.connect(self.on_storage_power_changed)
+        
+        self.storage_power_spinbox = QDoubleSpinBox()
+        self.storage_power_spinbox.setRange(-100.0, 100.0)  # 支持充电和放电
+        self.storage_power_spinbox.setValue(0.0)
+        self.storage_power_spinbox.setSuffix(" MW")
+        self.storage_power_spinbox.setDecimals(1)
+        self.storage_power_spinbox.valueChanged.connect(self.on_storage_power_spinbox_changed)
+        
+        storage_power_layout = QHBoxLayout()
+        storage_power_layout.addWidget(self.storage_power_slider)
+        storage_power_layout.addWidget(self.storage_power_spinbox)
+        storage_manual_panel_layout.addRow("充放电功率:", storage_power_layout)
+        
+        # 功率说明标签
+        power_info_label = QLabel("正值为放电，负值为充电")
+        power_info_label.setStyleSheet("color: #666; font-size: 10px;")
+        storage_manual_panel_layout.addRow("", power_info_label)
+        
+        # 应用按钮
+        self.storage_apply_btn = QPushButton("应用储能设置")
+        self.storage_apply_btn.clicked.connect(self.apply_storage_settings)
+        storage_manual_panel_layout.addRow("", self.storage_apply_btn)
+        
+        # 储能设备默认显示手动控制面板
+        self.storage_manual_panel.setVisible(True)
+        storage_manual_layout.addWidget(self.storage_manual_panel)
+        
+        layout.addWidget(storage_manual_group)
+        layout.addStretch()
+        
+    def remove_all_device_tabs(self):
+        """移除所有设备专用选项卡"""
+        # 移除光伏选项卡
+        sgen_tab_index = self.results_tabs.indexOf(self.sgen_data_tab)
+        if sgen_tab_index != -1:
+            self.results_tabs.removeTab(sgen_tab_index)
+            
+        # 移除负载选项卡
+        load_tab_index = self.results_tabs.indexOf(self.load_data_tab)
+        if load_tab_index != -1:
+            self.results_tabs.removeTab(load_tab_index)
+            
+        # 移除储能选项卡
+        storage_tab_index = self.results_tabs.indexOf(self.storage_data_tab)
+        if storage_tab_index != -1:
+            self.results_tabs.removeTab(storage_tab_index)
+    
+    def update_sgen_device_info(self, component_type, component_idx):
+        """更新光伏设备信息"""
         if component_type and component_idx is not None:
-            device_name = f"{component_type}_{component_idx}"
-            self.current_device_label.setText(f"当前设备: {device_name}")
+            device_name = f"光伏_{component_idx}"
+            self.sgen_current_device_label.setText(f"当前设备: {device_name}")
             
             # 检查当前设备是否启用了数据生成
             is_enabled = self.is_device_generation_enabled(component_type, component_idx)
-            self.enable_device_generation_checkbox.setChecked(is_enabled)
-            self.enable_device_generation_checkbox.setEnabled(True)
+            self.sgen_enable_generation_checkbox.setChecked(is_enabled)
+            self.sgen_enable_generation_checkbox.setEnabled(True)
         else:
-            self.current_device_label.setText("未选择设备")
-            self.enable_device_generation_checkbox.setChecked(False)
-            self.enable_device_generation_checkbox.setEnabled(False)
+            self.sgen_current_device_label.setText("未选择光伏设备")
+            self.sgen_enable_generation_checkbox.setChecked(False)
+            self.sgen_enable_generation_checkbox.setEnabled(False)
+    
+    def update_load_device_info(self, component_type, component_idx):
+        """更新负载设备信息"""
+        if component_type and component_idx is not None:
+            device_name = f"负载_{component_idx}"
+            self.load_current_device_label.setText(f"当前设备: {device_name}")
+            
+            # 检查当前设备是否启用了数据生成
+            is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+            self.load_enable_generation_checkbox.setChecked(is_enabled)
+            self.load_enable_generation_checkbox.setEnabled(True)
+        else:
+            self.load_current_device_label.setText("未选择负载设备")
+            self.load_enable_generation_checkbox.setChecked(False)
+            self.load_enable_generation_checkbox.setEnabled(False)
+    
+    def update_storage_device_info(self, component_type, component_idx):
+        """更新储能设备信息"""
+        if component_type and component_idx is not None:
+            device_name = f"储能_{component_idx}"
+            self.storage_current_device_label.setText(f"当前设备: {device_name}")
+            
+            # 检查当前设备是否启用了数据生成
+            is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+        else:
+            self.storage_current_device_label.setText("未选择储能设备")
+    
+    def update_current_device_info(self, component_type, component_idx):
+        """更新当前选择设备信息（保留原方法以兼容性）"""
+        if component_type and component_idx is not None:
+            device_name = f"{component_type}_{component_idx}"
+            # 这个方法现在主要用于兼容性，实际更新由各设备专用方法处理
+        else:
+            pass
     
     def is_device_generation_enabled(self, component_type, component_idx):
         """检查指定设备是否启用了数据生成"""
         device_key = f"{component_type}_{component_idx}"
         return device_key in self.generated_devices
     
-    def toggle_device_data_generation(self, state):
-        """切换当前设备的数据生成状态"""
+    def toggle_sgen_data_generation(self, state):
+        """切换光伏设备的数据生成状态"""
+        self._toggle_device_data_generation(state, 'sgen')
+    
+    def toggle_load_data_generation(self, state):
+        """切换负载设备的数据生成状态"""
+        self._toggle_device_data_generation(state, 'load')
+    
+    def toggle_storage_data_generation(self, state):
+        """切换储能设备的数据生成状态"""
+        self._toggle_device_data_generation(state, 'storage')
+    
+    def _toggle_device_data_generation(self, state, device_type):
+        """通用的设备数据生成切换方法"""
         if hasattr(self, 'current_component_type') and hasattr(self, 'current_component_idx'):
-            if self.current_component_type and self.current_component_idx is not None:
+            if self.current_component_type == device_type and self.current_component_idx is not None:
                 device_key = f"{self.current_component_type}_{self.current_component_idx}"
                 device_name = f"{self.current_component_type}_{self.current_component_idx}"
                 
                 if state == 2:  # Qt.Checked
+                    # 启用设备数据生成时，确保切换到自动模式
+                    if device_type == 'sgen' and hasattr(self, 'sgen_manual_mode_radio') and self.sgen_manual_mode_radio.isChecked():
+                        self.sgen_auto_mode_radio.setChecked(True)
+                        self.sgen_manual_panel.setVisible(False)
+                    elif device_type == 'load' and hasattr(self, 'load_manual_mode_radio') and self.load_manual_mode_radio.isChecked():
+                        self.load_auto_mode_radio.setChecked(True)
+                        self.load_manual_panel.setVisible(False)
+                    elif device_type == 'storage' and hasattr(self, 'storage_manual_mode_radio') and self.storage_manual_mode_radio.isChecked():
+                        self.storage_auto_mode_radio.setChecked(True)
+                        self.storage_manual_panel.setVisible(False)
+                    
                     # 启用设备数据生成
                     if device_key not in self.generated_devices:
                         self.generated_devices.add(device_key)
-                        # 启动对应的数据生成器
-                        self.data_generator_manager.start_generation(self.current_component_type)
-                        device_type_name = "负载" if self.current_component_type == "load" else "光伏"
+                        # 启动对应的数据生成器（储能设备暂时不启动生成器，因为还没有实现）
+                        if self.current_component_type in ['load', 'sgen']:
+                            self.data_generator_manager.start_generation(self.current_component_type)
+                        
+                        # 获取设备类型的中文名称
+                        device_type_name = {
+                            'load': '负载',
+                            'sgen': '光伏', 
+                            'storage': '储能'
+                        }.get(self.current_component_type, self.current_component_type)
+                        
                         self.statusBar().showMessage(f"已启用{device_type_name}设备 {self.current_component_idx} 的数据生成")
                         print(f"启用设备 {device_name} 的数据生成")
                     else:
@@ -458,16 +851,33 @@ class SimulationWindow(QMainWindow):
                     # 禁用设备数据生成
                     if device_key in self.generated_devices:
                         self.generated_devices.remove(device_key)
-                        device_type_name = "负载" if self.current_component_type == "load" else "光伏"
+                        
+                        # 获取设备类型的中文名称
+                        device_type_name = {
+                            'load': '负载',
+                            'sgen': '光伏', 
+                            'storage': '储能'
+                        }.get(self.current_component_type, self.current_component_type)
+                        
                         self.statusBar().showMessage(f"已禁用{device_type_name}设备 {self.current_component_idx} 的数据生成")
                         print(f"禁用设备 {device_name} 的数据生成")
                         
                         # 如果该类型的设备都被禁用了，停止对应的数据生成器
                         type_devices = [key for key in self.generated_devices if key.startswith(f"{self.current_component_type}_")]
-                        if not type_devices:
+                        if not type_devices and self.current_component_type in ['load', 'sgen']:
                             self.data_generator_manager.stop_generation(self.current_component_type)
                     else:
                         self.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
+    
+    def toggle_device_data_generation(self, state):
+        """切换当前设备的数据生成状态（保留兼容性）"""
+        if hasattr(self, 'current_component_type'):
+            if self.current_component_type == 'sgen':
+                self.toggle_sgen_data_generation(state)
+            elif self.current_component_type == 'load':
+                self.toggle_load_data_generation(state)
+            elif self.current_component_type == 'storage':
+                self.toggle_storage_data_generation(state)
         
     # 删除潮流结果和短路结果选项卡创建方法
         
@@ -656,12 +1066,33 @@ class SimulationWindow(QMainWindow):
         if not self.network_model:
             return
             
+        # 检查是否需要更新选项卡（只有在设备类型改变时才重新组织选项卡）
+        need_update_tabs = not hasattr(self, 'current_component_type') or self.current_component_type != component_type
+        
         # 记录当前显示的组件信息，用于自动更新
         self.current_component_type = component_type
         self.current_component_idx = component_idx
         
-        # 更新数据生成控制标签页中的当前设备信息
-        self.update_current_device_info(component_type, component_idx)
+        # 只有在设备类型改变时才重新组织选项卡
+        if need_update_tabs:
+            # 首先移除所有设备专用选项卡
+            self.remove_all_device_tabs()
+            
+            # 根据设备类型添加对应的专用选项卡
+            if component_type == 'sgen':
+                self.results_tabs.addTab(self.sgen_data_tab, "光伏控制")
+            elif component_type == 'load':
+                self.results_tabs.addTab(self.load_data_tab, "负载控制")
+            elif component_type == 'storage':
+                self.results_tabs.addTab(self.storage_data_tab, "储能控制")
+        
+        # 更新设备信息（每次都需要更新，因为可能是同类型的不同设备）
+        if component_type == 'sgen':
+            self.update_sgen_device_info(component_type, component_idx)
+        elif component_type == 'load':
+            self.update_load_device_info(component_type, component_idx)
+        elif component_type == 'storage':
+            self.update_storage_device_info(component_type, component_idx)
             
         try:
             # 获取组件数据
@@ -714,14 +1145,14 @@ class SimulationWindow(QMainWindow):
             # 填充参数表格（组合组件参数和仿真结果）
             all_params = {}
             
-            # 添加组件参数
-            for param, value in component_data.items():
-                all_params[f"参数_{param}"] = value
-                
-            # 添加仿真结果
+            # 先添加仿真结果（显示在最上方）
             if result_data is not None:
                 for param, value in result_data.items():
                     all_params[f"结果_{param}"] = value
+                    
+            # 再添加组件参数
+            for param, value in component_data.items():
+                all_params[f"参数_{param}"] = value
             
             self.component_params_table.setRowCount(len(all_params))
             for i, (param, value) in enumerate(all_params.items()):
@@ -756,17 +1187,17 @@ class SimulationWindow(QMainWindow):
         """标记需要生成数据的设备
         
         该函数用于标记指定设备为需要生成数据的设备，使其在数据生成过程中
-        被包含在数据生成范围内。支持负载(load)和光伏(sgen)设备。
+        被包含在数据生成范围内。支持负载(load)、光伏(sgen)和储能(storage)设备。
         
         Args:
-            component_type (str): 组件类型 ('load', 'sgen')
+            component_type (str): 组件类型 ('load', 'sgen', 'storage')
             component_idx (int): 组件索引ID
         """
         if not self.network_model or not hasattr(self.network_model, 'net'):
             return
         
-        # 只支持负载和光伏
-        if component_type not in ['load', 'sgen']:
+        # 支持负载、光伏和储能
+        if component_type not in ['load', 'sgen', 'storage']:
             return
 
         try:
@@ -782,22 +1213,37 @@ class SimulationWindow(QMainWindow):
                 if component_idx not in self.network_model.net.sgen.index:
                     self.statusBar().showMessage(f"光伏设备 {component_idx} 不存在")
                     return
+            elif component_type == 'storage':
+                if component_idx not in self.network_model.net.storage.index:
+                    self.statusBar().showMessage(f"储能设备 {component_idx} 不存在")
+                    return
 
             # 检查设备是否已存在于监控列表中
             if device_key not in self.generated_devices:
                 # 将设备添加到监控设备集合
                 self.generated_devices.add(device_key)
                 
-                # 启动对应的数据生成器
-                self.data_generator_manager.start_generation(component_type)
+                # 启动对应的数据生成器（储能设备暂时不启动生成器）
+                if component_type in ['load', 'sgen']:
+                    self.data_generator_manager.start_generation(component_type)
                 
                 # 显示成功消息
-                device_name = "负载" if component_type == "load" else "光伏"
+                device_type_names = {
+                    'load': '负载',
+                    'sgen': '光伏',
+                    'storage': '储能'
+                }
+                device_name = device_type_names.get(component_type, component_type)
                 self.statusBar().showMessage(f"已将{device_name}设备 {component_idx} 标记为数据生成设备")
                 
             else:
                 # 设备已存在，显示提示信息
-                device_name = "负载" if component_type == "load" else "光伏"
+                device_type_names = {
+                    'load': '负载',
+                    'sgen': '光伏',
+                    'storage': '储能'
+                }
+                device_name = device_type_names.get(component_type, component_type)
                 self.statusBar().showMessage(f"{device_name}设备 {component_idx} 已在数据生成列表中")
                 
         except Exception as e:
@@ -808,14 +1254,14 @@ class SimulationWindow(QMainWindow):
         """禁用指定设备的数据生成
         
         Args:
-            component_type (str): 组件类型 ('load', 'sgen')
+            component_type (str): 组件类型 ('load', 'sgen', 'storage')
             component_idx (int): 组件索引ID
         """
         if not self.network_model or not hasattr(self.network_model, 'net'):
             return
         
-        # 只支持负载和静态发电机
-        if component_type not in ['load', 'sgen']:
+        # 支持负载、光伏和储能
+        if component_type not in ['load', 'sgen', 'storage']:
             return
 
         try:
@@ -828,17 +1274,27 @@ class SimulationWindow(QMainWindow):
                 self.generated_devices.remove(device_key)
                 
                 # 显示成功消息
-                device_name = "负载" if component_type == "load" else "光伏"
+                device_type_names = {
+                    'load': '负载',
+                    'sgen': '光伏',
+                    'storage': '储能'
+                }
+                device_name = device_type_names.get(component_type, component_type)
                 self.statusBar().showMessage(f"已禁用{device_name}设备 {component_idx} 的数据生成")
                 
-                # 如果该类型的设备都被禁用了，停止对应的数据生成器
+                # 如果该类型的设备都被禁用了，停止对应的数据生成器（储能设备暂时不需要停止生成器）
                 type_devices = [key for key in self.generated_devices if key.startswith(f"{component_type}_")]
-                if not type_devices:
+                if not type_devices and component_type in ['load', 'sgen']:
                     self.data_generator_manager.stop_generation(component_type)
                     
             else:
                 # 设备不在生成列表中，显示提示信息
-                device_name = "负载" if component_type == "load" else "光伏"
+                device_type_names = {
+                    'load': '负载',
+                    'sgen': '光伏',
+                    'storage': '储能'
+                }
+                device_name = device_type_names.get(component_type, component_type)
                 self.statusBar().showMessage(f"{device_name}设备 {component_idx} 未在数据生成列表中")
                 
         except Exception as e:
@@ -1756,8 +2212,6 @@ class SimulationWindow(QMainWindow):
         try:
             if not self.network_model or not hasattr(self.network_model, 'net'):
                 return
-            
-
                 
             for device in self.generated_devices:
                 device_type, device_idx = device.split('_', 1)
@@ -1921,44 +2375,522 @@ class SimulationWindow(QMainWindow):
         # 更新图表显示
         self.display_power_curve()
         
-    def start_load_data_generation(self):
-        """开始数据生成"""
-        self.data_generator_manager.start_generation()
-        self.start_generation_btn.setEnabled(False)
-        self.stop_generation_btn.setEnabled(True)
+    def on_sgen_mode_changed(self):
+        """光伏设备数据生成模式改变时的回调"""
+        is_manual = self.sgen_manual_mode_radio.isChecked()
+        self.sgen_manual_panel.setVisible(is_manual)
         
-    def stop_load_data_generation(self):
-        """停止数据生成"""
-        self.data_generator_manager.stop_generation()
-        self.start_generation_btn.setEnabled(True)
-        self.stop_generation_btn.setEnabled(False)
-        self.parent_window.statusBar().showMessage("已停止数据生成")
+        # 如果切换到手动模式，停止自动数据生成
+        if is_manual and hasattr(self, 'sgen_enable_generation_checkbox'):
+            if self.sgen_enable_generation_checkbox.isChecked():
+                self.sgen_enable_generation_checkbox.setChecked(False)
         
-    def generate_and_update_load_data(self):
-        """生成并更新负载数据"""
+        # 更新当前设备的功率值到滑块和输入框
+        if is_manual:
+            self.update_sgen_manual_controls_from_device()
+    
+    def on_load_mode_changed(self):
+        """负载设备数据生成模式改变时的回调"""
+        is_manual = self.load_manual_mode_radio.isChecked()
+        self.load_manual_panel.setVisible(is_manual)
+        
+        # 如果切换到手动模式，停止自动数据生成
+        if is_manual and hasattr(self, 'load_enable_generation_checkbox'):
+            if self.load_enable_generation_checkbox.isChecked():
+                self.load_enable_generation_checkbox.setChecked(False)
+        
+        # 更新当前设备的功率值到滑块和输入框
+        if is_manual:
+            self.update_load_manual_controls_from_device()
+    
+    def on_storage_mode_changed(self):
+        """储能设备数据生成模式改变时的回调"""
+        is_manual = self.storage_manual_mode_radio.isChecked()
+        self.storage_manual_panel.setVisible(is_manual)
+        
+        # 更新当前设备的功率值到滑块和输入框
+        if is_manual:
+            self.update_storage_manual_controls_from_device()
+    
+    def on_generation_mode_changed(self):
+        """数据生成模式改变时的回调（保留兼容性）"""
+        is_manual = self.manual_mode_radio.isChecked()
+        self.manual_control_panel.setVisible(is_manual)
+        
+        # 如果切换到手动模式，停止自动数据生成
+        if is_manual and hasattr(self, 'enable_device_generation_checkbox'):
+            if self.enable_device_generation_checkbox.isChecked():
+                self.enable_device_generation_checkbox.setChecked(False)
+        
+        # 更新当前设备的功率值到滑块和输入框
+        if is_manual:
+            self.update_manual_controls_from_device()
+    
+    def update_sgen_manual_controls_from_device(self):
+        """从当前光伏设备更新手动控制组件的值"""
+        if not hasattr(self, 'current_component_type') or not hasattr(self, 'current_component_idx'):
+            return
+            
         if not self.network_model or not hasattr(self.network_model, 'net'):
             return
             
-        # 生成新的负载数据
-        new_load_data = self.data_generator_manager.load_generator.generate_daily_load_profile(self.network_model)
-        
-        if new_load_data:
-            # 更新网络模型中的负载数据
-            for idx, load_data in new_load_data.items():
-                if idx < len(self.network_model.net.load):
-                    self.network_model.net.load.loc[idx, 'p_mw'] = load_data['p_mw']
-                    self.network_model.net.load.loc[idx, 'q_mvar'] = load_data['q_mvar']
+        if self.current_component_type != 'sgen':
+            return
             
-            # 更新设备树显示
-            self.update_device_tree_status()
+        try:
+            # 获取光伏设备的当前功率值
+            current_power = self.network_model.net.sgen.at[self.current_component_idx, 'p_mw']
             
-            # 如果启用了自动计算，执行潮流计算
-            if hasattr(self, 'auto_calc_checkbox') and self.auto_calc_checkbox.isChecked():
-                self.auto_power_flow_calculation()
-            
-            self.parent_window.statusBar().showMessage(
-                f"已更新负载数据 - 更新于 {datetime.now().strftime('%H:%M:%S')}")
+            # 更新滑块和输入框的值
+            if hasattr(self, 'sgen_manual_power_slider'):
+                self.sgen_manual_power_slider.setValue(int(current_power * 1000))  # 转换为kW
+            if hasattr(self, 'sgen_manual_power_spinbox'):
+                self.sgen_manual_power_spinbox.setValue(current_power)
+        except Exception as e:
+            print(f"更新光伏设备手动控制值时出错: {e}")
     
+    def update_load_manual_controls_from_device(self):
+        """从当前负载设备更新手动控制组件的值"""
+        if not hasattr(self, 'current_component_type') or not hasattr(self, 'current_component_idx'):
+            return
+            
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            return
+            
+        if self.current_component_type != 'load':
+            return
+            
+        try:
+            # 获取负载设备的当前功率值
+            current_p = self.network_model.net.load.at[self.current_component_idx, 'p_mw']
+            current_q = self.network_model.net.load.at[self.current_component_idx, 'q_mvar']
+            
+            # 更新滑块和输入框的值
+            if hasattr(self, 'load_manual_power_slider'):
+                self.load_manual_power_slider.setValue(int(current_p * 1000))  # 转换为kW
+            if hasattr(self, 'load_manual_power_spinbox'):
+                self.load_manual_power_spinbox.setValue(current_p)
+            if hasattr(self, 'load_manual_reactive_power_slider'):
+                self.load_manual_reactive_power_slider.setValue(int(current_q * 1000))  # 转换为kVar
+            if hasattr(self, 'load_manual_reactive_power_spinbox'):
+                self.load_manual_reactive_power_spinbox.setValue(current_q)
+        except Exception as e:
+            print(f"更新负载设备手动控制值时出错: {e}")
+    
+    def update_storage_manual_controls_from_device(self):
+        """从当前储能设备更新手动控制组件的值"""
+        if not hasattr(self, 'current_component_type') or not hasattr(self, 'current_component_idx'):
+            return
+            
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            return
+            
+        if self.current_component_type != 'storage':
+            return
+            
+        try:
+            # 获取储能设备的当前功率值
+            current_power = self.network_model.net.storage.at[self.current_component_idx, 'p_mw']
+            
+            # 更新滑块和输入框的值
+            if hasattr(self, 'storage_manual_power_slider'):
+                self.storage_manual_power_slider.setValue(int(current_power * 1000))  # 转换为kW
+            if hasattr(self, 'storage_manual_power_spinbox'):
+                self.storage_manual_power_spinbox.setValue(current_power)
+        except Exception as e:
+            print(f"更新储能设备手动控制值时出错: {e}")
+    
+    def update_manual_controls_from_device(self):
+        """从当前设备更新手动控制组件的值（保留兼容性）"""
+        if not hasattr(self, 'current_component_type') or not hasattr(self, 'current_component_idx'):
+            return
+            
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            return
+            
+        component_type = self.current_component_type
+        component_idx = self.current_component_idx
+        
+        try:
+            if component_type == 'load':
+                if component_idx < len(self.network_model.net.load):
+                    p_mw = self.network_model.net.load.loc[component_idx, 'p_mw']
+                    q_mvar = self.network_model.net.load.loc[component_idx, 'q_mvar']
+                    
+                    # 获取额定功率，如果不存在则使用默认值1.0
+                    if 'p_mw_rated' in self.network_model.net.load.columns:
+                        rated_power = self.network_model.net.load.loc[component_idx, 'p_mw_rated']
+                        self.base_power_value = abs(rated_power) if rated_power != 0 else 1.0
+                    else:
+                        self.base_power_value = 1.0
+                    
+                    if 'q_mvar_rated' in self.network_model.net.load.columns:
+                        rated_reactive = self.network_model.net.load.loc[component_idx, 'q_mvar_rated']
+                        self.base_reactive_power_value = abs(rated_reactive) if rated_reactive != 0 else 0.5
+                    else:
+                        self.base_reactive_power_value = 0.5
+                    
+                    self.power_spinbox.setValue(abs(p_mw))
+                    self.reactive_power_spinbox.setValue(abs(q_mvar))
+                    
+                    # 根据当前功率与额定功率的比例设置滑块值
+                    power_percentage = int((abs(p_mw) / self.base_power_value) * 100) if self.base_power_value > 0 else 100
+                    reactive_percentage = int((abs(q_mvar) / self.base_reactive_power_value) * 100) if self.base_reactive_power_value > 0 else 100
+                    self.power_slider.setValue(max(0, min(200, power_percentage)))
+                    self.reactive_power_slider.setValue(max(0, min(200, reactive_percentage)))
+                    
+                    # 显示无功功率控制
+                    self.reactive_power_slider.setVisible(True)
+                    self.reactive_power_spinbox.setVisible(True)
+                    
+            elif component_type == 'sgen':
+                if component_idx < len(self.network_model.net.sgen):
+                    p_mw = self.network_model.net.sgen.loc[component_idx, 'p_mw']
+                    
+                    # 获取额定功率，如果不存在则使用默认值1.0
+                    if 'p_mw_rated' in self.network_model.net.sgen.columns:
+                        rated_power = self.network_model.net.sgen.loc[component_idx, 'p_mw_rated']
+                        self.base_power_value = abs(rated_power) if rated_power != 0 else 1.0
+                    elif 'sn_mva' in self.network_model.net.sgen.columns:
+                        # 如果有视在功率，使用它作为基准
+                        sn_mva = self.network_model.net.sgen.loc[component_idx, 'sn_mva']
+                        self.base_power_value = abs(sn_mva) if sn_mva != 0 else 1.0
+                    else:
+                        self.base_power_value = 1.0
+                    
+                    self.power_spinbox.setValue(abs(p_mw))  # 光伏功率通常为负值
+                    
+                    # 根据当前功率与额定功率的比例设置滑块值
+                    power_percentage = int((abs(p_mw) / self.base_power_value) * 100) if self.base_power_value > 0 else 100
+                    self.power_slider.setValue(max(0, min(200, power_percentage)))
+                    
+                    # 光伏设备隐藏无功功率控制
+                    self.reactive_power_slider.setVisible(False)
+                    self.reactive_power_spinbox.setVisible(False)
+                    
+            elif component_type == 'storage':
+                if component_idx < len(self.network_model.net.storage):
+                    p_mw = self.network_model.net.storage.loc[component_idx, 'p_mw']
+                    
+                    # 获取额定功率，如果不存在则使用默认值1.0
+                    if 'max_p_mw' in self.network_model.net.storage.columns:
+                        max_power = self.network_model.net.storage.loc[component_idx, 'max_p_mw']
+                        self.base_power_value = abs(max_power) if max_power != 0 else 1.0
+                    elif 'sn_mva' in self.network_model.net.storage.columns:
+                        # 如果有视在功率，使用它作为基准
+                        sn_mva = self.network_model.net.storage.loc[component_idx, 'sn_mva']
+                        self.base_power_value = abs(sn_mva) if sn_mva != 0 else 1.0
+                    else:
+                        self.base_power_value = 1.0
+                    
+                    self.power_spinbox.setValue(abs(p_mw))  # 储能功率可正可负
+                    
+                    # 根据当前功率与额定功率的比例设置滑块值
+                    power_percentage = int((abs(p_mw) / self.base_power_value) * 100) if self.base_power_value > 0 else 100
+                    self.power_slider.setValue(max(0, min(200, power_percentage)))
+                    
+                    # 储能设备隐藏无功功率控制
+                    self.reactive_power_slider.setVisible(False)
+                    self.reactive_power_spinbox.setVisible(False)
+            else:
+                # 其他设备类型隐藏手动控制
+                self.manual_control_panel.setVisible(False)
+                return
+                
+        except Exception as e:
+            print(f"更新手动控制值时出错: {e}")
+    
+    def on_manual_power_changed(self, value):
+        """手动功率滑块改变时的回调"""
+        # 将滑块值（0-200%）转换为实际功率值
+        if hasattr(self, 'power_spinbox') and hasattr(self, 'base_power_value'):
+            # 使用基准功率值计算实际功率
+            new_power = self.base_power_value * (value / 100.0)
+            # 暂时断开信号连接，避免循环调用
+            self.power_spinbox.blockSignals(True)
+            self.power_spinbox.setValue(new_power)
+            self.power_spinbox.blockSignals(False)
+            
+            # 自动应用功率设置到设备
+            self.apply_manual_power_settings()
+    
+    def on_manual_power_spinbox_changed(self, value):
+        """手动功率输入框改变时的回调"""
+        # 根据输入框值更新滑块百分比
+        if hasattr(self, 'power_slider') and hasattr(self, 'base_power_value') and self.base_power_value > 0:
+            percentage = int((value / self.base_power_value) * 100)
+            percentage = max(0, min(200, percentage))  # 限制在0-200%范围内
+            self.power_slider.blockSignals(True)
+            self.power_slider.setValue(percentage)
+            self.power_slider.blockSignals(False)
+            
+            # 自动应用功率设置到设备
+            self.apply_manual_power_settings()
+    
+    def on_manual_reactive_power_changed(self, value):
+        """手动无功功率滑块改变时的回调"""
+        if hasattr(self, 'reactive_power_spinbox') and hasattr(self, 'base_reactive_power_value'):
+            # 使用基准无功功率值计算实际功率
+            new_power = self.base_reactive_power_value * (value / 100.0)
+            self.reactive_power_spinbox.blockSignals(True)
+            self.reactive_power_spinbox.setValue(new_power)
+            self.reactive_power_spinbox.blockSignals(False)
+            
+            # 自动应用功率设置到设备
+            self.apply_manual_power_settings()
+    
+    def on_manual_reactive_power_spinbox_changed(self, value):
+        """手动无功功率输入框改变时的回调"""
+        if hasattr(self, 'reactive_power_slider') and hasattr(self, 'base_reactive_power_value') and self.base_reactive_power_value > 0:
+            percentage = int((value / self.base_reactive_power_value) * 100)
+            percentage = max(0, min(200, percentage))  # 限制在0-200%范围内
+            self.reactive_power_slider.blockSignals(True)
+            self.reactive_power_slider.setValue(percentage)
+            self.reactive_power_slider.blockSignals(False)
+            
+            # 自动应用功率设置到设备
+            self.apply_manual_power_settings()
+    
+    def on_sgen_power_changed(self, value):
+        """光伏功率滑块改变时的回调"""
+        if hasattr(self, 'sgen_power_spinbox'):
+            # 滑块值直接对应功率值
+            power_value = value / 10.0  # 滑块范围0-200对应0-20MW
+            self.sgen_power_spinbox.blockSignals(True)
+            self.sgen_power_spinbox.setValue(power_value)
+            self.sgen_power_spinbox.blockSignals(False)
+    
+    def on_sgen_power_spinbox_changed(self, value):
+        """光伏功率输入框改变时的回调"""
+        if hasattr(self, 'sgen_power_slider'):
+            # 功率值转换为滑块值
+            slider_value = int(value * 10)  # 功率值*10对应滑块值
+            slider_value = max(0, min(200, slider_value))
+            self.sgen_power_slider.blockSignals(True)
+            self.sgen_power_slider.setValue(slider_value)
+            self.sgen_power_slider.blockSignals(False)
+    
+    def on_load_power_changed(self, value):
+        """负载功率滑块改变时的回调"""
+        if hasattr(self, 'load_power_spinbox'):
+            # 滑块值直接对应功率值
+            power_value = value / 2.0  # 滑块范围0-200对应0-100MW
+            self.load_power_spinbox.blockSignals(True)
+            self.load_power_spinbox.setValue(power_value)
+            self.load_power_spinbox.blockSignals(False)
+    
+    def on_load_power_spinbox_changed(self, value):
+        """负载功率输入框改变时的回调"""
+        if hasattr(self, 'load_power_slider'):
+            # 功率值转换为滑块值
+            slider_value = int(value * 2)  # 功率值*2对应滑块值
+            slider_value = max(0, min(200, slider_value))
+            self.load_power_slider.blockSignals(True)
+            self.load_power_slider.setValue(slider_value)
+            self.load_power_slider.blockSignals(False)
+    
+    def on_load_reactive_power_changed(self, value):
+        """负载无功功率滑块改变时的回调"""
+        if hasattr(self, 'load_reactive_power_spinbox'):
+            # 滑块值直接对应无功功率值
+            power_value = value / 4.0  # 滑块范围0-200对应0-50MVar
+            self.load_reactive_power_spinbox.blockSignals(True)
+            self.load_reactive_power_spinbox.setValue(power_value)
+            self.load_reactive_power_spinbox.blockSignals(False)
+    
+    def on_load_reactive_power_spinbox_changed(self, value):
+        """负载无功功率输入框改变时的回调"""
+        if hasattr(self, 'load_reactive_power_slider'):
+            # 无功功率值转换为滑块值
+            slider_value = int(value * 4)  # 功率值*4对应滑块值
+            slider_value = max(0, min(200, slider_value))
+            self.load_reactive_power_slider.blockSignals(True)
+            self.load_reactive_power_slider.setValue(slider_value)
+            self.load_reactive_power_slider.blockSignals(False)
+    
+    def on_storage_power_changed(self, value):
+        """储能功率滑块改变时的回调"""
+        if hasattr(self, 'storage_power_spinbox'):
+            # 滑块值除以10得到实际功率值（MW）
+            new_power = value / 10.0
+            self.storage_power_spinbox.blockSignals(True)
+            self.storage_power_spinbox.setValue(new_power)
+            self.storage_power_spinbox.blockSignals(False)
+    
+    def on_storage_power_spinbox_changed(self, value):
+        """储能功率输入框改变时的回调"""
+        if hasattr(self, 'storage_power_slider'):
+            # 功率值乘以10得到滑块值
+            slider_value = int(value * 10)
+            slider_value = max(-1000, min(1000, slider_value))
+            self.storage_power_slider.blockSignals(True)
+            self.storage_power_slider.setValue(slider_value)
+            self.storage_power_slider.blockSignals(False)
+
+    def apply_manual_power_settings(self):
+        """应用手动功率设置到网络模型"""
+        if not hasattr(self, 'current_component_type') or not hasattr(self, 'current_component_idx'):
+            QMessageBox.warning(self, "警告", "请先选择一个设备")
+            return
+            
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            QMessageBox.warning(self, "警告", "网络模型未加载")
+            return
+            
+        component_type = self.current_component_type
+        component_idx = self.current_component_idx
+        
+        try:
+            if component_type == 'load':
+                if component_idx in self.network_model.net.load.index:
+                    p_mw = self.power_spinbox.value()
+                    q_mvar = self.reactive_power_spinbox.value()
+                    
+                    self.network_model.net.load.loc[component_idx, 'p_mw'] = p_mw
+                    self.network_model.net.load.loc[component_idx, 'q_mvar'] = q_mvar
+                    
+                    # 更新设备树显示
+                    self.update_device_tree_status()
+                    
+                    # 如果启用了自动计算，执行潮流计算
+                    if hasattr(self, 'auto_calc_checkbox') and self.auto_calc_checkbox.isChecked():
+                        self.auto_power_flow_calculation()
+                    
+                    self.statusBar().showMessage(f"已更新负载 {component_idx} 的功率设置")
+                    
+            elif component_type == 'sgen':
+                if component_idx in self.network_model.net.sgen.index:
+                    p_mw = -abs(self.power_spinbox.value())  # 光伏功率为负值
+                    
+                    self.network_model.net.sgen.loc[component_idx, 'p_mw'] = p_mw
+                    
+                    # 更新设备树显示
+                    self.update_device_tree_status()
+                    
+                    # 如果启用了自动计算，执行潮流计算
+                    if hasattr(self, 'auto_calc_checkbox') and self.auto_calc_checkbox.isChecked():
+                        self.auto_power_flow_calculation()
+                    
+                    self.statusBar().showMessage(f"已更新光伏 {component_idx} 的功率设置")
+                    
+            elif component_type == 'storage':
+                if component_idx in self.network_model.net.storage.index:
+                    p_mw = self.power_spinbox.value()  # 储能功率可正可负
+                    
+                    self.network_model.net.storage.loc[component_idx, 'p_mw'] = p_mw
+                    
+                    # 更新设备树显示
+                    self.update_device_tree_status()
+                    
+                    # 如果启用了自动计算，执行潮流计算
+                    if hasattr(self, 'auto_calc_checkbox') and self.auto_calc_checkbox.isChecked():
+                        self.auto_power_flow_calculation()
+                    
+                    self.statusBar().showMessage(f"已更新储能 {component_idx} 的功率设置")
+            else:
+                QMessageBox.warning(self, "警告", "当前设备不支持手动功率控制")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"应用手动设置时出错: {e}")
+
+    def apply_sgen_settings(self):
+        """应用光伏设备的手动功率设置"""
+        if not hasattr(self, 'current_component_type') or not hasattr(self, 'current_component_idx'):
+            QMessageBox.warning(self, "警告", "请先选择一个光伏设备")
+            return
+            
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            QMessageBox.warning(self, "警告", "网络模型未加载")
+            return
+            
+        component_idx = self.current_component_idx
+        
+        try:
+            if component_idx in self.network_model.net.sgen.index:
+                p_mw = -abs(self.sgen_power_spinbox.value())  # 光伏功率为负值
+                
+                self.network_model.net.sgen.loc[component_idx, 'p_mw'] = p_mw
+                
+                # 更新设备树显示
+                self.update_device_tree_status()
+                
+                # 如果启用了自动计算，执行潮流计算
+                if hasattr(self, 'auto_calc_checkbox') and self.auto_calc_checkbox.isChecked():
+                    self.auto_power_flow_calculation()
+                
+                self.statusBar().showMessage(f"已更新光伏 {component_idx} 的功率设置")
+            else:
+                QMessageBox.warning(self, "警告", "光伏设备不存在")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"应用光伏设置时出错: {e}")
+    
+    def apply_load_settings(self):
+        """应用负载设备的手动功率设置"""
+        if not hasattr(self, 'current_component_type') or not hasattr(self, 'current_component_idx'):
+            QMessageBox.warning(self, "警告", "请先选择一个负载设备")
+            return
+            
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            QMessageBox.warning(self, "警告", "网络模型未加载")
+            return
+            
+        component_idx = self.current_component_idx
+        
+        try:
+            if component_idx in self.network_model.net.load.index:
+                p_mw = self.load_power_spinbox.value()
+                q_mvar = self.load_reactive_power_spinbox.value()
+                
+                self.network_model.net.load.loc[component_idx, 'p_mw'] = p_mw
+                self.network_model.net.load.loc[component_idx, 'q_mvar'] = q_mvar
+                
+                # 更新设备树显示
+                self.update_device_tree_status()
+                
+                # 如果启用了自动计算，执行潮流计算
+                if hasattr(self, 'auto_calc_checkbox') and self.auto_calc_checkbox.isChecked():
+                    self.auto_power_flow_calculation()
+                
+                self.statusBar().showMessage(f"已更新负载 {component_idx} 的功率设置")
+            else:
+                QMessageBox.warning(self, "警告", "负载设备不存在")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"应用负载设置时出错: {e}")
+    
+    def apply_storage_settings(self):
+        """应用储能设备的手动功率设置"""
+        if not hasattr(self, 'current_component_type') or not hasattr(self, 'current_component_idx'):
+            QMessageBox.warning(self, "警告", "请先选择一个储能设备")
+            return
+            
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            QMessageBox.warning(self, "警告", "网络模型未加载")
+            return
+            
+        component_idx = self.current_component_idx
+        
+        try:
+            if component_idx in self.network_model.net.storage.index:
+                p_mw = self.storage_power_spinbox.value()  # 储能功率可正可负
+                
+                self.network_model.net.storage.loc[component_idx, 'p_mw'] = p_mw
+                
+                # 更新设备树显示
+                self.update_device_tree_status()
+                
+                # 如果启用了自动计算，执行潮流计算
+                if hasattr(self, 'auto_calc_checkbox') and self.auto_calc_checkbox.isChecked():
+                    self.auto_power_flow_calculation()
+                
+                self.statusBar().showMessage(f"已更新储能 {component_idx} 的功率设置")
+            else:
+                QMessageBox.warning(self, "警告", "储能设备不存在")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"应用储能设置时出错: {e}")
+
     def closeEvent(self, event):
         """窗口关闭事件"""
         # 停止自动计算定时器

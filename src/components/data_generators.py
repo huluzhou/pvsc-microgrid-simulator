@@ -364,7 +364,7 @@ class DataGeneratorManager:
         if device_type == 'load':
             return self.load_generator.generate_load_data(index, network_model)
         elif device_type == 'sgen':
-            return self.pv_generator.generate_data(index, network_model)
+            return self.pv_generator.generate_pv_data(index, network_model)
         return {}
     
     def start_generation(self, device_type=None):
