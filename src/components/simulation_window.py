@@ -29,6 +29,13 @@ import time
 from datetime import datetime
 from .data_generators import DataGeneratorManager
 
+# Modbus管理器导入
+from .modbus_manager import ModbusManager
+# UI组件管理器导入
+from .ui_components import UIComponentManager
+# 功率监控模块导入
+from .power_monitor import PowerMonitor
+
 
 
 class SimulationWindow(QMainWindow):
@@ -44,14 +51,9 @@ class SimulationWindow(QMainWindow):
         self.auto_calc_timer = QTimer()
         self.auto_calc_timer.timeout.connect(self.auto_power_flow_calculation)
         self.is_auto_calculating = False
-        self.power_history = {}  # 存储多个设备的功率历史数据 {device_key: deque}
         self.selected_device_id = None
         self.selected_device_type = None
-        self.monitored_devices = set()  # 存储要监控的设备集合
         self.generated_devices = set()
-        self.device_colors = {}  # 存储设备对应的颜色
-        self.color_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
-                             '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
         
         # 数据生成器管理
         self.data_generator_manager = DataGeneratorManager()
@@ -61,11 +63,24 @@ class SimulationWindow(QMainWindow):
         self.current_component_type = None
         self.current_component_idx = None
         
+        # Modbus服务器管理器
+        self.modbus_manager = ModbusManager(self.network_model)
+        
+        # 初始化UI组件管理器
+        self.ui_manager = UIComponentManager(self)
+        
+        # 初始化数据控制管理器
+        from .data_control import DataControlManager
+        self.data_control_manager = DataControlManager(self)
+        
+        # 初始化功率监控管理器
+        self.power_monitor = PowerMonitor(self)
+        
         self.init_ui()
         self.load_network_data()
         
         # 应用当前主题
-        self.update_theme_colors()
+        self.ui_manager.update_theme_colors()
         
     def init_ui(self):
         """初始化用户界面"""
@@ -84,13 +99,18 @@ class SimulationWindow(QMainWindow):
         main_layout.addWidget(splitter)
         
         # 创建左侧设备树面板
-        self.create_device_tree_panel(splitter)
+        self.ui_manager.create_device_tree_panel(splitter)
         
         # 创建中央功率曲线区域
-        self.create_central_image_area(splitter)
+        self.ui_manager.create_central_image_area(splitter)
         
         # 创建右侧仿真结果面板
-        self.create_simulation_results_panel(splitter)
+        self.ui_manager.create_simulation_results_panel(splitter)
+        
+        # 通过数据控制管理器创建数据生成选项卡
+        self.data_control_manager.create_sgen_data_generation_tab()
+        self.data_control_manager.create_load_data_generation_tab()
+        self.data_control_manager.create_storage_data_generation_tab()
         
         # 设置分割器比例，让中央区域有更大的权重
         splitter.setSizes([250, 800, 300])
@@ -103,629 +123,8 @@ class SimulationWindow(QMainWindow):
         # 创建状态栏
         self.statusBar().showMessage("仿真模式已就绪")
         
-    def create_device_tree_panel(self, parent):
-        """创建左侧设备树面板"""
-        # 创建设备树容器
-        tree_widget = QWidget()
-        tree_layout = QVBoxLayout(tree_widget)
-        
-        # 标题
-        tree_title = QLabel("网络设备")
-        tree_title.setFont(QFont("Arial", 12, QFont.Bold))
-        tree_layout.addWidget(tree_title)
-        
-        # 搜索框
-        search_layout = QHBoxLayout()
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("搜索设备...")
-        self.search_input.textChanged.connect(self.filter_device_tree)
-        
-        self.clear_search_btn = QPushButton("清除")
-        self.clear_search_btn.clicked.connect(self.clear_search)
-        self.clear_search_btn.setMaximumWidth(60)
-        
-        search_layout.addWidget(self.search_input)
-        search_layout.addWidget(self.clear_search_btn)
-        tree_layout.addLayout(search_layout)
-        
-        # 设备分类选择
-        category_layout = QHBoxLayout()
-        self.category_combo = QComboBox()
-        self.category_combo.addItems(["全部设备", "母线", "线路", "变压器", "发电设备", "负载设备", "储能设备"])
-        self.category_combo.currentTextChanged.connect(self.filter_by_category)
-        
-        self.refresh_tree_btn = QPushButton("刷新")
-        self.refresh_tree_btn.clicked.connect(self.refresh_device_tree)
-        self.refresh_tree_btn.setMaximumWidth(60)
-        
-        category_layout.addWidget(QLabel("分类:"))
-        category_layout.addWidget(self.category_combo)
-        category_layout.addWidget(self.refresh_tree_btn)
-        tree_layout.addLayout(category_layout)
-        
-        # 设备树
-        self.device_tree = QTreeWidget()
-        self.device_tree.setHeaderLabels(["设备名称", "类型", "状态"])
-        self.device_tree.itemClicked.connect(self.on_device_selected)
-        self.device_tree.setAlternatingRowColors(True)
-        self.device_tree.setSortingEnabled(True)
-        
-        # 设置列宽
-        self.device_tree.setColumnWidth(0, 150)
-        self.device_tree.setColumnWidth(1, 80)
-        self.device_tree.setColumnWidth(2, 60)
-        
-        tree_layout.addWidget(self.device_tree)
-        
-        # 设备统计信息
-        self.device_stats_label = QLabel("设备统计: 加载中...")
-        self.device_stats_label.setStyleSheet("font-size: 12px; color: #666; padding: 5px;")
-        tree_layout.addWidget(self.device_stats_label)
-        
-        # 自动计算控制面板
-        auto_group = QGroupBox("自动计算")
-        auto_group.setMinimumHeight(100)  # 设置最小高度确保显示完整
-        auto_layout = QVBoxLayout(auto_group)
-        auto_layout.setContentsMargins(10, 10, 10, 10)  # 设置内边距
-        auto_layout.setSpacing(8)  # 设置控件间距
-        
-        # 自动计算开关
-        auto_calc_layout = QHBoxLayout()
-        auto_calc_layout.setContentsMargins(0, 0, 0, 0)
-        auto_calc_label = QLabel("自动计算:")
-        auto_calc_label.setMinimumWidth(60)  # 设置标签最小宽度
-        auto_calc_layout.addWidget(auto_calc_label)
-        self.auto_calc_checkbox = QCheckBox()
-        self.auto_calc_checkbox.stateChanged.connect(self.toggle_auto_calculation)
-        auto_calc_layout.addWidget(self.auto_calc_checkbox)
-        auto_calc_layout.addStretch()  # 添加弹性空间
-        auto_layout.addLayout(auto_calc_layout)
-        
-        # 计算间隔
-        interval_layout = QHBoxLayout()
-        interval_layout.setContentsMargins(0, 0, 0, 0)
-        interval_label = QLabel("间隔(秒):")
-        interval_label.setMinimumWidth(60)  # 设置标签最小宽度
-        interval_layout.addWidget(interval_label)
-        self.calc_interval_spinbox = QSpinBox()
-        self.calc_interval_spinbox.setRange(1, 60)
-        self.calc_interval_spinbox.setValue(5)
-        self.calc_interval_spinbox.setMinimumWidth(80)  # 增加宽度确保箭头显示
-        self.calc_interval_spinbox.setMaximumWidth(120)  # 设置最大宽度
-        interval_layout.addWidget(self.calc_interval_spinbox)
-        interval_layout.addStretch()  # 添加弹性空间
-        auto_layout.addLayout(interval_layout)
-        
-        tree_layout.addWidget(auto_group)
-        
-        parent.addWidget(tree_widget)
-        
-    def create_central_image_area(self, parent):
-        """创建中央功率曲线显示区域"""
-        # 创建功率曲线容器
-        curve_widget = QWidget()
-        curve_layout = QVBoxLayout(curve_widget)
-        curve_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # 标题
-        curve_title = QLabel("功率曲线监控")
-        curve_title.setFont(QFont("Arial", 12, QFont.Bold))
-        curve_layout.addWidget(curve_title)
-        
-        # 创建功率曲线显示区域 - 使用matplotlib交互式图表
-        # 使用更灵活的尺寸设置，让Figure自适应容器大小
-        self.figure = Figure(figsize=(8, 5), dpi=100, tight_layout=True)
-        self.canvas_mpl = FigureCanvas(self.figure)
-        self.canvas_mpl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.ax = self.figure.add_subplot(111)
-        
-        # 设置中文字体
-        try:
-            # 尝试设置支持中文的字体
-            plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans', 'SimSun', 'Arial Unicode MS']
-            plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
-        except:
-            pass
-        
-        # 初始化图表
-        self.ax.set_xlabel('时间 (秒)', fontsize=12)
-        self.ax.set_ylabel('功率 (MW)', fontsize=12)
-        self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
-        self.ax.grid(True, alpha=0.3)
-        self.ax.set_ylim(bottom=0)
-        
-        # 创建曲线对象
-        self.power_line, = self.ax.plot([], [], 'b-', linewidth=2, label='有功功率')
-        self.power_line_q, = self.ax.plot([], [], 'r-', linewidth=2, label='无功功率')
-        self.ax.legend()
-        
-        # 创建工具栏
-        from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-        self.toolbar = NavigationToolbar(self.canvas_mpl, self)
-        
-        curve_layout.addWidget(self.toolbar)
-        curve_layout.addWidget(self.canvas_mpl, 1)  # 设置stretch因子为1，让图表区域扩展
-        
-        parent.addWidget(curve_widget)
-        
-    def create_simulation_results_panel(self, parent):
-        """创建右侧仿真结果面板"""
-        # 创建结果面板容器
-        results_widget = QWidget()
-        results_layout = QVBoxLayout(results_widget)
-        
-        # 标题
-        results_title = QLabel("仿真结果")
-        results_title.setFont(QFont("Arial", 12, QFont.Bold))
-        results_layout.addWidget(results_title)
-        
-        # 创建选项卡
-        self.results_tabs = QTabWidget()
-        
-        # 组件详情选项卡
-        self.component_details_tab = QWidget()
-        self.create_component_details_tab()
-        self.results_tabs.addTab(self.component_details_tab, "组件详情")
-        
-        # 为不同设备类型创建独立的数据生成控制选项卡
-        self.sgen_data_tab = QWidget()  # 光伏设备选项卡
-        self.load_data_tab = QWidget()  # 负载设备选项卡
-        self.storage_data_tab = QWidget()  # 储能设备选项卡
-        
-        # 创建各设备类型的选项卡内容
-        self.create_sgen_data_generation_tab()
-        self.create_load_data_generation_tab()
-        self.create_storage_data_generation_tab()
-        
-        # 注意：不在这里添加选项卡，而是在show_component_details中根据设备类型动态添加
-        
-        results_layout.addWidget(self.results_tabs)
-        
-        parent.addWidget(results_widget)
-        
-    def create_monitor_control_panel(self, parent_layout):
-        """创建监控控制面板"""
-        # 创建监控控制组
-        monitor_group = QGroupBox("功率曲线监控")
-        monitor_layout = QVBoxLayout(monitor_group)
-        
-        # 当前设备监控开关
-        self.current_device_monitor = QCheckBox("监控当前设备")
-        self.current_device_monitor.stateChanged.connect(self.toggle_current_device_monitor)
-        monitor_layout.addWidget(self.current_device_monitor)
-        
-        # 已监控设备列表
-        self.monitored_devices_list = QTreeWidget()
-        self.monitored_devices_list.setHeaderLabels(["设备", "类型", "状态"])
-        self.monitored_devices_list.setMaximumHeight(150)
-        self.monitored_devices_list.itemChanged.connect(self.on_monitored_device_toggled)
-        monitor_layout.addWidget(self.monitored_devices_list)
-        
-        # 清除所有监控按钮
-        clear_btn = QPushButton("清除所有监控")
-        clear_btn.clicked.connect(self.clear_all_monitors)
-        monitor_layout.addWidget(clear_btn)
-        
-        parent_layout.addWidget(monitor_group)
-        
-
-        
-    def create_component_details_tab(self):
-        """创建组件详情选项卡"""
-        layout = QVBoxLayout(self.component_details_tab)
-        
-        # 组件参数表格
-        self.component_params_table = QTableWidget()
-        self.component_params_table.setColumnCount(2)
-        self.component_params_table.setHorizontalHeaderLabels(["参数", "值"])
-        self.component_params_table.horizontalHeader().setStretchLastSection(True)
-        layout.addWidget(self.component_params_table)
-        
-        # 创建控制面板容器
-        control_container = QWidget()
-        control_layout = QVBoxLayout(control_container)
-        
-        # 功率曲线监控控制面板
-        self.create_monitor_control_panel(control_layout)
-        
-        layout.addWidget(control_container)
-        
-    def create_data_generation_tab(self):
-        """创建数据生成控制选项卡"""
-        layout = QVBoxLayout(self.data_generation_tab)
-        
-        # 当前选择设备信息
-        current_device_group = QGroupBox("当前选择设备")
-        current_device_layout = QVBoxLayout(current_device_group)
-        
-        self.current_device_label = QLabel("未选择设备")
-        self.current_device_label.setStyleSheet("font-weight: bold; color: #2196F3;")
-        current_device_layout.addWidget(self.current_device_label)
-        
-        # 设备数据生成控制
-        device_control_layout = QHBoxLayout()
-        self.enable_device_generation_checkbox = QCheckBox("启用当前设备数据生成")
-        self.enable_device_generation_checkbox.stateChanged.connect(self.toggle_device_data_generation)
-        device_control_layout.addWidget(self.enable_device_generation_checkbox)
-        
-        current_device_layout.addLayout(device_control_layout)
-        layout.addWidget(current_device_group)
-        
-        # 数据生成参数设置
-        params_group = QGroupBox("生成参数设置")
-        params_layout = QFormLayout(params_group)
-        
-        # 变化幅度
-        self.variation_spinbox = QDoubleSpinBox()
-        self.variation_spinbox.setRange(0.0, 50.0)
-        self.variation_spinbox.setValue(10.0)
-        self.variation_spinbox.setSuffix("%")
-        params_layout.addRow("变化幅度:", self.variation_spinbox)
-        
-        # 季节因子
-        self.season_combo = QComboBox()
-        self.season_combo.addItems(["春季", "夏季", "秋季", "冬季"])
-        self.season_combo.setCurrentText("夏季")
-        params_layout.addRow("季节因子:", self.season_combo)
-        
-        # 天气类型（仅对光伏有效）
-        self.weather_combo = QComboBox()
-        self.weather_combo.addItems(["晴天", "多云", "阴天"])
-        self.weather_combo.setCurrentText("晴天")
-        params_layout.addRow("天气类型:", self.weather_combo)
-        
-        layout.addWidget(params_group)
-        
-        # 手动数据生成控制
-        manual_control_group = QGroupBox("手动数据生成控制")
-        manual_control_layout = QVBoxLayout(manual_control_group)
-        
-        # 数据生成模式选择
-        mode_layout = QHBoxLayout()
-        self.auto_mode_radio = QRadioButton("自动生成")
-        self.manual_mode_radio = QRadioButton("手动控制")
-        self.auto_mode_radio.setChecked(True)
-        self.auto_mode_radio.toggled.connect(self.on_generation_mode_changed)
-        self.manual_mode_radio.toggled.connect(self.on_generation_mode_changed)
-        mode_layout.addWidget(self.auto_mode_radio)
-        mode_layout.addWidget(self.manual_mode_radio)
-        manual_control_layout.addLayout(mode_layout)
-        
-        # 手动控制面板（初始隐藏）
-        self.manual_control_panel = QWidget()
-        manual_panel_layout = QFormLayout(self.manual_control_panel)
-        
-        # 有功功率控制
-        self.power_slider = QSlider(Qt.Horizontal)
-        self.power_slider.setRange(0, 200)  # 0-200% 范围
-        self.power_slider.setValue(100)
-        self.power_slider.setMinimumWidth(300)  # 设置最小宽度
-        self.power_slider.valueChanged.connect(self.on_manual_power_changed)
-        
-        self.power_spinbox = QDoubleSpinBox()
-        self.power_spinbox.setRange(0.0, 100.0)  # 增加范围
-        self.power_spinbox.setValue(1.0)
-        self.power_spinbox.setSuffix(" MW")
-        self.power_spinbox.setDecimals(3)  # 增加精度
-        self.power_spinbox.valueChanged.connect(self.on_manual_power_spinbox_changed)
-        
-        power_control_layout = QHBoxLayout()
-        power_control_layout.addWidget(self.power_slider)
-        power_control_layout.addWidget(self.power_spinbox)
-        manual_panel_layout.addRow("有功功率:", power_control_layout)
-        
-        # 无功功率控制（仅对负载有效）
-        self.reactive_power_slider = QSlider(Qt.Horizontal)
-        self.reactive_power_slider.setRange(0, 200)
-        self.reactive_power_slider.setValue(100)
-        self.reactive_power_slider.setMinimumWidth(300)  # 设置最小宽度
-        self.reactive_power_slider.valueChanged.connect(self.on_manual_reactive_power_changed)
-        
-        self.reactive_power_spinbox = QDoubleSpinBox()
-        self.reactive_power_spinbox.setRange(0.0, 50.0)  # 增加范围
-        self.reactive_power_spinbox.setValue(0.5)
-        self.reactive_power_spinbox.setSuffix(" MVar")
-        self.reactive_power_spinbox.setDecimals(3)  # 增加精度
-        self.reactive_power_spinbox.valueChanged.connect(self.on_manual_reactive_power_spinbox_changed)
-        
-        reactive_power_control_layout = QHBoxLayout()
-        reactive_power_control_layout.addWidget(self.reactive_power_slider)
-        reactive_power_control_layout.addWidget(self.reactive_power_spinbox)
-        manual_panel_layout.addRow("无功功率:", reactive_power_control_layout)
-        
-        # 应用按钮
-        self.apply_manual_btn = QPushButton("应用手动设置")
-        self.apply_manual_btn.clicked.connect(self.apply_manual_power_settings)
-        manual_panel_layout.addRow("", self.apply_manual_btn)
-        
-        self.manual_control_panel.setVisible(False)
-        manual_control_layout.addWidget(self.manual_control_panel)
-        
-        layout.addWidget(manual_control_group)
-        
-        # 添加弹性空间
-        layout.addStretch()
-        
-    def create_sgen_data_generation_tab(self):
-        """创建光伏设备专用的数据生成控制选项卡"""
-        layout = QVBoxLayout(self.sgen_data_tab)
-        
-        # 当前选择设备信息
-        current_device_group = QGroupBox("当前选择光伏设备")
-        current_device_layout = QVBoxLayout(current_device_group)
-        
-        self.sgen_current_device_label = QLabel("未选择光伏设备")
-        self.sgen_current_device_label.setStyleSheet("font-weight: bold; color: #FF9800;")
-        current_device_layout.addWidget(self.sgen_current_device_label)
-        
-        # 设备数据生成控制
-        device_control_layout = QHBoxLayout()
-        self.sgen_enable_generation_checkbox = QCheckBox("启用光伏设备数据生成")
-        self.sgen_enable_generation_checkbox.stateChanged.connect(self.toggle_sgen_data_generation)
-        device_control_layout.addWidget(self.sgen_enable_generation_checkbox)
-        
-        current_device_layout.addLayout(device_control_layout)
-        layout.addWidget(current_device_group)
-        
-        # 光伏专用参数设置
-        sgen_params_group = QGroupBox("光伏发电参数设置")
-        sgen_params_layout = QFormLayout(sgen_params_group)
-        
-        # 变化幅度
-        self.sgen_variation_spinbox = QDoubleSpinBox()
-        self.sgen_variation_spinbox.setRange(0.0, 50.0)
-        self.sgen_variation_spinbox.setValue(15.0)
-        self.sgen_variation_spinbox.setSuffix("%")
-        sgen_params_layout.addRow("功率变化幅度:", self.sgen_variation_spinbox)
-        
-        # 季节因子
-        self.sgen_season_combo = QComboBox()
-        self.sgen_season_combo.addItems(["春季", "夏季", "秋季", "冬季"])
-        self.sgen_season_combo.setCurrentText("夏季")
-        sgen_params_layout.addRow("季节因子:", self.sgen_season_combo)
-        
-        # 天气类型（光伏专用）
-        self.sgen_weather_combo = QComboBox()
-        self.sgen_weather_combo.addItems(["晴天", "多云", "阴天", "雨天"])
-        self.sgen_weather_combo.setCurrentText("晴天")
-        sgen_params_layout.addRow("天气类型:", self.sgen_weather_combo)
-        
-        # 光照强度系数
-        self.sgen_irradiance_spinbox = QDoubleSpinBox()
-        self.sgen_irradiance_spinbox.setRange(0.1, 1.5)
-        self.sgen_irradiance_spinbox.setValue(1.0)
-        self.sgen_irradiance_spinbox.setDecimals(2)
-        sgen_params_layout.addRow("光照强度系数:", self.sgen_irradiance_spinbox)
-        
-        layout.addWidget(sgen_params_group)
-        
-        # 光伏手动控制
-        sgen_manual_group = QGroupBox("光伏手动功率控制")
-        sgen_manual_layout = QVBoxLayout(sgen_manual_group)
-        
-        # 控制模式选择
-        sgen_mode_layout = QHBoxLayout()
-        self.sgen_auto_mode_radio = QRadioButton("自动发电")
-        self.sgen_manual_mode_radio = QRadioButton("手动控制")
-        self.sgen_auto_mode_radio.setChecked(True)
-        self.sgen_auto_mode_radio.toggled.connect(self.on_sgen_mode_changed)
-        self.sgen_manual_mode_radio.toggled.connect(self.on_sgen_mode_changed)
-        sgen_mode_layout.addWidget(self.sgen_auto_mode_radio)
-        sgen_mode_layout.addWidget(self.sgen_manual_mode_radio)
-        sgen_manual_layout.addLayout(sgen_mode_layout)
-        
-        # 手动控制面板
-        self.sgen_manual_panel = QWidget()
-        sgen_manual_panel_layout = QFormLayout(self.sgen_manual_panel)
-        
-        # 有功功率控制
-        self.sgen_power_slider = QSlider(Qt.Horizontal)
-        self.sgen_power_slider.setRange(0, 200)
-        self.sgen_power_slider.setValue(100)
-        self.sgen_power_slider.setMinimumWidth(300)
-        self.sgen_power_slider.valueChanged.connect(self.on_sgen_power_changed)
-        
-        self.sgen_power_spinbox = QDoubleSpinBox()
-        self.sgen_power_spinbox.setRange(0.0, 20.0)
-        self.sgen_power_spinbox.setValue(10.0)
-        self.sgen_power_spinbox.setSuffix(" MW")
-        self.sgen_power_spinbox.setDecimals(1)
-        self.sgen_power_spinbox.valueChanged.connect(self.on_sgen_power_spinbox_changed)
-        
-        sgen_power_layout = QHBoxLayout()
-        sgen_power_layout.addWidget(self.sgen_power_slider)
-        sgen_power_layout.addWidget(self.sgen_power_spinbox)
-        sgen_manual_panel_layout.addRow("发电功率:", sgen_power_layout)
-        
-        # 应用按钮
-        self.sgen_apply_btn = QPushButton("应用光伏设置")
-        self.sgen_apply_btn.clicked.connect(self.apply_sgen_settings)
-        sgen_manual_panel_layout.addRow("", self.sgen_apply_btn)
-        
-        self.sgen_manual_panel.setVisible(False)
-        sgen_manual_layout.addWidget(self.sgen_manual_panel)
-        
-        layout.addWidget(sgen_manual_group)
-        layout.addStretch()
-        
-    def create_load_data_generation_tab(self):
-        """创建负载设备专用的数据生成控制选项卡"""
-        layout = QVBoxLayout(self.load_data_tab)
-        
-        # 当前选择设备信息
-        current_device_group = QGroupBox("当前选择负载设备")
-        current_device_layout = QVBoxLayout(current_device_group)
-        
-        self.load_current_device_label = QLabel("未选择负载设备")
-        self.load_current_device_label.setStyleSheet("font-weight: bold; color: #F44336;")
-        current_device_layout.addWidget(self.load_current_device_label)
-        
-        # 设备数据生成控制
-        device_control_layout = QHBoxLayout()
-        self.load_enable_generation_checkbox = QCheckBox("启用负载设备数据生成")
-        self.load_enable_generation_checkbox.stateChanged.connect(self.toggle_load_data_generation)
-        device_control_layout.addWidget(self.load_enable_generation_checkbox)
-        
-        current_device_layout.addLayout(device_control_layout)
-        layout.addWidget(current_device_group)
-        
-        # 负载专用参数设置
-        load_params_group = QGroupBox("负载用电参数设置")
-        load_params_layout = QFormLayout(load_params_group)
-        
-        # 变化幅度
-        self.load_variation_spinbox = QDoubleSpinBox()
-        self.load_variation_spinbox.setRange(0.0, 50.0)
-        self.load_variation_spinbox.setValue(10.0)
-        self.load_variation_spinbox.setSuffix("%")
-        load_params_layout.addRow("功率变化幅度:", self.load_variation_spinbox)
-        
-        # 季节因子
-        self.load_season_combo = QComboBox()
-        self.load_season_combo.addItems(["春季", "夏季", "秋季", "冬季"])
-        self.load_season_combo.setCurrentText("夏季")
-        load_params_layout.addRow("季节因子:", self.load_season_combo)
-        
-        # 负载类型（负载专用）
-        self.load_type_combo = QComboBox()
-        self.load_type_combo.addItems(["居民负载", "工业负载", "商业负载", "农业负载"])
-        self.load_type_combo.setCurrentText("居民负载")
-        load_params_layout.addRow("负载类型:", self.load_type_combo)
-        
-        # 功率因数
-        self.load_power_factor_spinbox = QDoubleSpinBox()
-        self.load_power_factor_spinbox.setRange(0.7, 1.0)
-        self.load_power_factor_spinbox.setValue(0.9)
-        self.load_power_factor_spinbox.setDecimals(2)
-        load_params_layout.addRow("功率因数:", self.load_power_factor_spinbox)
-        
-        layout.addWidget(load_params_group)
-        
-        # 负载手动控制
-        load_manual_group = QGroupBox("负载手动功率控制")
-        load_manual_layout = QVBoxLayout(load_manual_group)
-        
-        # 控制模式选择
-        load_mode_layout = QHBoxLayout()
-        self.load_auto_mode_radio = QRadioButton("自动用电")
-        self.load_manual_mode_radio = QRadioButton("手动控制")
-        self.load_auto_mode_radio.setChecked(True)
-        self.load_auto_mode_radio.toggled.connect(self.on_load_mode_changed)
-        self.load_manual_mode_radio.toggled.connect(self.on_load_mode_changed)
-        load_mode_layout.addWidget(self.load_auto_mode_radio)
-        load_mode_layout.addWidget(self.load_manual_mode_radio)
-        load_manual_layout.addLayout(load_mode_layout)
-        
-        # 手动控制面板
-        self.load_manual_panel = QWidget()
-        load_manual_panel_layout = QFormLayout(self.load_manual_panel)
-        
-        # 有功功率控制
-        self.load_power_slider = QSlider(Qt.Horizontal)
-        self.load_power_slider.setRange(0, 200)
-        self.load_power_slider.setValue(100)
-        self.load_power_slider.setMinimumWidth(300)
-        self.load_power_slider.valueChanged.connect(self.on_load_power_changed)
-        
-        self.load_power_spinbox = QDoubleSpinBox()
-        self.load_power_spinbox.setRange(0.0, 100.0)
-        self.load_power_spinbox.setValue(1.0)
-        self.load_power_spinbox.setSuffix(" MW")
-        self.load_power_spinbox.setDecimals(3)
-        self.load_power_spinbox.valueChanged.connect(self.on_load_power_spinbox_changed)
-        
-        load_power_layout = QHBoxLayout()
-        load_power_layout.addWidget(self.load_power_slider)
-        load_power_layout.addWidget(self.load_power_spinbox)
-        load_manual_panel_layout.addRow("有功功率:", load_power_layout)
-        
-        # 无功功率控制（负载专用）
-        self.load_reactive_power_slider = QSlider(Qt.Horizontal)
-        self.load_reactive_power_slider.setRange(0, 200)
-        self.load_reactive_power_slider.setValue(100)
-        self.load_reactive_power_slider.setMinimumWidth(300)
-        self.load_reactive_power_slider.valueChanged.connect(self.on_load_reactive_power_changed)
-        
-        self.load_reactive_power_spinbox = QDoubleSpinBox()
-        self.load_reactive_power_spinbox.setRange(0.0, 50.0)
-        self.load_reactive_power_spinbox.setValue(0.5)
-        self.load_reactive_power_spinbox.setSuffix(" MVar")
-        self.load_reactive_power_spinbox.setDecimals(3)
-        self.load_reactive_power_spinbox.valueChanged.connect(self.on_load_reactive_power_spinbox_changed)
-        
-        load_reactive_power_layout = QHBoxLayout()
-        load_reactive_power_layout.addWidget(self.load_reactive_power_slider)
-        load_reactive_power_layout.addWidget(self.load_reactive_power_spinbox)
-        load_manual_panel_layout.addRow("无功功率:", load_reactive_power_layout)
-        
-        # 应用按钮
-        self.load_apply_btn = QPushButton("应用负载设置")
-        self.load_apply_btn.clicked.connect(self.apply_load_settings)
-        load_manual_panel_layout.addRow("", self.load_apply_btn)
-        
-        self.load_manual_panel.setVisible(False)
-        load_manual_layout.addWidget(self.load_manual_panel)
-        
-        layout.addWidget(load_manual_group)
-        layout.addStretch()
-        
-    def create_storage_data_generation_tab(self):
-        """创建储能设备专用的手动控制选项卡"""
-        layout = QVBoxLayout(self.storage_data_tab)
-        
-        # 当前选择设备信息
-        current_device_group = QGroupBox("当前选择储能设备")
-        current_device_layout = QVBoxLayout(current_device_group)
-        
-        self.storage_current_device_label = QLabel("未选择储能设备")
-        self.storage_current_device_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
-        current_device_layout.addWidget(self.storage_current_device_label)
-        
-        layout.addWidget(current_device_group)
-        
-        # 储能手动控制
-        storage_manual_group = QGroupBox("储能手动功率控制")
-        storage_manual_layout = QVBoxLayout(storage_manual_group)
-        
-        # 手动控制面板
-        self.storage_manual_panel = QWidget()
-        storage_manual_panel_layout = QFormLayout(self.storage_manual_panel)
-        
-        # 有功功率控制（正值为放电，负值为充电）
-        self.storage_power_slider = QSlider(Qt.Horizontal)
-        self.storage_power_slider.setRange(-1000, 1000)  # 滑块范围：-100.0到100.0MW（乘以10）
-        self.storage_power_slider.setValue(0)
-        self.storage_power_slider.setMinimumWidth(300)
-        self.storage_power_slider.valueChanged.connect(self.on_storage_power_changed)
-        
-        self.storage_power_spinbox = QDoubleSpinBox()
-        self.storage_power_spinbox.setRange(-100.0, 100.0)  # 支持充电和放电
-        self.storage_power_spinbox.setValue(0.0)
-        self.storage_power_spinbox.setSuffix(" MW")
-        self.storage_power_spinbox.setDecimals(1)
-        self.storage_power_spinbox.valueChanged.connect(self.on_storage_power_spinbox_changed)
-        
-        storage_power_layout = QHBoxLayout()
-        storage_power_layout.addWidget(self.storage_power_slider)
-        storage_power_layout.addWidget(self.storage_power_spinbox)
-        storage_manual_panel_layout.addRow("充放电功率:", storage_power_layout)
-        
-        # 功率说明标签
-        power_info_label = QLabel("正值为放电，负值为充电")
-        power_info_label.setStyleSheet("color: #666; font-size: 10px;")
-        storage_manual_panel_layout.addRow("", power_info_label)
-        
-        # 应用按钮
-        self.storage_apply_btn = QPushButton("应用储能设置")
-        self.storage_apply_btn.clicked.connect(self.apply_storage_settings)
-        storage_manual_panel_layout.addRow("", self.storage_apply_btn)
-        
-        # 储能设备默认显示手动控制面板
-        self.storage_manual_panel.setVisible(True)
-        storage_manual_layout.addWidget(self.storage_manual_panel)
-        
-        layout.addWidget(storage_manual_group)
-        layout.addStretch()
+        # 初始化功率监控的UI组件引用
+        self.power_monitor.initialize_ui_components()
         
     def remove_all_device_tabs(self):
         """移除所有设备专用选项卡"""
@@ -798,87 +197,6 @@ class SimulationWindow(QMainWindow):
         device_key = f"{component_type}_{component_idx}"
         return device_key in self.generated_devices
     
-    def toggle_sgen_data_generation(self, state):
-        """切换光伏设备的数据生成状态"""
-        self._toggle_device_data_generation(state, 'sgen')
-    
-    def toggle_load_data_generation(self, state):
-        """切换负载设备的数据生成状态"""
-        self._toggle_device_data_generation(state, 'load')
-    
-    def toggle_storage_data_generation(self, state):
-        """切换储能设备的数据生成状态"""
-        self._toggle_device_data_generation(state, 'storage')
-    
-    def _toggle_device_data_generation(self, state, device_type):
-        """通用的设备数据生成切换方法"""
-        if hasattr(self, 'current_component_type') and hasattr(self, 'current_component_idx'):
-            if self.current_component_type == device_type and self.current_component_idx is not None:
-                device_key = f"{self.current_component_type}_{self.current_component_idx}"
-                device_name = f"{self.current_component_type}_{self.current_component_idx}"
-                
-                if state == 2:  # Qt.Checked
-                    # 启用设备数据生成时，确保切换到自动模式
-                    if device_type == 'sgen' and hasattr(self, 'sgen_manual_mode_radio') and self.sgen_manual_mode_radio.isChecked():
-                        self.sgen_auto_mode_radio.setChecked(True)
-                        self.sgen_manual_panel.setVisible(False)
-                    elif device_type == 'load' and hasattr(self, 'load_manual_mode_radio') and self.load_manual_mode_radio.isChecked():
-                        self.load_auto_mode_radio.setChecked(True)
-                        self.load_manual_panel.setVisible(False)
-                    elif device_type == 'storage' and hasattr(self, 'storage_manual_mode_radio') and self.storage_manual_mode_radio.isChecked():
-                        self.storage_auto_mode_radio.setChecked(True)
-                        self.storage_manual_panel.setVisible(False)
-                    
-                    # 启用设备数据生成
-                    if device_key not in self.generated_devices:
-                        self.generated_devices.add(device_key)
-                        # 启动对应的数据生成器（储能设备暂时不启动生成器，因为还没有实现）
-                        if self.current_component_type in ['load', 'sgen']:
-                            self.data_generator_manager.start_generation(self.current_component_type)
-                        
-                        # 获取设备类型的中文名称
-                        device_type_name = {
-                            'load': '负载',
-                            'sgen': '光伏', 
-                            'storage': '储能'
-                        }.get(self.current_component_type, self.current_component_type)
-                        
-                        self.statusBar().showMessage(f"已启用{device_type_name}设备 {self.current_component_idx} 的数据生成")
-                        print(f"启用设备 {device_name} 的数据生成")
-                    else:
-                        self.statusBar().showMessage(f"设备 {device_name} 已在数据生成列表中")
-                else:
-                    # 禁用设备数据生成
-                    if device_key in self.generated_devices:
-                        self.generated_devices.remove(device_key)
-                        
-                        # 获取设备类型的中文名称
-                        device_type_name = {
-                            'load': '负载',
-                            'sgen': '光伏', 
-                            'storage': '储能'
-                        }.get(self.current_component_type, self.current_component_type)
-                        
-                        self.statusBar().showMessage(f"已禁用{device_type_name}设备 {self.current_component_idx} 的数据生成")
-                        print(f"禁用设备 {device_name} 的数据生成")
-                        
-                        # 如果该类型的设备都被禁用了，停止对应的数据生成器
-                        type_devices = [key for key in self.generated_devices if key.startswith(f"{self.current_component_type}_")]
-                        if not type_devices and self.current_component_type in ['load', 'sgen']:
-                            self.data_generator_manager.stop_generation(self.current_component_type)
-                    else:
-                        self.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
-    
-    def toggle_device_data_generation(self, state):
-        """切换当前设备的数据生成状态（保留兼容性）"""
-        if hasattr(self, 'current_component_type'):
-            if self.current_component_type == 'sgen':
-                self.toggle_sgen_data_generation(state)
-            elif self.current_component_type == 'load':
-                self.toggle_load_data_generation(state)
-            elif self.current_component_type == 'storage':
-                self.toggle_storage_data_generation(state)
-        
     # 删除潮流结果和短路结果选项卡创建方法
         
     def load_network_data(self):
@@ -1053,7 +371,7 @@ class SimulationWindow(QMainWindow):
         
         # 更新当前设备监控复选框状态
         device_key = f"{self.selected_device_type}_{self.selected_device_id}"
-        self.current_device_monitor.setChecked(device_key in self.monitored_devices)
+        self.current_device_monitor.setChecked(device_key in self.power_monitor.monitored_devices)
         
         # 显示组件详情
         self.show_component_details(component_type, component_idx)
@@ -1250,56 +568,7 @@ class SimulationWindow(QMainWindow):
             self.statusBar().showMessage(f"标记设备数据生成时出错: {str(e)}")
             print(f"Error in enable_device_data_generation: {str(e)}")
     
-    def disable_device_data_generation(self, component_type, component_idx):
-        """禁用指定设备的数据生成
-        
-        Args:
-            component_type (str): 组件类型 ('load', 'sgen', 'storage')
-            component_idx (int): 组件索引ID
-        """
-        if not self.network_model or not hasattr(self.network_model, 'net'):
-            return
-        
-        # 支持负载、光伏和储能
-        if component_type not in ['load', 'sgen', 'storage']:
-            return
 
-        try:
-            # 创建设备唯一标识符
-            device_key = f"{component_type}_{component_idx}"
-            
-            # 检查设备是否在生成列表中
-            if device_key in self.generated_devices:
-                # 从生成设备集合中移除
-                self.generated_devices.remove(device_key)
-                
-                # 显示成功消息
-                device_type_names = {
-                    'load': '负载',
-                    'sgen': '光伏',
-                    'storage': '储能'
-                }
-                device_name = device_type_names.get(component_type, component_type)
-                self.statusBar().showMessage(f"已禁用{device_name}设备 {component_idx} 的数据生成")
-                
-                # 如果该类型的设备都被禁用了，停止对应的数据生成器（储能设备暂时不需要停止生成器）
-                type_devices = [key for key in self.generated_devices if key.startswith(f"{component_type}_")]
-                if not type_devices and component_type in ['load', 'sgen']:
-                    self.data_generator_manager.stop_generation(component_type)
-                    
-            else:
-                # 设备不在生成列表中，显示提示信息
-                device_type_names = {
-                    'load': '负载',
-                    'sgen': '光伏',
-                    'storage': '储能'
-                }
-                device_name = device_type_names.get(component_type, component_type)
-                self.statusBar().showMessage(f"{device_name}设备 {component_idx} 未在数据生成列表中")
-                
-        except Exception as e:
-            self.statusBar().showMessage(f"禁用设备数据生成时出错: {str(e)}")
-            print(f"Error in disable_device_data_generation: {str(e)}")
     
     def get_component_type_chinese(self, component_type):
         """获取组件类型的中文名称"""
@@ -1750,232 +1019,7 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"导出Excel文件失败:\n{str(e)}")
     
-    def update_theme_colors(self):
-        """更新主题相关的所有颜色"""
-        app = QApplication.instance()
-        if app:
-            palette = app.palette()
-            bg_color = palette.color(QPalette.Window)
-            is_dark_theme = bg_color.lightness() < 128
-            
-            # 更新自动计算控件的样式
-            if hasattr(self, 'auto_calc_checkbox'):
-                if is_dark_theme:
-                    # 深色主题样式
-                    checkbox_style = """
-                        QCheckBox {
-                            spacing: 5px;
-                            color: rgb(255, 255, 255);
-                        }
-                        QCheckBox::indicator {
-                            width: 18px;
-                            height: 18px;
-                            border: 2px solid #888;
-                            border-radius: 3px;
-                            background-color: rgb(53, 53, 53);
-                        }
-                        QCheckBox::indicator:checked {
-                            background-color: #4CAF50;
-                            border-color: #4CAF50;
-                        }
-                        QCheckBox::indicator:checked:pressed {
-                            background-color: #45a049;
-                        }
-                    """
-                else:
-                    # 浅色主题样式
-                    checkbox_style = """
-                        QCheckBox {
-                            spacing: 5px;
-                            color: rgb(0, 0, 0);
-                        }
-                        QCheckBox::indicator {
-                            width: 18px;
-                            height: 18px;
-                            border: 2px solid #555;
-                            border-radius: 3px;
-                            background-color: white;
-                        }
-                        QCheckBox::indicator:checked {
-                            background-color: #4CAF50;
-                            border-color: #4CAF50;
-                        }
-                        QCheckBox::indicator:checked:pressed {
-                            background-color: #45a049;
-                        }
-                    """
-                self.auto_calc_checkbox.setStyleSheet(checkbox_style)
-            
-            # 更新SpinBox样式
-            if hasattr(self, 'calc_interval_spinbox'):
-                if is_dark_theme:
-                    # 深色主题样式
-                    spinbox_style = """
-                        QSpinBox {
-                            padding-right: 15px;
-                            border: 1px solid #666;
-                            border-radius: 3px;
-                            background-color: rgb(53, 53, 53);
-                            color: rgb(255, 255, 255);
-                        }
-                        QSpinBox::up-button {
-                            subcontrol-origin: border;
-                            subcontrol-position: top right;
-                            width: 16px;
-                            border-left-width: 1px;
-                            border-left-color: #666;
-                            border-left-style: solid;
-                            border-top-right-radius: 3px;
-                            background-color: #666;
-                        }
-                        QSpinBox::down-button {
-                            subcontrol-origin: border;
-                            subcontrol-position: bottom right;
-                            width: 16px;
-                            border-left-width: 1px;
-                            border-left-color: #666;
-                            border-left-style: solid;
-                            border-bottom-right-radius: 3px;
-                            background-color: #666;
-                        }
-                        QSpinBox::up-arrow {
-                            image: none;
-                            border-left: 4px solid transparent;
-                            border-right: 4px solid transparent;
-                            border-bottom: 4px solid #ccc;
-                            width: 0px;
-                            height: 0px;
-                        }
-                        QSpinBox::down-arrow {
-                            image: none;
-                            border-left: 4px solid transparent;
-                            border-right: 4px solid transparent;
-                            border-top: 4px solid #ccc;
-                            width: 0px;
-                            height: 0px;
-                        }
-                    """
-                else:
-                    # 浅色主题样式
-                    spinbox_style = """
-                        QSpinBox {
-                            padding-right: 15px;
-                            border: 1px solid #ccc;
-                            border-radius: 3px;
-                            background-color: white;
-                            color: rgb(0, 0, 0);
-                        }
-                        QSpinBox::up-button {
-                            subcontrol-origin: border;
-                            subcontrol-position: top right;
-                            width: 16px;
-                            border-left-width: 1px;
-                            border-left-color: #ccc;
-                            border-left-style: solid;
-                            border-top-right-radius: 3px;
-                            background-color: #f0f0f0;
-                        }
-                        QSpinBox::down-button {
-                            subcontrol-origin: border;
-                            subcontrol-position: bottom right;
-                            width: 16px;
-                            border-left-width: 1px;
-                            border-left-color: #ccc;
-                            border-left-style: solid;
-                            border-bottom-right-radius: 3px;
-                            background-color: #f0f0f0;
-                        }
-                        QSpinBox::up-arrow {
-                            image: none;
-                            border-left: 4px solid transparent;
-                            border-right: 4px solid transparent;
-                            border-bottom: 4px solid #666;
-                            width: 0px;
-                            height: 0px;
-                        }
-                        QSpinBox::down-arrow {
-                            image: none;
-                            border-left: 4px solid transparent;
-                            border-right: 4px solid transparent;
-                            border-top: 4px solid #666;
-                            width: 0px;
-                            height: 0px;
-                        }
-                    """
-                self.calc_interval_spinbox.setStyleSheet(spinbox_style)
-            
-            # 更新设备树样式
-            if hasattr(self, 'device_tree'):
-                if is_dark_theme:
-                    # 深色主题样式
-                    tree_style = """
-                        QTreeWidget {
-                            background-color: rgb(53, 53, 53);
-                            color: rgb(255, 255, 255);
-                            border: 1px solid #666;
-                            alternate-background-color: rgb(60, 60, 60);
-                            selection-background-color: rgb(42, 130, 218);
-                            selection-color: rgb(255, 255, 255);
-                        }
-                        QTreeWidget::item {
-                            padding: 2px;
-                            border: none;
-                        }
-                        QTreeWidget::item:selected {
-                            background-color: rgb(42, 130, 218);
-                            color: rgb(255, 255, 255);
-                        }
-                        QTreeWidget::item:hover {
-                            background-color: rgb(70, 70, 70);
-                        }
 
-
-                        QTreeWidget {
-                            color: rgb(255, 255, 255);
-                        }
-                        QHeaderView::section {
-                            background-color: rgb(60, 60, 60);
-                            color: rgb(255, 255, 255);
-                            border: 1px solid #666;
-                            padding: 4px;
-                        }
-                    """
-                else:
-                    # 浅色主题样式
-                    tree_style = """
-                        QTreeWidget {
-                            background-color: white;
-                            color: rgb(0, 0, 0);
-                            border: 1px solid #ccc;
-                            alternate-background-color: rgb(245, 245, 245);
-                            selection-background-color: rgb(0, 120, 215);
-                            selection-color: rgb(255, 255, 255);
-                        }
-                        QTreeWidget::item {
-                            padding: 2px;
-                            border: none;
-                        }
-                        QTreeWidget::item:selected {
-                            background-color: rgb(0, 120, 215);
-                            color: rgb(255, 255, 255);
-                        }
-                        QTreeWidget::item:hover {
-                            background-color: rgb(230, 230, 230);
-                        }
-
-
-                        QHeaderView::section {
-                            background-color: rgb(240, 240, 240);
-                            color: rgb(0, 0, 0);
-                            border: 1px solid #ccc;
-                            padding: 4px;
-                        }
-                    """
-                self.device_tree.setStyleSheet(tree_style)
-            
-            # 更新监控设备列表样式
-            if hasattr(self, 'monitored_devices_list'):
-                self.monitored_devices_list.setStyleSheet(tree_style if hasattr(self, 'device_tree') else "")
     
     def closeEvent(self, event):
         """窗口关闭事件"""
@@ -1983,210 +1027,11 @@ class SimulationWindow(QMainWindow):
         self.parent_window.statusBar().showMessage("已退出仿真模式")
         event.accept()
     
-    def update_power_curve(self):
-        """更新所有监控设备的功率曲线数据"""
-        try:
-            # 为每个监控的设备更新功率数据
-            for device_key in self.monitored_devices:
-                try:
-                    device_type, device_id = device_key.split('_', 1)
-                    power_value = self.get_device_power(device_id, device_type)
-                    
-                    if power_value is not None:
-                        timestamp = time.time()
-                        
-                        # 如果该设备的历史数据不存在，创建新的deque
-                        if device_key not in self.power_history:
-                            self.power_history[device_key] = deque(maxlen=100)
-                        
-                        # 添加历史数据
-                        self.power_history[device_key].append((timestamp, power_value))
-                        
-                except Exception as e:
-                    print(f"更新设备 {device_key} 功率数据失败: {str(e)}")
-            
-            # 更新图像显示
-            self.display_power_curve()
-            
-        except Exception as e:
-            print(f"更新功率曲线失败: {str(e)}")
+
     
-    def get_device_power(self, device_id, device_type):
-        """获取设备的实际功率属性值"""
-        try:
-            device_id = int(device_id)  # 确保device_id是整数
-            
-            # 根据设备类型从潮流计算结果中获取功率值
-            if device_type == "母线":
-                # 母线本身不直接设置功率，但可以通过潮流计算结果获取总注入功率
-                if hasattr(self.network_model.net, 'res_bus') and device_id in self.network_model.net.res_bus.index:
-                    # 获取该母线的总注入功率（发电减负荷）
-                    return abs(self.network_model.net.res_bus.loc[device_id, 'p_mw'])
-                else:
-                    return 0.0
-                
-            elif device_type == "线路":
-                # 从线路潮流计算结果中获取功率
-                if hasattr(self.network_model.net, 'res_line') and device_id in self.network_model.net.res_line.index:
-                    # 获取线路的有功功率（取两端功率的平均值或较大值）
-                    p_from = abs(self.network_model.net.res_line.loc[device_id, 'p_from_mw'])
-                    p_to = abs(self.network_model.net.res_line.loc[device_id, 'p_to_mw'])
-                    return max(p_from, p_to)  # 返回较大的功率值
-                else:
-                    return 0.0
-                    
-            elif device_type == "变压器":
-                # 从变压器潮流计算结果中获取功率
-                if hasattr(self.network_model.net, 'res_trafo') and device_id in self.network_model.net.res_trafo.index:
-                    # 获取变压器的有功功率
-                    p_hv = abs(self.network_model.net.res_trafo.loc[device_id, 'p_hv_mw'])
-                    p_lv = abs(self.network_model.net.res_trafo.loc[device_id, 'p_lv_mw'])
-                    return max(p_hv, p_lv)
-                else:
-                    return 0.0
-                    
-            elif device_type == "发电机":
-                # 从发电机潮流计算结果中获取实际功率
-                if hasattr(self.network_model.net, 'res_gen') and device_id in self.network_model.net.res_gen.index:
-                    return abs(self.network_model.net.res_gen.loc[device_id, 'p_mw'])
-                else:
-                    # 如果潮流计算结果没有，使用设定值
-                    gens = self.network_model.net.gen
-                    if device_id in gens.index:
-                        return abs(gens.loc[device_id, 'p_mw'])
-                    return 0.0
-                    
-            elif device_type == "光伏":
-                # 从光伏潮流计算结果中获取实际功率
-                if hasattr(self.network_model.net, 'res_sgen') and device_id in self.network_model.net.res_sgen.index:
-                    return abs(self.network_model.net.res_sgen.loc[device_id, 'p_mw'])
-                else:
-                    # 使用设定值
-                    sgens = self.network_model.net.sgen
-                    if device_id in sgens.index:
-                        return abs(sgens.loc[device_id, 'p_mw'])
-                    return 0.0
-                    
-            elif device_type == "负载":
-                # 从负载潮流计算结果中获取实际功率
-                if hasattr(self.network_model.net, 'res_load') and device_id in self.network_model.net.res_load.index:
-                    return abs(self.network_model.net.res_load.loc[device_id, 'p_mw'])
-                else:
-                    # 使用设定值
-                    loads = self.network_model.net.load
-                    if device_id in loads.index:
-                        return abs(loads.loc[device_id, 'p_mw'])
-                    return 0.0
-                    
-            elif device_type == "储能":
-                # 从储能潮流计算结果中获取实际功率
-                if hasattr(self.network_model.net, 'res_storage') and device_id in self.network_model.net.res_storage.index:
-                    return abs(self.network_model.net.res_storage.loc[device_id, 'p_mw'])
-                else:
-                    # 使用设定值
-                    storage = self.network_model.net.storage
-                    if device_id in storage.index:
-                        return abs(storage.loc[device_id, 'p_mw'])
-                    return 0.0
-                    
-            elif device_type == "外部电网":
-                # 从外部电网潮流计算结果中获取功率
-                if hasattr(self.network_model.net, 'res_ext_grid') and device_id in self.network_model.net.res_ext_grid.index:
-                    return abs(self.network_model.net.res_ext_grid.loc[device_id, 'p_mw'])
-                else:
-                    return 0.0
-                    
-        except Exception as e:
-            print(f"获取设备功率失败: {str(e)}")
-        
-        return 0.0
+
     
-    def display_power_curve(self):
-        """显示多条功率曲线 - 支持同时监控多个设备"""
-        try:
-            # 清空当前图表
-            self.ax.clear()
-            
-            # 如果没有监控的设备，显示提示信息
-            if not self.monitored_devices or not self.power_history:
-                self.ax.text(0.5, 0.5, "等待数据收集...\n\n1. 在设备树中选择设备\n2. 勾选\"监控当前设备\"\n3. 启用自动计算功能\n4. 数据将实时显示", 
-                             transform=self.ax.transAxes, ha='center', va='center', 
-                             bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7),
-                             fontsize=12)
-                self.ax.set_xlabel('时间 (秒)', fontsize=12)
-                self.ax.set_ylabel('功率 (MW)', fontsize=12)
-                self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
-                self.canvas_mpl.draw()
-                return
-            
-            all_powers = []
-            
-            # 获取所有设备的时间戳，找到最早的时间
-            all_timestamps = []
-            for device_key, history in self.power_history.items():
-                if device_key in self.monitored_devices and history:
-                    all_timestamps.extend([item[0] for item in history])
-            
-            if not all_timestamps:
-                return
-                
-            start_time = min(all_timestamps)
-            
-            # 为每个监控的设备绘制曲线
-            for device_key in self.monitored_devices:
-                if device_key in self.power_history and self.power_history[device_key]:
-                    history = self.power_history[device_key]
-                    timestamps = [item[0] for item in history]
-                    powers = [item[1] for item in history]
-                    
-                    # 转换为相对时间（秒）
-                    relative_times = [t - start_time for t in timestamps]
-                    
-                    # 获取设备类型和ID
-                    device_type, device_id = device_key.split('_', 1)
-                    
-                    # 使用预定义的颜色或生成新颜色
-                    if device_key not in self.device_colors:
-                        color_index = len(self.device_colors) % len(self.color_palette)
-                        self.device_colors[device_key] = self.color_palette[color_index]
-                    
-                    color = self.device_colors[device_key]
-                    
-                    # 绘制功率曲线
-                    self.ax.plot(relative_times, powers, color=color, linewidth=2,
-                                label=f'{device_type} {device_id}')
-                    
-                    all_powers.extend(powers)
-            
-            # 设置图表属性
-            self.ax.set_xlabel('时间 (秒)', fontsize=12)
-            self.ax.set_ylabel('功率 (MW)', fontsize=12)
-            self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
-            self.ax.grid(True, alpha=0.3)
-            
-            # 自动调整Y轴范围
-            if all_powers:
-                min_power = min(all_powers)
-                max_power = max(all_powers)
-                padding = max((max_power - min_power) * 0.1, 0.1)
-                self.ax.set_ylim(max(0, min_power - padding), max_power + padding)
-            else:
-                self.ax.set_ylim(0, 1)
-            
-            # 显示图例
-            if len(self.monitored_devices) > 0:
-                self.ax.legend()
-            
-            # 刷新图表
-            self.canvas_mpl.draw()
-            
-        except Exception as e:
-            self.ax.clear()
-            self.ax.text(0.5, 0.5, f"显示功率曲线失败: {str(e)}", 
-                         transform=self.ax.transAxes, ha='center', va='center', 
-                         bbox=dict(boxstyle='round', facecolor='red', alpha=0.5))
-            self.canvas_mpl.draw()
-            print(f"显示功率曲线失败: {str(e)}")
+
     
 
 
@@ -2198,6 +1043,9 @@ class SimulationWindow(QMainWindow):
                 self.auto_calc_checkbox.setChecked(False)
                 return
                 
+            # 启动所有Modbus服务器
+            self.modbus_manager.start_all_modbus_servers()
+            
             interval = self.calc_interval_spinbox.value() * 1000  # 转换为毫秒
             self.auto_calc_timer.start(interval)
             self.is_auto_calculating = True
@@ -2205,6 +1053,8 @@ class SimulationWindow(QMainWindow):
         else:
             self.auto_calc_timer.stop()
             self.is_auto_calculating = False
+            # 停止所有Modbus服务器
+            self.modbus_manager.stop_all_modbus_servers()
             self.statusBar().showMessage("自动潮流计算已停止")
     
     def auto_power_flow_calculation(self):
@@ -2241,10 +1091,13 @@ class SimulationWindow(QMainWindow):
                 self.update_device_tree_status()
                 
                 # 更新功率曲线（仅更新监控设备的数据，不再自动显示）
-                self.update_power_curve()
+                self.power_monitor.update_power_curve()
                 
                 # 更新组件参数表格
                 self.update_component_params_table()
+                
+                # 更新所有具有IP属性设备的Modbus数据
+                self.modbus_manager.update_all_modbus_data()
                     
             except Exception as e:
                 self.statusBar().showMessage(f"潮流计算失败: {str(e)}")
@@ -2306,125 +1159,9 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             print(f"更新设备树状态失败: {str(e)}")
 
-    def toggle_current_device_monitor(self, state):
-        """切换当前设备监控状态"""
-        if not self.selected_device_id or not self.selected_device_type:
-            return
-            
-        device_key = f"{self.selected_device_type}_{self.selected_device_id}"
+
         
-        if state == 2:  # 选中状态
-            if device_key not in self.monitored_devices:
-                self.monitored_devices.add(device_key)
-                self.update_monitored_devices_list()
-        else:  # 未选中状态
-            if device_key in self.monitored_devices:
-                self.monitored_devices.remove(device_key)
-                self.update_monitored_devices_list()
-                
-        # 更新图表显示
-        self.display_power_curve()
-    
-    def on_monitored_device_toggled(self, item, column):
-        """监控设备列表中的复选框状态改变"""
-        if column == 0:  # 第一列是复选框
-            device_key = item.data(0, Qt.UserRole)
-            if item.checkState(0) == Qt.Checked:
-                if device_key not in self.monitored_devices:
-                    self.monitored_devices.add(device_key)
-            else:
-                if device_key in self.monitored_devices:
-                    self.monitored_devices.remove(device_key)
-            
-            # 更新当前设备监控复选框状态
-            current_device_key = f"{self.selected_device_type}_{self.selected_device_id}" if self.selected_device_type and self.selected_device_id else ""
-            if current_device_key:
-                self.current_device_monitor.setChecked(current_device_key in self.monitored_devices)
-            
-            # 更新图表显示
-            self.display_power_curve()
-    
-    def update_monitored_devices_list(self):
-        """更新监控设备列表"""
-        self.monitored_devices_list.clear()
-        
-        for device_key in self.monitored_devices:
-            try:
-                device_type, device_id = device_key.split('_', 1)
-                
-                # 创建列表项
-                item = QTreeWidgetItem(self.monitored_devices_list)
-                item.setText(0, str(device_id))
-                item.setText(1, str(device_type))
-                item.setText(2, "监控中")
-                item.setData(0, Qt.UserRole, device_key)
-                item.setCheckState(0, Qt.Checked)
-                
-            except Exception as e:
-                print(f"更新监控设备列表失败: {str(e)}")
-    
-    def clear_all_monitors(self):
-        """清除所有监控设备"""
-        self.monitored_devices.clear()
-        self.device_colors.clear()
-        self.update_monitored_devices_list()
-        
-        # 更新当前设备监控复选框状态
-        self.current_device_monitor.setChecked(False)
-        
-        # 更新图表显示
-        self.display_power_curve()
-        
-    def on_sgen_mode_changed(self):
-        """光伏设备数据生成模式改变时的回调"""
-        is_manual = self.sgen_manual_mode_radio.isChecked()
-        self.sgen_manual_panel.setVisible(is_manual)
-        
-        # 如果切换到手动模式，停止自动数据生成
-        if is_manual and hasattr(self, 'sgen_enable_generation_checkbox'):
-            if self.sgen_enable_generation_checkbox.isChecked():
-                self.sgen_enable_generation_checkbox.setChecked(False)
-        
-        # 更新当前设备的功率值到滑块和输入框
-        if is_manual:
-            self.update_sgen_manual_controls_from_device()
-    
-    def on_load_mode_changed(self):
-        """负载设备数据生成模式改变时的回调"""
-        is_manual = self.load_manual_mode_radio.isChecked()
-        self.load_manual_panel.setVisible(is_manual)
-        
-        # 如果切换到手动模式，停止自动数据生成
-        if is_manual and hasattr(self, 'load_enable_generation_checkbox'):
-            if self.load_enable_generation_checkbox.isChecked():
-                self.load_enable_generation_checkbox.setChecked(False)
-        
-        # 更新当前设备的功率值到滑块和输入框
-        if is_manual:
-            self.update_load_manual_controls_from_device()
-    
-    def on_storage_mode_changed(self):
-        """储能设备数据生成模式改变时的回调"""
-        is_manual = self.storage_manual_mode_radio.isChecked()
-        self.storage_manual_panel.setVisible(is_manual)
-        
-        # 更新当前设备的功率值到滑块和输入框
-        if is_manual:
-            self.update_storage_manual_controls_from_device()
-    
-    def on_generation_mode_changed(self):
-        """数据生成模式改变时的回调（保留兼容性）"""
-        is_manual = self.manual_mode_radio.isChecked()
-        self.manual_control_panel.setVisible(is_manual)
-        
-        # 如果切换到手动模式，停止自动数据生成
-        if is_manual and hasattr(self, 'enable_device_generation_checkbox'):
-            if self.enable_device_generation_checkbox.isChecked():
-                self.enable_device_generation_checkbox.setChecked(False)
-        
-        # 更新当前设备的功率值到滑块和输入框
-        if is_manual:
-            self.update_manual_controls_from_device()
+
     
     def update_sgen_manual_controls_from_device(self):
         """从当前光伏设备更新手动控制组件的值"""
@@ -2895,4 +1632,6 @@ class SimulationWindow(QMainWindow):
         """窗口关闭事件"""
         # 停止自动计算定时器
         self.auto_calc_timer.stop()
+        # 停止所有Modbus服务器
+        self.modbus_manager.stop_all_modbus_servers()
         super().closeEvent(event)
