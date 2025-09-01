@@ -107,18 +107,10 @@ class UIComponentManager:
         self.parent_window.calc_interval_spinbox.setValue(2)
         self.parent_window.calc_interval_spinbox.setSuffix(" 秒")
         self.parent_window.calc_interval_spinbox.setMaximumWidth(120)  # 设置最大宽度
+        self.parent_window.calc_interval_spinbox.valueChanged.connect(self.parent_window.update_auto_calc_timer)
         interval_layout.addWidget(self.parent_window.calc_interval_spinbox)
         interval_layout.addStretch()  # 添加弹性空间
         auto_layout.addLayout(interval_layout)
-        # 自动计算开关
-        auto_calc_layout = QHBoxLayout()
-        self.parent_window.auto_calc_checkbox = QCheckBox("启用自动潮流计算")
-        self.parent_window.auto_calc_checkbox.stateChanged.connect(
-            self.parent_window.toggle_auto_calculation
-        )
-        auto_calc_layout.addWidget(self.parent_window.auto_calc_checkbox)
-        auto_calc_layout.addStretch()  # 添加弹性空间
-        auto_layout.addLayout(auto_calc_layout)
 
         parent_layout.addWidget(auto_group)
         

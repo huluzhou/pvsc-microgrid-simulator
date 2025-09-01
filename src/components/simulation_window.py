@@ -78,6 +78,7 @@ class SimulationWindow(QMainWindow):
         
         self.init_ui()
         self.load_network_data()
+        self.auto_calc_timer.setInterval(1000)  # 1秒计算一次
 
     def init_ui(self):
         """初始化用户界面"""
@@ -1024,35 +1025,22 @@ class SimulationWindow(QMainWindow):
         self.parent_window.statusBar().showMessage("已退出仿真模式")
         event.accept()
     
-
-    
-
-    
-
-    
-
-
-    def toggle_auto_calculation(self, state):
+    def update_auto_calc_timer(self):
         """切换自动潮流计算状态"""
-        if state == 2: 
-            if not self.network_model:
-                QMessageBox.warning(self, "警告", "没有可用的网络模型")
-                self.auto_calc_checkbox.setChecked(False)
-                return
-                
-            # 启动所有Modbus服务器
-            self.modbus_manager.start_all_modbus_servers()
-            
-            interval = self.calc_interval_spinbox.value() * 1000  # 转换为毫秒
-            self.auto_calc_timer.start(interval)
-            self.is_auto_calculating = True
-            self.statusBar().showMessage("自动潮流计算已启动")
-        else:
-            self.auto_calc_timer.stop()
-            self.is_auto_calculating = False
-            # 停止所有Modbus服务器
-            self.modbus_manager.stop_all_modbus_servers()
-            self.statusBar().showMessage("自动潮流计算已停止")
+        if not self.network_model:
+            QMessageBox.warning(self, "警告", "没有可用的网络模型")
+            return
+        # 启动所有Modbus服务器
+        # self.modbus_manager.start_all_modbus_servers()
+        self.auto_calc_timer.stop()
+        self.is_auto_calculating = False
+        # 停止所有Modbus服务器
+        # self.modbus_manager.stop_all_modbus_servers()
+        self.statusBar().showMessage("自动潮流计算已停止")
+        interval = self.calc_interval_spinbox.value() * 1000  # 转换为毫秒
+        self.auto_calc_timer.start(interval)
+        self.is_auto_calculating = True
+        self.statusBar().showMessage("自动潮流计算已启动")
     
     def auto_power_flow_calculation(self):
         """自动潮流计算主方法"""
