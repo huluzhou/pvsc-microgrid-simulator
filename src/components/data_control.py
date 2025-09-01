@@ -52,14 +52,6 @@ class DataControlManager:
         self.parent_window.variation_spinbox.valueChanged.connect(self.on_variation_changed)
         params_layout.addRow("变化幅度:", self.parent_window.variation_spinbox)
         
-        # 生成间隔
-        self.parent_window.interval_spinbox = QSpinBox()
-        self.parent_window.interval_spinbox.setRange(1, 60)
-        self.parent_window.interval_spinbox.setValue(5)
-        self.parent_window.interval_spinbox.setSuffix("秒")
-        self.parent_window.interval_spinbox.valueChanged.connect(self.on_interval_changed)
-        params_layout.addRow("生成间隔:", self.parent_window.interval_spinbox)
-        
         layout.addWidget(params_group)
         
         # 数据生成模式选择
@@ -160,14 +152,6 @@ class DataControlManager:
         self.parent_window.sgen_variation_spinbox.valueChanged.connect(self.on_sgen_variation_changed)
         sgen_params_layout.addRow("功率变化幅度:", self.parent_window.sgen_variation_spinbox)
         
-        # 生成间隔
-        self.parent_window.sgen_interval_spinbox = QSpinBox()
-        self.parent_window.sgen_interval_spinbox.setRange(1, 60)
-        self.parent_window.sgen_interval_spinbox.setValue(3)
-        self.parent_window.sgen_interval_spinbox.setSuffix("秒")
-        self.parent_window.sgen_interval_spinbox.valueChanged.connect(self.on_sgen_interval_changed)
-        sgen_params_layout.addRow("数据更新间隔:", self.parent_window.sgen_interval_spinbox)
-        
         layout.addWidget(sgen_params_group)
         
         # 光伏数据生成模式选择
@@ -249,14 +233,6 @@ class DataControlManager:
         self.parent_window.load_variation_spinbox.setSuffix("%")
         self.parent_window.load_variation_spinbox.valueChanged.connect(self.on_load_variation_changed)
         load_params_layout.addRow("功率变化幅度:", self.parent_window.load_variation_spinbox)
-        
-        # 生成间隔
-        self.parent_window.load_interval_spinbox = QSpinBox()
-        self.parent_window.load_interval_spinbox.setRange(1, 60)
-        self.parent_window.load_interval_spinbox.setValue(4)
-        self.parent_window.load_interval_spinbox.setSuffix("秒")
-        self.parent_window.load_interval_spinbox.valueChanged.connect(self.on_load_interval_changed)
-        load_params_layout.addRow("数据更新间隔:", self.parent_window.load_interval_spinbox)
         
         # 负载类型选择
         self.parent_window.load_type_combo = QComboBox()
@@ -887,12 +863,6 @@ class DataControlManager:
                     self.parent_window.network_model.net.load.loc[component_idx, 'p_mw'] = p_mw
                     self.parent_window.network_model.net.load.loc[component_idx, 'q_mvar'] = q_mvar
                     
-                    # 更新设备树显示
-                    self.parent_window.update_device_tree_display()
-                    
-                    # 更新Modbus寄存器
-                    if hasattr(self.parent_window, 'modbus_manager'):
-                        self.parent_window.modbus_manager.update_load_registers(component_idx, p_mw, q_mvar)
                     
                     self.parent_window.statusBar().showMessage(f"已更新负载设备 {component_idx} 的功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
                     print(f"应用负载设备 {component_idx} 功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
@@ -906,13 +876,6 @@ class DataControlManager:
                     # 光伏设备的功率为负值（发电）
                     self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw'] = -abs(p_mw)
                     
-                    # 更新设备树显示
-                    self.parent_window.update_device_tree_display()
-                    
-                    # 更新Modbus寄存器
-                    if hasattr(self.parent_window, 'modbus_manager'):
-                        self.parent_window.modbus_manager.update_sgen_registers(component_idx, p_mw)
-                    
                     self.parent_window.statusBar().showMessage(f"已更新光伏设备 {component_idx} 的功率设置: P={p_mw:.2f}MW")
                     print(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW")
                 else:
@@ -923,13 +886,6 @@ class DataControlManager:
                     p_mw = self.parent_window.power_spinbox.value()
                     
                     self.parent_window.network_model.net.storage.loc[component_idx, 'p_mw'] = p_mw
-                    
-                    # 更新设备树显示
-                    self.parent_window.update_device_tree_display()
-                    
-                    # 更新Modbus寄存器
-                    if hasattr(self.parent_window, 'modbus_manager'):
-                        self.parent_window.modbus_manager.update_storage_registers(component_idx, p_mw)
                     
                     power_status = "放电" if p_mw > 0 else "充电" if p_mw < 0 else "待机"
                     self.parent_window.statusBar().showMessage(f"已更新储能设备 {component_idx} 的功率设置: P={p_mw:.2f}MW ({power_status})")
@@ -964,13 +920,6 @@ class DataControlManager:
                 # 光伏设备的功率为负值（发电）
                 self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw'] = -abs(p_mw)
                 
-                # 更新设备树显示
-                self.parent_window.update_device_tree_display()
-                
-                # 更新Modbus寄存器
-                if hasattr(self.parent_window, 'modbus_manager'):
-                    self.parent_window.modbus_manager.update_sgen_registers(component_idx, p_mw)
-                
                 self.parent_window.statusBar().showMessage(f"已更新光伏设备 {component_idx} 的功率设置: P={p_mw:.2f}MW")
                 print(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW")
             else:
@@ -1004,13 +953,6 @@ class DataControlManager:
                 self.parent_window.network_model.net.load.loc[component_idx, 'p_mw'] = p_mw
                 self.parent_window.network_model.net.load.loc[component_idx, 'q_mvar'] = q_mvar
                 
-                # 更新设备树显示
-                self.parent_window.update_device_tree_display()
-                
-                # 更新Modbus寄存器
-                if hasattr(self.parent_window, 'modbus_manager'):
-                    self.parent_window.modbus_manager.update_load_registers(component_idx, p_mw, q_mvar)
-                
                 self.parent_window.statusBar().showMessage(f"已更新负载设备 {component_idx} 的功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
                 print(f"应用负载设备 {component_idx} 功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
             else:
@@ -1041,13 +983,6 @@ class DataControlManager:
                 p_mw = self.parent_window.storage_power_spinbox.value()
                 
                 self.parent_window.network_model.net.storage.loc[component_idx, 'p_mw'] = p_mw
-                
-                # 更新设备树显示
-                self.parent_window.update_device_tree_display()
-                
-                # 更新Modbus寄存器
-                if hasattr(self.parent_window, 'modbus_manager'):
-                    self.parent_window.modbus_manager.update_storage_registers(component_idx, p_mw)
                 
                 power_status = "放电" if p_mw > 0 else "充电" if p_mw < 0 else "待机"
                 self.parent_window.statusBar().showMessage(f"已更新储能设备 {component_idx} 的功率设置: P={p_mw:.2f}MW ({power_status})")

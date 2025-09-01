@@ -20,7 +20,6 @@ class PropertiesPanel(QWidget):
         self.init_ui()
         
         # 初始化主题
-        self.update_theme_colors()
         
         # 移除 standard_types，直接通过标准类型创建 pandapower 组件
         

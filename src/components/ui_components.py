@@ -91,7 +91,7 @@ class UIComponentManager:
         self.create_auto_calculation_panel(tree_layout)
         
         parent.addWidget(tree_widget)
-        
+
     def create_auto_calculation_panel(self, parent_layout):
         """创建自动计算控制面板"""
         auto_group = QGroupBox("自动计算")
@@ -99,15 +99,6 @@ class UIComponentManager:
         auto_layout = QVBoxLayout(auto_group)
         auto_layout.setContentsMargins(10, 10, 10, 10)  # 设置内边距
         auto_layout.setSpacing(8)  # 设置控件间距
-        
-        # 自动计算开关
-        auto_calc_layout = QHBoxLayout()
-        self.parent_window.auto_calc_checkbox = QCheckBox("启用自动潮流计算")
-        self.parent_window.auto_calc_checkbox.stateChanged.connect(self.parent_window.toggle_auto_calculation)
-        auto_calc_layout.addWidget(self.parent_window.auto_calc_checkbox)
-        auto_calc_layout.addStretch()  # 添加弹性空间
-        auto_layout.addLayout(auto_calc_layout)
-        
         # 计算间隔设置
         interval_layout = QHBoxLayout()
         interval_layout.addWidget(QLabel("计算间隔:"))
@@ -119,7 +110,16 @@ class UIComponentManager:
         interval_layout.addWidget(self.parent_window.calc_interval_spinbox)
         interval_layout.addStretch()  # 添加弹性空间
         auto_layout.addLayout(interval_layout)
-        
+        # 自动计算开关
+        auto_calc_layout = QHBoxLayout()
+        self.parent_window.auto_calc_checkbox = QCheckBox("启用自动潮流计算")
+        self.parent_window.auto_calc_checkbox.stateChanged.connect(
+            self.parent_window.toggle_auto_calculation
+        )
+        auto_calc_layout.addWidget(self.parent_window.auto_calc_checkbox)
+        auto_calc_layout.addStretch()  # 添加弹性空间
+        auto_layout.addLayout(auto_calc_layout)
+
         parent_layout.addWidget(auto_group)
         
     def create_central_image_area(self, parent):
@@ -241,163 +241,3 @@ class UIComponentManager:
         monitor_layout.addWidget(clear_btn)
         
         parent_layout.addWidget(monitor_group)
-        
-    def update_theme_colors(self):
-        """更新主题相关的所有颜色"""
-        app = QApplication.instance()
-        if app:
-            palette = app.palette()
-            bg_color = palette.color(QPalette.Window)
-            is_dark_theme = bg_color.lightness() < 128
-            
-            # 更新自动计算控件的样式
-            if hasattr(self.parent_window, 'auto_calc_checkbox'):
-                if is_dark_theme:
-                    # 深色主题样式
-                    checkbox_style = """
-                        QCheckBox {
-                            spacing: 5px;
-                            color: rgb(255, 255, 255);
-                        }
-                        QCheckBox::indicator {
-                            width: 18px;
-                            height: 18px;
-                            border: 2px solid #888;
-                            border-radius: 3px;
-                            background-color: rgb(53, 53, 53);
-                        }
-                        QCheckBox::indicator:checked {
-                            background-color: #4CAF50;
-                            border-color: #4CAF50;
-                        }
-                        QCheckBox::indicator:checked:pressed {
-                            background-color: #45a049;
-                        }
-                    """
-                else:
-                    # 浅色主题样式
-                    checkbox_style = """
-                        QCheckBox {
-                            spacing: 5px;
-                            color: rgb(0, 0, 0);
-                        }
-                        QCheckBox::indicator {
-                            width: 18px;
-                            height: 18px;
-                            border: 2px solid #ccc;
-                            border-radius: 3px;
-                            background-color: white;
-                        }
-                        QCheckBox::indicator:checked {
-                            background-color: #4CAF50;
-                            border-color: #4CAF50;
-                        }
-                        QCheckBox::indicator:checked:pressed {
-                            background-color: #45a049;
-                        }
-                    """
-                self.parent_window.auto_calc_checkbox.setStyleSheet(checkbox_style)
-                
-            # 更新SpinBox样式
-            if hasattr(self.parent_window, 'calc_interval_spinbox'):
-                if is_dark_theme:
-                    spinbox_style = """
-                        QSpinBox {
-                            background-color: rgb(53, 53, 53);
-                            color: rgb(255, 255, 255);
-                            border: 2px solid #666;
-                            border-radius: 4px;
-                            padding: 2px;
-                        }
-                        QSpinBox::up-button, QSpinBox::down-button {
-                            background-color: rgb(70, 70, 70);
-                            border: 1px solid #888;
-                        }
-                        QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-                            background-color: rgb(90, 90, 90);
-                        }
-                    """
-                else:
-                    spinbox_style = """
-                        QSpinBox {
-                            background-color: white;
-                            color: rgb(0, 0, 0);
-                            border: 2px solid #ccc;
-                            border-radius: 4px;
-                            padding: 2px;
-                        }
-                        QSpinBox::up-button, QSpinBox::down-button {
-                            background-color: rgb(240, 240, 240);
-                            border: 1px solid #ccc;
-                        }
-                        QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-                            background-color: rgb(220, 220, 220);
-                        }
-                    """
-                self.parent_window.calc_interval_spinbox.setStyleSheet(spinbox_style)
-            
-            # 更新设备树样式
-            if hasattr(self.parent_window, 'device_tree'):
-                if is_dark_theme:
-                    # 深色主题样式
-                    tree_style = """
-                        QTreeWidget {
-                            background-color: rgb(53, 53, 53);
-                            color: rgb(255, 255, 255);
-                            border: 1px solid #666;
-                            alternate-background-color: rgb(60, 60, 60);
-                            selection-background-color: rgb(42, 130, 218);
-                            selection-color: rgb(255, 255, 255);
-                        }
-                        QTreeWidget::item {
-                            padding: 2px;
-                            border: none;
-                        }
-                        QTreeWidget::item:selected {
-                            background-color: rgb(42, 130, 218);
-                            color: rgb(255, 255, 255);
-                        }
-                        QTreeWidget::item:hover {
-                            background-color: rgb(70, 70, 70);
-                        }
-                        QHeaderView::section {
-                            background-color: rgb(60, 60, 60);
-                            color: rgb(255, 255, 255);
-                            border: 1px solid #666;
-                            padding: 4px;
-                        }
-                    """
-                else:
-                    # 浅色主题样式
-                    tree_style = """
-                        QTreeWidget {
-                            background-color: white;
-                            color: rgb(0, 0, 0);
-                            border: 1px solid #ccc;
-                            alternate-background-color: rgb(245, 245, 245);
-                            selection-background-color: rgb(0, 120, 215);
-                            selection-color: rgb(255, 255, 255);
-                        }
-                        QTreeWidget::item {
-                            padding: 2px;
-                            border: none;
-                        }
-                        QTreeWidget::item:selected {
-                            background-color: rgb(0, 120, 215);
-                            color: rgb(255, 255, 255);
-                        }
-                        QTreeWidget::item:hover {
-                            background-color: rgb(230, 230, 230);
-                        }
-                        QHeaderView::section {
-                            background-color: rgb(240, 240, 240);
-                            color: rgb(0, 0, 0);
-                            border: 1px solid #ccc;
-                            padding: 4px;
-                        }
-                    """
-                self.parent_window.device_tree.setStyleSheet(tree_style)
-            
-            # 更新监控设备列表样式
-            if hasattr(self.parent_window, 'monitored_devices_list'):
-                self.parent_window.monitored_devices_list.setStyleSheet(tree_style if hasattr(self.parent_window, 'device_tree') else "")

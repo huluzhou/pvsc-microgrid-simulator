@@ -78,10 +78,7 @@ class SimulationWindow(QMainWindow):
         
         self.init_ui()
         self.load_network_data()
-        
-        # 应用当前主题
-        self.ui_manager.update_theme_colors()
-        
+
     def init_ui(self):
         """初始化用户界面"""
         self.setWindowTitle("仿真模式 - PandaPower 仿真工具")
