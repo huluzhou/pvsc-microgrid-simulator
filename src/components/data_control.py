@@ -19,105 +19,6 @@ class DataControlManager:
         self.parent_window = parent_window
         self.data_generator_manager = DataGeneratorManager()
         
-    def create_data_generation_tab(self):
-        """创建数据生成控制选项卡"""
-        layout = QVBoxLayout(self.parent_window.data_generation_tab)
-        
-        # 当前选择设备信息
-        current_device_group = QGroupBox("当前选择设备")
-        current_device_layout = QVBoxLayout(current_device_group)
-        
-        self.parent_window.current_device_label = QLabel("未选择设备")
-        self.parent_window.current_device_label.setStyleSheet("font-weight: bold; color: #2196F3;")
-        current_device_layout.addWidget(self.parent_window.current_device_label)
-        
-        # 设备数据生成控制
-        device_control_layout = QHBoxLayout()
-        self.parent_window.enable_device_generation_checkbox = QCheckBox("启用当前设备数据生成")
-        self.parent_window.enable_device_generation_checkbox.stateChanged.connect(self.toggle_device_data_generation)
-        device_control_layout.addWidget(self.parent_window.enable_device_generation_checkbox)
-        
-        current_device_layout.addLayout(device_control_layout)
-        layout.addWidget(current_device_group)
-        
-        # 数据生成参数设置
-        params_group = QGroupBox("生成参数设置")
-        params_layout = QFormLayout(params_group)
-        
-        # 变化幅度
-        self.parent_window.variation_spinbox = QDoubleSpinBox()
-        self.parent_window.variation_spinbox.setRange(0.0, 50.0)
-        self.parent_window.variation_spinbox.setValue(10.0)
-        self.parent_window.variation_spinbox.setSuffix("%")
-        self.parent_window.variation_spinbox.valueChanged.connect(self.on_variation_changed)
-        params_layout.addRow("变化幅度:", self.parent_window.variation_spinbox)
-        
-        layout.addWidget(params_group)
-        
-        # 数据生成模式选择
-        mode_group = QGroupBox("数据生成模式")
-        mode_layout = QVBoxLayout(mode_group)
-        
-        self.parent_window.auto_mode_radio = QRadioButton("自动生成")
-        self.parent_window.auto_mode_radio.setChecked(True)
-        self.parent_window.auto_mode_radio.toggled.connect(self.on_generation_mode_changed)
-        mode_layout.addWidget(self.parent_window.auto_mode_radio)
-        
-        self.parent_window.manual_mode_radio = QRadioButton("手动控制")
-        self.parent_window.manual_mode_radio.toggled.connect(self.on_generation_mode_changed)
-        mode_layout.addWidget(self.parent_window.manual_mode_radio)
-        
-        layout.addWidget(mode_group)
-        
-        # 手动控制面板
-        self.parent_window.manual_control_panel = QWidget()
-        manual_layout = QFormLayout(self.parent_window.manual_control_panel)
-        
-        # 有功功率控制
-        self.parent_window.power_slider = QSlider(Qt.Horizontal)
-        self.parent_window.power_slider.setRange(0, 200)  # 0-200%
-        self.parent_window.power_slider.setValue(100)
-        self.parent_window.power_slider.setMinimumWidth(300)
-        self.parent_window.power_slider.valueChanged.connect(self.on_manual_power_changed)
-        
-        self.parent_window.power_spinbox = QDoubleSpinBox()
-        self.parent_window.power_spinbox.setRange(0.0, 100.0)
-        self.parent_window.power_spinbox.setValue(1.0)
-        self.parent_window.power_spinbox.setSuffix(" MW")
-        self.parent_window.power_spinbox.valueChanged.connect(self.on_manual_power_spinbox_changed)
-        
-        power_layout = QHBoxLayout()
-        power_layout.addWidget(self.parent_window.power_slider)
-        power_layout.addWidget(self.parent_window.power_spinbox)
-        manual_layout.addRow("有功功率:", power_layout)
-        
-        # 无功功率控制
-        self.parent_window.reactive_power_slider = QSlider(Qt.Horizontal)
-        self.parent_window.reactive_power_slider.setRange(0, 200)  # 0-200%
-        self.parent_window.reactive_power_slider.setValue(100)
-        self.parent_window.reactive_power_slider.setMinimumWidth(300)
-        self.parent_window.reactive_power_slider.valueChanged.connect(self.on_manual_reactive_power_changed)
-        
-        self.parent_window.reactive_power_spinbox = QDoubleSpinBox()
-        self.parent_window.reactive_power_spinbox.setRange(0.0, 50.0)
-        self.parent_window.reactive_power_spinbox.setValue(0.5)
-        self.parent_window.reactive_power_spinbox.setSuffix(" MVar")
-        self.parent_window.reactive_power_spinbox.valueChanged.connect(self.on_manual_reactive_power_spinbox_changed)
-        
-        reactive_power_layout = QHBoxLayout()
-        reactive_power_layout.addWidget(self.parent_window.reactive_power_slider)
-        reactive_power_layout.addWidget(self.parent_window.reactive_power_spinbox)
-        manual_layout.addRow("无功功率:", reactive_power_layout)
-        
-        # 应用按钮
-        apply_button = QPushButton("应用设置")
-        apply_button.clicked.connect(self.apply_manual_power_settings)
-        manual_layout.addRow("", apply_button)
-        
-        self.parent_window.manual_control_panel.setVisible(False)
-        layout.addWidget(self.parent_window.manual_control_panel)
-        
-        layout.addStretch()
         
     def create_sgen_data_generation_tab(self):
         """创建光伏设备专用的数据生成控制选项卡"""
@@ -133,7 +34,7 @@ class DataControlManager:
         
         # 设备数据生成控制
         device_control_layout = QHBoxLayout()
-        self.parent_window.sgen_enable_generation_checkbox = QCheckBox("启用光伏设备数据生成")
+        self.parent_window.sgen_enable_generation_checkbox = QCheckBox("启用设备数据生成")
         self.parent_window.sgen_enable_generation_checkbox.stateChanged.connect(self.toggle_sgen_data_generation)
         device_control_layout.addWidget(self.parent_window.sgen_enable_generation_checkbox)
         
@@ -154,21 +55,6 @@ class DataControlManager:
         
         layout.addWidget(sgen_params_group)
         
-        # 光伏数据生成模式选择
-        sgen_mode_group = QGroupBox("光伏数据生成模式")
-        sgen_mode_layout = QVBoxLayout(sgen_mode_group)
-        
-        self.parent_window.sgen_auto_mode_radio = QRadioButton("自动生成（基于日照曲线）")
-        self.parent_window.sgen_auto_mode_radio.setChecked(True)
-        self.parent_window.sgen_auto_mode_radio.toggled.connect(self.on_sgen_mode_changed)
-        sgen_mode_layout.addWidget(self.parent_window.sgen_auto_mode_radio)
-        
-        self.parent_window.sgen_manual_mode_radio = QRadioButton("手动控制")
-        self.parent_window.sgen_manual_mode_radio.toggled.connect(self.on_sgen_mode_changed)
-        sgen_mode_layout.addWidget(self.parent_window.sgen_manual_mode_radio)
-        
-        layout.addWidget(sgen_mode_group)
-        
         # 光伏手动控制面板
         self.parent_window.sgen_manual_panel = QWidget()
         sgen_manual_layout = QFormLayout(self.parent_window.sgen_manual_panel)
@@ -177,7 +63,7 @@ class DataControlManager:
         self.parent_window.sgen_power_slider = QSlider(Qt.Horizontal)
         self.parent_window.sgen_power_slider.setRange(0, 200)  # 0-20MW
         self.parent_window.sgen_power_slider.setValue(100)
-        self.parent_window.sgen_power_slider.setMinimumWidth(300)
+        self.parent_window.sgen_power_slider.setMinimumWidth(100)
         self.parent_window.sgen_power_slider.valueChanged.connect(self.on_sgen_power_changed)
         
         self.parent_window.sgen_power_spinbox = QDoubleSpinBox()
@@ -196,7 +82,7 @@ class DataControlManager:
         sgen_apply_button.clicked.connect(self.apply_sgen_settings)
         sgen_manual_layout.addRow("", sgen_apply_button)
         
-        self.parent_window.sgen_manual_panel.setVisible(False)
+        self.parent_window.sgen_manual_panel.setVisible(True)  # 默认显示手动控制面板
         layout.addWidget(self.parent_window.sgen_manual_panel)
         
         layout.addStretch()
@@ -215,7 +101,7 @@ class DataControlManager:
         
         # 设备数据生成控制
         device_control_layout = QHBoxLayout()
-        self.parent_window.load_enable_generation_checkbox = QCheckBox("启用负载设备数据生成")
+        self.parent_window.load_enable_generation_checkbox = QCheckBox("启用设备数据生成")
         self.parent_window.load_enable_generation_checkbox.stateChanged.connect(self.toggle_load_data_generation)
         device_control_layout.addWidget(self.parent_window.load_enable_generation_checkbox)
         
@@ -242,21 +128,6 @@ class DataControlManager:
         
         layout.addWidget(load_params_group)
         
-        # 负载数据生成模式选择
-        load_mode_group = QGroupBox("负载数据生成模式")
-        load_mode_layout = QVBoxLayout(load_mode_group)
-        
-        self.parent_window.load_auto_mode_radio = QRadioButton("自动生成（基于负荷曲线）")
-        self.parent_window.load_auto_mode_radio.setChecked(True)
-        self.parent_window.load_auto_mode_radio.toggled.connect(self.on_load_mode_changed)
-        load_mode_layout.addWidget(self.parent_window.load_auto_mode_radio)
-        
-        self.parent_window.load_manual_mode_radio = QRadioButton("手动控制")
-        self.parent_window.load_manual_mode_radio.toggled.connect(self.on_load_mode_changed)
-        load_mode_layout.addWidget(self.parent_window.load_manual_mode_radio)
-        
-        layout.addWidget(load_mode_group)
-        
         # 负载手动控制面板
         self.parent_window.load_manual_panel = QWidget()
         load_manual_layout = QFormLayout(self.parent_window.load_manual_panel)
@@ -265,7 +136,7 @@ class DataControlManager:
         self.parent_window.load_power_slider = QSlider(Qt.Horizontal)
         self.parent_window.load_power_slider.setRange(0, 200)  # 0-100MW
         self.parent_window.load_power_slider.setValue(100)
-        self.parent_window.load_power_slider.setMinimumWidth(300)
+        self.parent_window.load_power_slider.setMinimumWidth(100)
         self.parent_window.load_power_slider.valueChanged.connect(self.on_load_power_changed)
         
         self.parent_window.load_power_spinbox = QDoubleSpinBox()
@@ -283,7 +154,7 @@ class DataControlManager:
         self.parent_window.load_reactive_power_slider = QSlider(Qt.Horizontal)
         self.parent_window.load_reactive_power_slider.setRange(0, 200)  # 0-50MVar
         self.parent_window.load_reactive_power_slider.setValue(50)
-        self.parent_window.load_reactive_power_slider.setMinimumWidth(300)
+        self.parent_window.load_reactive_power_slider.setMinimumWidth(100)
         self.parent_window.load_reactive_power_slider.valueChanged.connect(self.on_load_reactive_power_changed)
         
         self.parent_window.load_reactive_power_spinbox = QDoubleSpinBox()
@@ -302,7 +173,7 @@ class DataControlManager:
         load_apply_button.clicked.connect(self.apply_load_settings)
         load_manual_layout.addRow("", load_apply_button)
         
-        self.parent_window.load_manual_panel.setVisible(False)
+        self.parent_window.load_manual_panel.setVisible(True)  # 默认显示手动控制面板
         layout.addWidget(self.parent_window.load_manual_panel)
         
         layout.addStretch()
@@ -357,6 +228,7 @@ class DataControlManager:
         storage_apply_button.clicked.connect(self.apply_storage_settings)
         storage_manual_panel_layout.addRow("", storage_apply_button)
         
+        self.parent_window.storage_manual_panel.setVisible(True)  # 默认显示手动控制面板
         storage_manual_layout.addWidget(self.parent_window.storage_manual_panel)
         layout.addWidget(storage_manual_group)
         
@@ -391,44 +263,58 @@ class DataControlManager:
         device_key = f"{self.parent_window.current_component_type}_{self.parent_window.current_component_idx}"
         device_name = f"{self.parent_window.current_component_type}_{self.parent_window.current_component_idx}"
         
-        if state == 2:  # 选中状态
-            # 启用设备数据生成
+        # 设备类型映射
+        device_type_map = {
+            'load': '负载',
+            'sgen': '光伏', 
+            'storage': '储能'
+        }
+        device_type_name = device_type_map.get(device_type, device_type)
+        
+        # 面板映射
+        panel_map = {
+            'load': 'load_manual_panel',
+            'sgen': 'sgen_manual_panel', 
+            'storage': 'storage_manual_panel'
+        }
+        
+        # 更新方法映射
+        update_method_map = {
+            'load': self.update_load_manual_controls_from_device,
+            'sgen': self.update_sgen_manual_controls_from_device,
+            'storage': self.update_storage_manual_controls_from_device
+        }
+        
+        # 获取当前设备类型对应的面板和方法
+        current_panel_name = panel_map.get(device_type)
+        current_update_method = update_method_map.get(device_type)
+        
+        if state == 2:  # 选中状态 - 启用数据生成
             if device_key not in self.parent_window.generated_devices:
                 self.parent_window.generated_devices.add(device_key)
-                # 启动对应的数据生成器（储能设备暂时不启动生成器，因为还没有实现）
-                if self.parent_window.current_component_type in ['load', 'sgen']:
-                    self.data_generator_manager.start_generation(self.parent_window.current_component_type)
                 
-                # 获取设备类型的中文名称
-                device_type_name = {
-                    'load': '负载',
-                    'sgen': '光伏', 
-                    'storage': '储能'
-                }.get(self.parent_window.current_component_type, self.parent_window.current_component_type)
+                # 只隐藏当前设备类型的手动面板
+                if current_panel_name and hasattr(self.parent_window, current_panel_name):
+                    getattr(self.parent_window, current_panel_name).setVisible(False)
                 
                 self.parent_window.statusBar().showMessage(f"已启用{device_type_name}设备 {self.parent_window.current_component_idx} 的数据生成")
                 print(f"启用设备 {device_name} 的数据生成")
             else:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 已在数据生成列表中")
-        else:
-            # 禁用设备数据生成
+        else:  # 未选中状态 - 禁用数据生成
             if device_key in self.parent_window.generated_devices:
                 self.parent_window.generated_devices.remove(device_key)
                 
-                # 获取设备类型的中文名称
-                device_type_name = {
-                    'load': '负载',
-                    'sgen': '光伏', 
-                    'storage': '储能'
-                }.get(self.parent_window.current_component_type, self.parent_window.current_component_type)
+                # 只显示当前设备类型的手动面板
+                if current_panel_name and hasattr(self.parent_window, current_panel_name):
+                    getattr(self.parent_window, current_panel_name).setVisible(True)
+                
+                # 只更新当前设备类型的手动控制
+                if current_update_method:
+                    current_update_method()
                 
                 self.parent_window.statusBar().showMessage(f"已禁用{device_type_name}设备 {self.parent_window.current_component_idx} 的数据生成")
                 print(f"禁用设备 {device_name} 的数据生成")
-                
-                # 如果该类型的设备都被禁用了，停止对应的数据生成器
-                type_devices = [key for key in self.parent_window.generated_devices if key.startswith(f"{self.parent_window.current_component_type}_")]
-                if not type_devices and self.parent_window.current_component_type in ['load', 'sgen']:
-                    self.data_generator_manager.stop_generation(self.parent_window.current_component_type)
             else:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
     

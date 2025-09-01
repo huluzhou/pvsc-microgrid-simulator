@@ -11,7 +11,6 @@ class BaseDataGenerator(ABC):
     """数据生成基类 - 定义通用接口"""
     
     def __init__(self):
-        self.is_running = False
         self.interval = 5  # 默认5秒
         self.variation = 20  # 默认20%变化幅度
     
@@ -30,14 +29,6 @@ class BaseDataGenerator(ABC):
             variation: 变化幅度百分比（5-50%）
         """
         self.variation = max(5, min(50, variation))
-    
-    def start_generation(self):
-        """开始数据生成"""
-        self.is_running = True
-    
-    def stop_generation(self):
-        """停止数据生成"""
-        self.is_running = False
     
     @abstractmethod
     def generate_data(self, index, network_model):
@@ -90,7 +81,7 @@ class LoadDataGenerator(BaseDataGenerator):
         Returns:
             dict: 负载数据字典
         """
-        if not self.is_running or not network_model or not hasattr(network_model, 'net'):
+        if not network_model or not hasattr(network_model, 'net'):
             return {}
             
         load_data = {}
@@ -232,7 +223,7 @@ class PVDataGenerator(BaseDataGenerator):
         Returns:
             dict: 光伏数据字典
         """
-        if not self.is_running or not network_model or not hasattr(network_model, 'net'):
+        if not network_model or not hasattr(network_model, 'net'):
             return {}
             
         pv_data = {}

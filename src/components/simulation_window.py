@@ -374,9 +374,6 @@ class SimulationWindow(QMainWindow):
         # 显示组件详情
         self.show_component_details(component_type, component_idx)
         
-        self.enable_device_data_generation(component_type, component_idx)
-
-        
     def show_component_details(self, component_type, component_idx):
         """显示组件详细信息"""
         if not self.network_model:
@@ -499,75 +496,6 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             print(f"更新组件参数表格时出错: {str(e)}")
 
-    def enable_device_data_generation(self, component_type, component_idx):
-        """标记需要生成数据的设备
-        
-        该函数用于标记指定设备为需要生成数据的设备，使其在数据生成过程中
-        被包含在数据生成范围内。支持负载(load)、光伏(sgen)和储能(storage)设备。
-        
-        Args:
-            component_type (str): 组件类型 ('load', 'sgen', 'storage')
-            component_idx (int): 组件索引ID
-        """
-        if not self.network_model or not hasattr(self.network_model, 'net'):
-            return
-        
-        # 支持负载、光伏和储能
-        if component_type not in ['load', 'sgen', 'storage']:
-            return
-
-        try:
-            # 创建设备唯一标识符
-            device_key = f"{component_type}_{component_idx}"
-            
-            # 检查设备是否存在于网络模型中
-            if component_type == 'load':
-                if component_idx not in self.network_model.net.load.index:
-                    self.statusBar().showMessage(f"负载设备 {component_idx} 不存在")
-                    return
-            elif component_type == 'sgen':
-                if component_idx not in self.network_model.net.sgen.index:
-                    self.statusBar().showMessage(f"光伏设备 {component_idx} 不存在")
-                    return
-            elif component_type == 'storage':
-                if component_idx not in self.network_model.net.storage.index:
-                    self.statusBar().showMessage(f"储能设备 {component_idx} 不存在")
-                    return
-
-            # 检查设备是否已存在于监控列表中
-            if device_key not in self.generated_devices:
-                # 将设备添加到监控设备集合
-                self.generated_devices.add(device_key)
-                
-                # 启动对应的数据生成器（储能设备暂时不启动生成器）
-                if component_type in ['load', 'sgen']:
-                    self.data_generator_manager.start_generation(component_type)
-                
-                # 显示成功消息
-                device_type_names = {
-                    'load': '负载',
-                    'sgen': '光伏',
-                    'storage': '储能'
-                }
-                device_name = device_type_names.get(component_type, component_type)
-                self.statusBar().showMessage(f"已将{device_name}设备 {component_idx} 标记为数据生成设备")
-                
-            else:
-                # 设备已存在，显示提示信息
-                device_type_names = {
-                    'load': '负载',
-                    'sgen': '光伏',
-                    'storage': '储能'
-                }
-                device_name = device_type_names.get(component_type, component_type)
-                self.statusBar().showMessage(f"{device_name}设备 {component_idx} 已在数据生成列表中")
-                
-        except Exception as e:
-            self.statusBar().showMessage(f"标记设备数据生成时出错: {str(e)}")
-            print(f"Error in enable_device_data_generation: {str(e)}")
-    
-
-    
     def get_component_type_chinese(self, component_type):
         """获取组件类型的中文名称"""
         type_map = {

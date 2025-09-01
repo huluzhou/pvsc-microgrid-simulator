@@ -860,8 +860,8 @@ class LoadItem(BaseNetworkItem):
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
-            "p_mw": 20.0,  # 有功功率
-            "q_mvar": 10.0,  # 无功功率
+            "p_mw": 1.0,  # 有功功率
+            "q_mvar": 0.0,  # 无功功率
             "name": "Load 1",  # 名称
             "bus": None,  # 连接的母线
             "ip": "192.168.1.100",

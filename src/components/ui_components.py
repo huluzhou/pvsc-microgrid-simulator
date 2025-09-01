@@ -104,7 +104,7 @@ class UIComponentManager:
         interval_layout.addWidget(QLabel("计算间隔:"))
         self.parent_window.calc_interval_spinbox = QSpinBox()
         self.parent_window.calc_interval_spinbox.setRange(1, 60)
-        self.parent_window.calc_interval_spinbox.setValue(2)
+        self.parent_window.calc_interval_spinbox.setValue(1)
         self.parent_window.calc_interval_spinbox.setSuffix(" 秒")
         self.parent_window.calc_interval_spinbox.setMaximumWidth(120)  # 设置最大宽度
         self.parent_window.calc_interval_spinbox.valueChanged.connect(self.parent_window.update_auto_calc_timer)
@@ -217,14 +217,6 @@ class UIComponentManager:
         self.parent_window.component_params_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.parent_window.component_params_table)
         
-        # 创建控制面板容器
-        # control_container = QWidget()
-        # control_layout = QVBoxLayout(control_container)
-        
-        # 功率曲线监控控制面板
-        # self.create_monitor_control_panel(control_layout)
-        
-        # layout.addWidget(control_container)
         
     def create_monitor_control_panel(self, parent_layout):
         """创建监控控制面板"""
