@@ -116,28 +116,29 @@ class UIComponentManager:
         
     def create_central_image_area(self, parent):
         """创建中央功率曲线显示区域"""
-        # 创建功率曲线容器
-        curve_widget = QWidget()
-        curve_layout = QVBoxLayout(curve_widget)
-        curve_layout.setContentsMargins(0, 0, 0, 0)
+        # 创建主分割器（上下分隔）
+        main_splitter = QSplitter(Qt.Vertical)
+        
+        # 创建上方图表区域
+        chart_widget = QWidget()
+        chart_layout = QVBoxLayout(chart_widget)
+        chart_layout.setContentsMargins(5, 5, 5, 5)
         
         # 标题
         curve_title = QLabel("功率曲线监控")
         curve_title.setFont(QFont("Arial", 12, QFont.Bold))
-        curve_layout.addWidget(curve_title)
+        chart_layout.addWidget(curve_title)
         
         # 创建功率曲线显示区域 - 使用matplotlib交互式图表
-        # 使用更灵活的尺寸设置，让Figure自适应容器大小
-        self.parent_window.figure = Figure(figsize=(8, 5), dpi=100, tight_layout=True)
+        self.parent_window.figure = Figure(figsize=(8, 4), dpi=100, tight_layout=True)
         self.parent_window.canvas_mpl = FigureCanvas(self.parent_window.figure)
         self.parent_window.canvas_mpl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.parent_window.ax = self.parent_window.figure.add_subplot(111)
         
         # 设置中文字体
         try:
-            # 尝试设置支持中文的字体
             plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans', 'SimSun', 'Arial Unicode MS']
-            plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+            plt.rcParams['axes.unicode_minus'] = False
         except:
             pass
         
@@ -154,12 +155,28 @@ class UIComponentManager:
         self.parent_window.ax.legend()
         
         # 创建工具栏
-        self.parent_window.toolbar = NavigationToolbar(self.parent_window.canvas_mpl, self.parent_window)
+        # self.parent_window.toolbar = NavigationToolbar(self.parent_window.canvas_mpl, self.parent_window)
         
-        curve_layout.addWidget(self.parent_window.toolbar)
-        curve_layout.addWidget(self.parent_window.canvas_mpl, 1)  # 设置stretch因子为1，让图表区域扩展
+        # chart_layout.addWidget(self.parent_window.toolbar)
+        chart_layout.addWidget(self.parent_window.canvas_mpl, 1)
         
-        parent.addWidget(curve_widget)
+        # 创建下方监控控制面板容器
+        control_container = QWidget()
+        control_layout = QVBoxLayout(control_container)
+        control_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # 添加监控控制面板
+        self.create_monitor_control_panel(control_layout)
+        
+        # 将上下区域添加到分割器
+        main_splitter.addWidget(chart_widget)
+        main_splitter.addWidget(control_container)
+        
+        # 设置分割器比例（图表占3/4，控制面板占1/4）
+        main_splitter.setStretchFactor(0, 3)  # 图表区域
+        main_splitter.setStretchFactor(1, 1)  # 控制面板区域
+        
+        parent.addWidget(main_splitter)
         
     def create_simulation_results_panel(self, parent):
         """创建右侧仿真结果面板"""
@@ -201,13 +218,13 @@ class UIComponentManager:
         layout.addWidget(self.parent_window.component_params_table)
         
         # 创建控制面板容器
-        control_container = QWidget()
-        control_layout = QVBoxLayout(control_container)
+        # control_container = QWidget()
+        # control_layout = QVBoxLayout(control_container)
         
         # 功率曲线监控控制面板
-        self.create_monitor_control_panel(control_layout)
+        # self.create_monitor_control_panel(control_layout)
         
-        layout.addWidget(control_container)
+        # layout.addWidget(control_container)
         
     def create_monitor_control_panel(self, parent_layout):
         """创建监控控制面板"""
