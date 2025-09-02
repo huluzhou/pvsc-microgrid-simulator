@@ -80,7 +80,6 @@ class SimulationWindow(QMainWindow):
         self.load_network_data()
         self.auto_calc_timer.start(1000)
         self.is_auto_calculating = True
-        
         # 初始化新的计算控制UI状态
         if hasattr(self, 'start_calc_btn'):
             self.start_calc_btn.setChecked(True)
@@ -996,6 +995,59 @@ class SimulationWindow(QMainWindow):
             self.start_calc_btn.setText("开始仿真")
             self.calc_status_label.setText("仿真状态: 已停止")
             self.statusBar().showMessage("仿真已停止")
+    
+    def power_on_all_devices(self):
+        """上电所有设备 - 启动所有Modbus服务器"""
+        try:
+            if not self.network_model:
+                QMessageBox.warning(self, "警告", "没有可用的网络模型")
+                return
+                
+            # 启动所有Modbus服务器
+            self.modbus_manager.start_all_modbus_servers()
+            
+            # 获取运行状态
+            device_count = self.modbus_manager.get_device_count()
+            running_services = self.modbus_manager.get_service_count()
+            
+            QMessageBox.information(
+                self, 
+                "上电成功", 
+                f"已成功启动 {running_services} 个设备的Modbus服务器\n"
+                f"总设备数: {device_count['total']}"
+            )
+            
+            self.statusBar().showMessage(f"已上电 {running_services} 个设备")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"上电失败: {str(e)}")
+            self.statusBar().showMessage("上电操作失败")
+    
+    def power_off_all_devices(self):
+        """下电所有设备 - 停止所有Modbus服务器"""
+        try:
+            if not self.network_model:
+                QMessageBox.warning(self, "警告", "没有可用的网络模型")
+                return
+                
+            # 获取当前运行状态
+            device_count = self.modbus_manager.get_device_count()
+            running_count = device_count['running_services']
+            
+            # 停止所有Modbus服务器
+            self.modbus_manager.stop_all_modbus_servers()
+            
+            QMessageBox.information(
+                self, 
+                "下电成功", 
+                f"已成功停止 {running_count} 个设备的Modbus服务器"
+            )
+            
+            self.statusBar().showMessage("所有设备已下电")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"下电失败: {str(e)}")
+            self.statusBar().showMessage("下电操作失败")
     
     def auto_power_flow_calculation(self):
         """自动潮流计算主方法"""

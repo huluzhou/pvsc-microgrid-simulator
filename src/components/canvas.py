@@ -377,6 +377,15 @@ class NetworkCanvas(QGraphicsView):
                                 item.properties if hasattr(item, 'properties') else {}
                             )
                             print(f"创建线路: {item.component_name} -> 母线 {from_bus}-{to_bus}")
+                    
+                    elif item.component_type == 'meter':
+                        # 创建电表测量设备
+                        meter_idx = self.network_model.create_measurement(
+                            id(item),
+                            item.properties if hasattr(item, 'properties') else {}
+                        )
+                        print(f"创建电表: {item.component_name} -> 测量索引 {meter_idx}")
+                            
                 
                 except Exception as e:
                     print(f"创建组件 {item.component_name} 时出错: {str(e)}")

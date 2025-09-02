@@ -198,10 +198,10 @@ class NetworkModel:
         Args:
             item_id: 图形项ID
             bus: 母线索引
-            properties: 储能属性
+            properties: 储能设备属性
         
         Returns:
-            int: pandapower储能索引
+            int: pandapower储能设备索引
         """
         storage_idx = pp.create_storage(
             self.net,
@@ -214,6 +214,31 @@ class NetworkModel:
         )
         self.component_map[item_id] = {"type": "storage", "idx": storage_idx}
         return storage_idx
+
+    def create_measurement(self, item_id, properties):
+        """创建电表测量设备
+        
+        Args:
+            item_id: 图形项ID
+            properties: 电表属性
+        
+        Returns:
+            int: pandapower测量索引
+        """
+        # 创建电表测量
+        measurement_idx = pp.create_measurement(
+            self.net,
+            meas_type=properties.get("meas_type", "p"),  # 默认测量有功功率
+            element_type=properties.get("element_type", "bus"),  # 默认测量母线
+            value=properties.get("value", 0.0),  # 测量值
+            std_dev=properties.get("std_dev", 0.01),  # 标准偏差
+            element=properties.get("element", 0),  # 元件索引
+            side=properties.get("side", None),  # 测量侧
+            name=properties.get("name", "Meter"),
+            index=properties.get("index", None),
+        )
+        self.component_map[item_id] = {"type": "meter", "idx": measurement_idx}
+        return measurement_idx
 
     def create_charger(self, item_id, bus, properties):
         """创建充电站设备
@@ -491,6 +516,8 @@ class NetworkModel:
             pp.drop_loads(self.net, [idx])  # 充电站作为负载删除
         elif component_type == "external_grid":
             pp.drop_ext_grids(self.net, [idx])
+        elif component_type == "meter":
+            pp.drop_measurements_at_elements(self.net, "measurement", [idx])
 
         
         # 从映射中删除

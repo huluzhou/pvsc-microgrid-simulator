@@ -111,6 +111,18 @@ class UIComponentManager:
         control_layout.addStretch()
         auto_layout.addLayout(control_layout)
         
+        # Modbus服务器控制按钮
+        modbus_control_layout = QHBoxLayout()
+        self.parent_window.power_on_all_btn = QPushButton("上电所有设备")
+        self.parent_window.power_on_all_btn.clicked.connect(self.parent_window.power_on_all_devices)
+        
+        self.parent_window.power_off_all_btn = QPushButton("下电所有设备")
+        self.parent_window.power_off_all_btn.clicked.connect(self.parent_window.power_off_all_devices)
+        
+        modbus_control_layout.addWidget(self.parent_window.power_on_all_btn)
+        modbus_control_layout.addWidget(self.parent_window.power_off_all_btn)
+        auto_layout.addLayout(modbus_control_layout)
+        
         # 计算状态标签
         self.parent_window.calc_status_label = QLabel("仿真状态: 运行中")
         auto_layout.addWidget(self.parent_window.calc_status_label)
