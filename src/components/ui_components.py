@@ -94,14 +94,30 @@ class UIComponentManager:
 
     def create_auto_calculation_panel(self, parent_layout):
         """创建自动计算控制面板"""
-        auto_group = QGroupBox("自动计算")
-        auto_group.setMinimumHeight(100)  # 设置最小高度确保显示完整
+        auto_group = QGroupBox("仿真控制")
+        auto_group.setMinimumHeight(150)  # 增加高度以容纳新按钮
         auto_layout = QVBoxLayout(auto_group)
         auto_layout.setContentsMargins(10, 10, 10, 10)  # 设置内边距
         auto_layout.setSpacing(8)  # 设置控件间距
+        
+        # 计算控制按钮
+        control_layout = QHBoxLayout()
+        self.parent_window.start_calc_btn = QPushButton("开始仿真")
+        self.parent_window.start_calc_btn.setCheckable(True)
+        self.parent_window.start_calc_btn.setChecked(True)  # 默认开始计算
+        self.parent_window.start_calc_btn.clicked.connect(self.parent_window.toggle_calculation)
+
+        control_layout.addWidget(self.parent_window.start_calc_btn)
+        control_layout.addStretch()
+        auto_layout.addLayout(control_layout)
+        
+        # 计算状态标签
+        self.parent_window.calc_status_label = QLabel("仿真状态: 运行中")
+        auto_layout.addWidget(self.parent_window.calc_status_label)
+        
         # 计算间隔设置
         interval_layout = QHBoxLayout()
-        interval_layout.addWidget(QLabel("计算间隔:"))
+        interval_layout.addWidget(QLabel("仿真间隔:"))
         self.parent_window.calc_interval_spinbox = QSpinBox()
         self.parent_window.calc_interval_spinbox.setRange(1, 60)
         self.parent_window.calc_interval_spinbox.setValue(1)

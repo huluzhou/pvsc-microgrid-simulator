@@ -78,7 +78,15 @@ class SimulationWindow(QMainWindow):
         
         self.init_ui()
         self.load_network_data()
-        self.auto_calc_timer.setInterval(1000)  # 1秒计算一次
+        self.auto_calc_timer.start(1000)
+        self.is_auto_calculating = True
+        
+        # 初始化新的计算控制UI状态
+        if hasattr(self, 'start_calc_btn'):
+            self.start_calc_btn.setChecked(True)
+            self.start_calc_btn.setText("停止仿真")
+        if hasattr(self, 'calc_status_label'):
+            self.calc_status_label.setText("仿真状态: 运行中")
 
     def init_ui(self):
         """初始化用户界面"""
@@ -954,21 +962,40 @@ class SimulationWindow(QMainWindow):
         event.accept()
     
     def update_auto_calc_timer(self):
-        """切换自动潮流计算状态"""
+        """更新自动潮流计算定时器间隔"""
         if not self.network_model:
             QMessageBox.warning(self, "警告", "没有可用的网络模型")
             return
-        # 启动所有Modbus服务器
-        # self.modbus_manager.start_all_modbus_servers()
-        self.auto_calc_timer.stop()
-        self.is_auto_calculating = False
-        # 停止所有Modbus服务器
-        # self.modbus_manager.stop_all_modbus_servers()
-        self.statusBar().showMessage("自动潮流计算已停止")
-        interval = self.calc_interval_spinbox.value() * 1000  # 转换为毫秒
-        self.auto_calc_timer.start(interval)
-        self.is_auto_calculating = True
-        self.statusBar().showMessage("自动潮流计算已启动")
+        
+        if self.is_auto_calculating:
+            # 重新启动定时器以应用新的间隔
+            self.auto_calc_timer.stop()
+            interval = self.calc_interval_spinbox.value() * 1000  # 转换为毫秒
+            self.auto_calc_timer.start(interval)
+            self.statusBar().showMessage(f"自动潮流计算间隔已更新为 {self.calc_interval_spinbox.value()} 秒")
+
+    def toggle_calculation(self):
+        """切换计算状态"""
+        if not self.network_model:
+            QMessageBox.warning(self, "警告", "没有可用的网络模型")
+            self.start_calc_btn.setChecked(True)  # 恢复按钮状态
+            return
+            
+        if self.start_calc_btn.isChecked():
+            # 开始计算
+            interval = self.calc_interval_spinbox.value() * 1000  # 转换为毫秒
+            self.auto_calc_timer.start(interval)
+            self.is_auto_calculating = True
+            self.start_calc_btn.setText("停止仿真")
+            self.calc_status_label.setText("仿真状态: 运行中")
+            self.statusBar().showMessage("仿真已启动")
+        else:
+            # 停止计算
+            self.auto_calc_timer.stop()
+            self.is_auto_calculating = False
+            self.start_calc_btn.setText("开始仿真")
+            self.calc_status_label.setText("仿真状态: 已停止")
+            self.statusBar().showMessage("仿真已停止")
     
     def auto_power_flow_calculation(self):
         """自动潮流计算主方法"""
