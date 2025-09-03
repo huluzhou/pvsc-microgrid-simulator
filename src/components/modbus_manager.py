@@ -7,7 +7,6 @@ Modbus服务器管理模块
 """
 
 import threading
-from bs4 import element
 import pandas as pd
 from pymodbus.server import StartTcpServer
 from pymodbus import ModbusDeviceIdentification
@@ -19,6 +18,7 @@ class ModbusManager:
     
     def __init__(self, network_model, scene=None):
         self.network_model = network_model
+        self.scene = scene  # 存储场景引用
         self.modbus_servers = {}  # 存储服务器实例
         self.modbus_contexts = {}  # 存储Modbus上下文
         self.running_services = set()  # 跟踪运行中的服务
@@ -29,50 +29,31 @@ class ModbusManager:
         """扫描网络中具有IP属性的设备"""
         self.ip_devices.clear()
         
-        # 扫描静态发电机设备（光伏）
-        if hasattr(self.network_model.net, 'sgen') and not self.network_model.net.sgen.empty:
-            for idx, row in self.network_model.net.sgen.iterrows():
-                if hasattr(row, 'ip') and pd.notna(row.ip) and row.ip:
-                    device_info = {
-                        'type': 'sgen',
-                        'index': idx,
-                        'name': row.get('name', f'sgen_{idx}'),
-                        'ip': row.ip,
-                        'port': row.get('port', 502),  # 默认Modbus端口
-                        'p_mw': row.get('p_mw', 0),
-                        'q_mvar': row.get('q_mvar', 0)
-                    }
-                    self.ip_devices.append(device_info)
-        
-        # 扫描负载设备（包括电表、充电桩）
-        if hasattr(self.network_model.net, 'load') and not self.network_model.net.load.empty:
-            for idx, row in self.network_model.net.load.iterrows():
-                if hasattr(row, 'ip') and pd.notna(row.ip) and row.ip:
-                    device_info = {
-                        'type': 'load',
-                        'index': idx,
-                        'name': row.get('name', f'load_{idx}'),
-                        'ip': row.ip,
-                        'port': row.get('port', 502),
-                        'p_mw': row.get('p_mw', 0),
-                        'q_mvar': row.get('q_mvar', 0)
-                    }
-                    self.ip_devices.append(device_info)
-        
-        # 扫描储能设备
-        if hasattr(self.network_model.net, 'storage') and not self.network_model.net.storage.empty:
-            for idx, row in self.network_model.net.storage.iterrows():
-                if hasattr(row, 'ip') and pd.notna(row.ip) and row.ip:
-                    device_info = {
-                        'type': 'storage',
-                        'index': idx,
-                        'name': row.get('name', f'storage_{idx}'),
-                        'ip': row.ip,
-                        'port': row.get('port', 502),
-                        'p_mw': row.get('p_mw', 0),
-                        'q_mvar': row.get('q_mvar', 0)
-                    }
-                    self.ip_devices.append(device_info)
+        # 从场景中获取所有网络项
+        if not hasattr(self, 'scene') or not self.scene:
+            print("未找到场景，无法扫描IP设备")
+            return self.ip_devices
+            
+        # 扫描场景中的所有网络项
+        for item in self.scene.items():
+            if hasattr(item, 'properties') and 'ip' in item.properties and item.properties['ip']:
+                ip = item.properties['ip']
+                # 使用本地回环地址127.0.0.1作为默认IP，避免网络配置问题
+                if ip and ip != "192.168.1.100":  # 排除无效IP
+                    effective_ip = ip
+                else:
+                    effective_ip = "127.0.0.1"
+                    
+                device_info = {
+                    'type': item.component_type,
+                    'index': item.component_index,
+                    'name': item.properties.get('name', f"{item.component_type}_{item.component_index}"),
+                    'ip': effective_ip,
+                    'port': int(item.properties.get('port', 502)),
+                    'p_mw': float(item.properties.get('p_mw', 0)),
+                    'q_mvar': float(item.properties.get('q_mvar', 0))
+                }
+                self.ip_devices.append(device_info)
         
         print(f"发现 {len(self.ip_devices)} 个具有IP属性的设备")
         return self.ip_devices
@@ -153,7 +134,7 @@ class ModbusManager:
             # 查找对应的电表图形项
             meter_item = None
             for item in self.scene.items():
-                if isinstance(item, MeterItem) and item.properties.get('index') == index:
+                if isinstance(item, MeterItem) and item.component_index == index:
                     meter_item = item
                     break
             
@@ -162,24 +143,32 @@ class ModbusManager:
                 return
                 
             # 从电表图形项的properties中获取参数
-            element_type = meter_item.properties.get('element_type', 'bus')
-            element = meter_item.properties.get('element', 0)
+            element_type = meter_item.properties.get('element_type', None)
+            element = meter_item.properties.get('element', None)
             side = meter_item.properties.get('side', None)
             
+            if not element_type or not element or not side:
+                print(f"电表 {index} 缺少必要参数")
+                return
+
             # 获取网络中的实际功率数据
             power_value = 0.0
-            
-            if element_type == 'load':
+
+            if element_type == "load":
                 if element in self.network_model.net.load.index:
-                    power_value = self.network_model.net.load.loc[element, 'p_mw']
-                    
-            elif element_type == 'sgen':
+                    power_value = self.network_model.net.res_load.loc[element, "p_mw"]
+
+            if element_type == "bus":
+                if element in self.network_model.net.bus.index:
+                    power_value = self.network_model.net.res_bus.loc[element, "p_mw"]
+
+            elif element_type == "sgen":
                 if element in self.network_model.net.sgen.index:
-                    power_value = self.network_model.net.sgen.loc[element, 'p_mw']
+                    power_value = self.network_model.net.res_sgen.loc[element, "p_mw"]
                     
             elif element_type == 'storage':
                 if element in self.network_model.net.storage.index:
-                    power_value = self.network_model.net.storage.loc[element, 'p_mw']
+                    power_value = self.network_model.net.res_storage.loc[element, 'p_mw']
                     
             elif element_type == 'line':
                 if element in self.network_model.net.line.index:
@@ -204,40 +193,75 @@ class ModbusManager:
                         power_value = self.network_model.net.res_trafo.loc[element, 'p_hv_mw']
             
             # 将功率值转换为整数（单位：kW）
-            power_kw = int(abs(power_value) * 1000)
+            # power_kw = int(abs(power_value) * 1000)
+            power_kw = int(power_value / 50 * 100)
             
-            # 将32位整数拆分为高16位和低16位
-            high_word = (power_kw >> 16) & 0xFFFF
-            low_word = power_kw & 0xFFFF
-            
-            # 写入保持寄存器（功能码3，地址4-5）
-            slave_context.setValues(3, 4, [high_word, low_word])
-            
-            # 写入输入寄存器（功能码4，地址4-5）
-            slave_context.setValues(4, 4, [high_word, low_word])
-            
-            # 写入状态寄存器（地址6）
-            status = 1 if power_value != 0 else 0
-            slave_context.setValues(3, 6, [status])
-            slave_context.setValues(4, 6, [status])
+            # 写入保持寄存器（功能码3，地址0）
+            slave_context.setValues(3, 0, [power_kw])
             
         except Exception as e:
             print(f"更新电表上下文失败: {e}")
-    
-    def update_sgen_context(self, device_info, slave_context, **kwargs):
-        """更新发电机特定上下文数据"""
+
+    def update_sgen_context(self, index, slave_context):
+        """更新光伏设备的Modbus寄存器数据
+        
+        寄存器映射：
+        - 5002: 今日发电量 (kWh × 10)
+        - 5003-5004: 总发电量 (32位，低16位+高16位)
+        - 5030-5031: 当前功率 (32位，低16位+高16位)
+        """
+        # 寄存器地址常量
+        REG_TODAY_ENERGY = 5002
+        REG_TOTAL_ENERGY_LOW = 5003
+        REG_TOTAL_ENERGY_HIGH = 5004
+        REG_POWER_LOW = 5030
+        REG_POWER_HIGH = 5031
+        INPUT_REG = 4
+        MAX_32BIT_UINT = 0xFFFFFFFF
+
         try:
-            # 更新发电机状态寄存器 (寄存器地址4-7)
-            sn_mva = int(kwargs.get('sn_mva', 0) * 1000)  # 额定容量
-            scaling = int(kwargs.get('scaling', 1.0) * 100)  # 比例因子
+            # 获取功率数据
+            power_mw = self.network_model.net.res_sgen.loc[index, "p_mw"]
             
-            slave_context.setValues(3, 4, [sn_mva])
-            slave_context.setValues(3, 5, [scaling])
-            slave_context.setValues(4, 4, [sn_mva])
-            slave_context.setValues(4, 5, [scaling])
+            # 获取光伏图形项
+            from .network_items import PVItem
+            pv_item = None
+            for item in self.scene.items():
+                if isinstance(item, PVItem) and item.component_index == index:
+                    pv_item = item
+                    break
             
+            if pv_item is None:
+                raise RuntimeError(f"未找到光伏设备 {index} 的图形项")
+            
+            # 数据转换和验证
+            power_kw = int(round(abs(power_mw) * 1000))  # MW -> kW
+            total_energy_wh = int(round(pv_item.total_discharge_energy)) 
+            today_energy_wh = int(round(pv_item.today_discharge_energy)) 
+            
+            # 数据范围检查
+            if not (0 <= power_kw <= MAX_32BIT_UINT):
+                power_kw = max(0, min(power_kw, MAX_32BIT_UINT))
+            
+            # 拆分32位数据
+            power_low = power_kw & 0xFFFF
+            power_high = (power_kw >> 16) & 0xFFFF
+            total_low = total_energy_wh & 0xFFFF
+            total_high = (total_energy_wh >> 16) & 0xFFFF
+            
+            # 写入寄存器数据
+            slave_context.setValues(INPUT_REG, REG_TODAY_ENERGY, [today_energy_wh * 10 & 0xFFFF])
+            slave_context.setValues(INPUT_REG, REG_TOTAL_ENERGY_LOW, [total_low])
+            slave_context.setValues(INPUT_REG, REG_TOTAL_ENERGY_HIGH, [total_high])
+            slave_context.setValues(INPUT_REG, REG_POWER_LOW, [power_low])
+            slave_context.setValues(INPUT_REG, REG_POWER_HIGH, [power_high])
+            
+        except KeyError as e:
+            raise RuntimeError(f"光伏设备数据缺失: {e}")
+        except ValueError as e:
+            raise RuntimeError(f"数据格式错误: {e}")
         except Exception as e:
-            print(f"更新发电机上下文失败: {e}")
+            raise RuntimeError(f"Modbus寄存器更新失败: {e}")
     
     def update_storage_context(self, device_info, slave_context, **kwargs):
         """更新储能设备特定上下文数据"""
@@ -333,28 +357,19 @@ class ModbusManager:
                 # 从网络模型中获取最新的功率数据
                 if device_type == 'meter' and hasattr(self.network_model.net, 'meter'):
                     if device_idx in self.network_model.net.meter.index:
-                        # row = self.network_model.net.meter.loc[device_idx]
                         self.update_meter_context(device_idx, self.modbus_contexts[f"{device_type}_{device_idx}"])
                         
                 elif device_type == 'sgen' and hasattr(self.network_model.net, 'sgen'):
                     if device_idx in self.network_model.net.sgen.index:
-                        row = self.network_model.net.sgen.loc[device_idx]
-                        p_mw = row.get('p_mw', 0)
-                        q_mvar = row.get('q_mvar', 0)
-                        self.update_sgen_context(device_info, self.modbus_contexts[f"{device_type}_{device_idx}"], p_mw=p_mw, q_mvar=q_mvar)
+                        self.update_sgen_context(device_idx, self.modbus_contexts[f"{device_type}_{device_idx}"])
 
                 elif device_type == 'storage' and hasattr(self.network_model.net, 'storage'):
                     if device_idx in self.network_model.net.storage.index:
-                        row = self.network_model.net.storage.loc[device_idx]
-                        p_mw = row.get('p_mw', 0)
-                        q_mvar = row.get('q_mvar', 0)
-                        self.update_storage_context(device_info, self.modbus_contexts[f"{device_type}_{device_idx}"], p_mw=p_mw, q_mvar=q_mvar)
+                        self.update_storage_context(device_idx, self.modbus_contexts[f"{device_type}_{device_idx}"])
+
                 elif device_type == 'charger' and hasattr(self.network_model.net, 'charger'):
                     if device_idx in self.network_model.net.charger.index:
-                        row = self.network_model.net.charger.loc[device_idx]
-                        p_mw = row.get('p_mw', 0)
-                        q_mvar = row.get('q_mvar', 0)
-                        self.update_charger_context(device_info, self.modbus_contexts[f"{device_type}_{device_idx}"], p_mw=p_mw, q_mvar=q_mvar)
+                        self.update_charger_context(device_idx, self.modbus_contexts[f"{device_type}_{device_idx}"])
                         
             except Exception as e:
                 print(f"更新设备Modbus数据失败 {device_info['name']}: {e}")

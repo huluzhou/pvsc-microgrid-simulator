@@ -231,7 +231,7 @@ class NetworkModel:
             meas_type=properties.get("meas_type", "p"),  # 默认测量有功功率
             element_type=properties.get("element_type", "bus"),  # 默认测量母线
             value=properties.get("value", 0.0),  # 测量值
-            std_dev=properties.get("std_dev", 0.01),  # 标准偏差
+            std_dev=properties.get("std_dev", 0.0),  # 标准偏差
             element=properties.get("element", 0),  # 元件索引
             side=properties.get("side", None),  # 测量侧
             name=properties.get("name", "Meter"),
@@ -501,23 +501,23 @@ class NetworkModel:
         idx = component["idx"]
         
         if component_type == "bus":
-            pp.drop_buses(self.net, [idx])
+            pp.drop_elements(self.net, "bus", [idx])
         elif component_type == "line":
-            pp.drop_lines(self.net, [idx])
+            pp.drop_elements(self.net, "line", [idx])
         elif component_type == "transformer":
-            pp.drop_trafos(self.net, [idx])
+            pp.drop_elements(self.net, "trafo", [idx])
         elif component_type == "generator":
-            pp.drop_gens(self.net, [idx])
+            pp.drop_elements(self.net, "gen", [idx])
         elif component_type == "load":
-            pp.drop_loads(self.net, [idx])
+            pp.drop_elements(self.net, "load", [idx])
         elif component_type == "storage":
-            pp.drop_storages(self.net, [idx])
+            pp.drop_elements(self.net, "storage", [idx])
         elif component_type == "charger":
-            pp.drop_loads(self.net, [idx])  # 充电站作为负载删除
+            pp.drop_elements(self.net, "load", [idx])  # 充电站作为负载删除
         elif component_type == "external_grid":
-            pp.drop_ext_grids(self.net, [idx])
+            pp.drop_elements(self.net, "ext_grid", [idx])
         elif component_type == "meter":
-            pp.drop_measurements_at_elements(self.net, "measurement", [idx])
+            pp.drop_elements(self.net, "measurement", [idx])
 
         
         # 从映射中删除

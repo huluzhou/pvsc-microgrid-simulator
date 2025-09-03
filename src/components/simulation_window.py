@@ -63,8 +63,15 @@ class SimulationWindow(QMainWindow):
         self.current_component_type = None
         self.current_component_idx = None
         
+        # 从canvas获取scene引用
+        self.scene = canvas.scene if hasattr(canvas, 'scene') else None
+        
+        # 光伏能量统计相关属性
+        self.last_pv_update_time = None
+        self.last_reset_date = datetime.now().date()
+        
         # Modbus服务器管理器
-        self.modbus_manager = ModbusManager(self.network_model)
+        self.modbus_manager = ModbusManager(self.network_model, self.scene)
         
         # 初始化UI组件管理器
         self.ui_manager = UIComponentManager(self)
@@ -1079,6 +1086,7 @@ class SimulationWindow(QMainWindow):
                 pp.runpp(self.network_model.net)
                 self.statusBar().showMessage("潮流计算成功")
                 
+                self.update_pv_energy()
                 # 更新设备树状态
                 self.update_device_tree_status()
                 
@@ -1098,6 +1106,62 @@ class SimulationWindow(QMainWindow):
             print(f"自动潮流计算错误: {str(e)}")
             self.statusBar().showMessage("自动潮流计算发生错误")
     
+    def update_pv_energy(self):
+        """更新光伏设备的能量统计信息"""
+        try:
+            # 检查是否需要每日重置
+            from datetime import datetime
+            current_date = datetime.now().date()
+            if hasattr(self, 'last_reset_date') and current_date != self.last_reset_date:
+                self.reset_daily_pv_energy()
+                self.last_reset_date = current_date
+            elif not hasattr(self, 'last_reset_date'):
+                self.last_reset_date = current_date
+                
+            if not hasattr(self, 'canvas') or not self.canvas:
+                return
+                
+            # 获取当前场景中的所有光伏设备
+            pv_items = []
+            for item in self.canvas.scene().items():
+                if hasattr(item, 'component_type') and item.component_type == 'static_generator':
+                    pv_items.append(item)
+            
+            if not pv_items:
+                return
+            
+            # 遍历所有光伏设备
+            for pv_item in pv_items:
+                device_idx = pv_item.component_index
+                
+                # 检查网络模型中是否存在该设备
+                if not hasattr(self.network_model, 'net') or device_idx not in self.network_model.net.sgen.index:
+                    continue
+                
+                try:
+                    # 获取当前功率值（MW）
+                    current_power_mw = abs(self.network_model.net.sgen.at[device_idx, 'p_mw'])
+                    
+                    # 计算时间间隔（使用定时器中的实际值）
+                    timer_interval_ms = self.auto_calc_timer.interval()
+                    time_interval_hours = timer_interval_ms / (1000.0 * 3600.0)  # 毫秒转小时
+                    
+                    # 计算本次产生的能量（kWh）
+                    energy_generated_kwh = current_power_mw * time_interval_hours * 1000
+                    
+                    # 更新今日发电量和总发电量
+                    pv_item.today_discharge_energy += energy_generated_kwh
+                    pv_item.total_discharge_energy += energy_generated_kwh
+                    
+                    # 可选：更新设备显示标签，显示当前发电量
+                    # pv_item.label.setPlainText(f"{pv_item.properties['name']}\n{pv_item.today_discharge_energy:.3f} kWh")
+                    
+                except Exception as e:
+                    print(f"更新光伏设备 {device_idx} 能量统计时出错: {e}")
+                    
+        except Exception as e:
+            print(f"更新光伏能量统计失败: {str(e)}")
+
     def update_device_tree_status(self):
         """更新设备树状态"""
         try:
@@ -1619,6 +1683,27 @@ class SimulationWindow(QMainWindow):
                 
         except Exception as e:
             QMessageBox.critical(self, "错误", f"应用储能设置时出错: {e}")
+
+    def reset_daily_pv_energy(self):
+        """重置所有光伏设备的日发电量"""
+        try:
+            if not hasattr(self, 'canvas') or not self.canvas:
+                return
+                
+            # 获取当前场景中的所有光伏设备
+            pv_items = []
+            for item in self.canvas.scene().items():
+                if hasattr(item, 'component_type') and item.component_type == 'static_generator':
+                    pv_items.append(item)
+            
+            # 重置每个光伏设备的今日发电量
+            for pv_item in pv_items:
+                pv_item.today_discharge_energy = 0.0
+                
+            print("已重置所有光伏设备的日发电量")
+            
+        except Exception as e:
+            print(f"重置光伏日发电量失败: {str(e)}")
 
     def closeEvent(self, event):
         """窗口关闭事件"""

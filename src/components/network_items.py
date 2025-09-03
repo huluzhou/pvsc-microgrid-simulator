@@ -611,7 +611,7 @@ class StorageItem(BaseNetworkItem):
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
-            "ip": "192.168.1.100",
+            "ip": "127.0.0.1",  # 使用本地回环地址作为默认IP
             "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText("母线")
@@ -654,7 +654,7 @@ class ChargerItem(BaseNetworkItem):
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
-            "ip": "192.168.1.100",
+            "ip": "127.0.0.1",  # 使用本地回环地址作为默认IP
             "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText("母线")
@@ -829,7 +829,7 @@ class GeneratorItem(BaseNetworkItem):
             "vm_pu": 1.0,  # 电压幅值
             "name": "Generator 1",  # 名称
             "bus": None,  # 连接的母线
-            "ip": "192.168.1.100",
+            "ip": "127.0.0.1",  # 使用本地回环地址作为默认IP
             "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText(self.properties["name"])
@@ -952,9 +952,11 @@ class StaticGeneratorItem(BaseNetworkItem):
             "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
-            "ip": "192.168.1.100",
+            "ip": "127.0.0.1",  # 使用本地回环地址作为默认IP
             "port": f"{8000 + self.component_index}",
         }
+        self.today_discharge_energy = 0.0
+        self.total_discharge_energy = 0.0
         self.label.setPlainText(self.properties["name"])
         
         # 连接约束：光伏可以连接一个母线和一个电表
