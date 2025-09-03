@@ -10,7 +10,7 @@ import threading
 import pandas as pd
 from pymodbus.server import StartTcpServer
 from pymodbus import ModbusDeviceIdentification
-from pymodbus.datastore import ModbusSequentialDataBlock, ModbusServerContext
+from pymodbus.datastore import ModbusDeviceContext, ModbusSequentialDataBlock, ModbusServerContext, ModbusSparseDataBlock
 
 
 class ModbusManager:
@@ -48,6 +48,7 @@ class ModbusManager:
                     'type': item.component_type,
                     'index': item.component_index,
                     'name': item.properties.get('name', f"{item.component_type}_{item.component_index}"),
+                    'sn': item.properties.get('sn', None),  # 添加SN字段，如果不存在则为None
                     'ip': effective_ip,
                     'port': int(item.properties.get('port', 502)),
                     'p_mw': float(item.properties.get('p_mw', 0)),
@@ -59,17 +60,192 @@ class ModbusManager:
         return self.ip_devices
     
     def create_modbus_context(self, device_info):
-        """为设备创建Modbus数据上下文"""
-        # 创建数据块字典
-        store = {
-            'di': ModbusSequentialDataBlock(0, [0] * 100),  # 离散输入
-            'co': ModbusSequentialDataBlock(0, [0] * 100),  # 线圈
-            'hr': ModbusSequentialDataBlock(0, [0] * 100),  # 保持寄存器
-            'ir': ModbusSequentialDataBlock(0, [0] * 100)   # 输入寄存器
+        """为设备创建Modbus数据上下文（按设备类型定制）"""
+        device_type = device_info.get('type')
+        
+        # 根据设备类型创建定制化的稀疏数据块
+        if device_type == 'sgen':
+            # 光伏设备专用寄存器映射
+            context = self._create_sgen_context(device_info)
+        elif device_type == 'meter':
+            # 电表设备专用寄存器映射
+            context = self._create_meter_context(device_info)
+        elif device_type == 'storage':
+            # 储能设备专用寄存器映射
+            context = self._create_storage_context(device_info)
+        elif device_type == 'charger':
+            # 充电桩设备专用寄存器映射
+            context = self._create_charger_context(device_info)
+        else:
+            # 默认通用上下文
+            context = self._create_default_context(device_info)
+        
+        return context
+    
+    def _create_sgen_context(self, device_info):
+        """创建光伏设备专用上下文"""
+        # 光伏设备寄存器映射
+        # SN: 4989-4996 (8个寄存器)
+        # 额定功率: 5000
+        # 今日发电量: 5002
+        # 总发电量: 5003
+        # 当前功率: 5030
+        sgen_read_registers = {
+            4989: 0,  # sn
+            4989 + 1: 0,
+            4989 + 2: 0,
+            4989 + 3: 0,
+            4989 + 4: 0,
+            4989 + 5: 0,
+            4989 + 6: 0,
+            4989 + 7: 0,
+            5000: 0,  # 额定功率
+            5002: 0,  # 今日发电量
+            5003: 0,  # 总发电量
+            5004: 0,
+            5030: 0,  # 当前功率
+            5031: 0,
+        }
+        sgen_hold_registers = {
+            5005: 0,  # 开关机
+            5038: 0,  # 有功功率限制
+            5007: 0,  # 有功功率百分比限制
+        }
+        device_context = {
+            1: ModbusDeviceContext(
+                di=ModbusSparseDataBlock({}),
+                co=ModbusSparseDataBlock({}),
+                hr=ModbusSparseDataBlock(sgen_hold_registers),
+                ir=ModbusSparseDataBlock(sgen_read_registers)
+            )
         }
         
-        context = ModbusServerContext(devices=store, single=True)
+        context = ModbusServerContext(devices=device_context, single=False)
+        
+        # 写入设备SN
+        if not self._write_pv_device_sn(context, device_info):
+            return None
+            
         return context
+    
+    def _create_meter_context(self, device_info):
+        """创建电表设备专用上下文"""
+        # 电表设备寄存器映射
+        # 当前功率: 0 (保持寄存器)
+        meter_registers = {0: 0}
+        
+        device_context = {
+            1: ModbusDeviceContext(
+                di=ModbusSparseDataBlock({}),
+                co=ModbusSparseDataBlock({}),
+                hr=ModbusSparseDataBlock(meter_registers),
+                ir=ModbusSparseDataBlock({})
+            )
+        }
+        
+        return ModbusServerContext(devices=device_context, single=False)
+    
+    def _create_storage_context(self, device_info):
+        """创建储能设备专用上下文"""
+        # 储能设备寄存器映射
+        # SOC: 4 (保持寄存器)
+        # 最大容量: 5 (保持寄存器)
+        storage_registers = {
+            4: 0,  # SOC百分比
+            5: 0   # 最大容量
+        }
+        
+        device_context = {
+            1: ModbusDeviceContext(
+                di=ModbusSparseDataBlock({}),
+                co=ModbusSparseDataBlock({}),
+                hr=ModbusSparseDataBlock(storage_registers),
+                ir=ModbusSparseDataBlock(storage_registers)
+            )
+        }
+        
+        return ModbusServerContext(devices=device_context, single=False)
+    
+    def _create_charger_context(self, device_info):
+        """创建充电桩设备专用上下文"""
+        # 充电桩设备寄存器映射
+        # 有功功率: 0 (保持寄存器)
+        # 需求功率: 2 (保持寄存器)
+        # 额定功率: 4 (保持寄存器)
+        # 枪1状态: 100 (保持寄存器)
+        # 枪2状态: 101 (保持寄存器)
+        # 枪3状态: 102 (保持寄存器)
+        # 枪4状态: 103 (保持寄存器)
+        charger_hold_registers = {
+            0: 0,  # 有功功率
+            2: 0,  # 需求功率
+            4: 0,  # 额定功率
+        }
+        charger_input_registers = {
+            100: 0,  # gun1
+            101: 0,  # gun2
+            102: 0,  # gun3
+            103: 0,  # gun4
+        }
+        
+        device_context = {
+            1: ModbusDeviceContext(
+                di=ModbusSparseDataBlock({}),
+                co=ModbusSparseDataBlock({}),
+                hr=ModbusSparseDataBlock(charger_registers),
+                ir=ModbusSparseDataBlock(charger_registers)
+            )
+        }
+        
+        return ModbusServerContext(devices=device_context, single=False)
+    
+    def _create_default_context(self, device_info):
+        """创建默认通用上下文"""
+        default_registers = {0: 0, 1: 0, 2: 0, 3: 0}
+        
+        device_context = {
+            1: ModbusDeviceContext(
+                di=ModbusSparseDataBlock({}),
+                co=ModbusSparseDataBlock({}),
+                hr=ModbusSparseDataBlock(default_registers),
+                ir=ModbusSparseDataBlock({})
+            )
+        }
+        
+        return ModbusServerContext(devices=device_context, single=False)
+    
+    def _write_pv_device_sn(self, context, device_info):
+        """向光伏设备的输入寄存器写入设备SN
+        
+        返回:
+            bool: 成功返回True，如果SN不存在返回False
+        """
+        try:
+            # 检查SN字段是否存在且不为None
+            device_sn = device_info.get('sn')
+            if device_sn is None or str(device_sn).strip() == '':
+                print(f"光伏设备 {device_info['index']} 未设置SN字段，跳过SN写入")
+                return False
+            
+            # 写入输入寄存器4989-4996，使用与给定格式完全相同的逻辑
+            slave_context = context[1]
+            
+            # 按照给定的字符配对逻辑写入寄存器
+            slave_context.setValues(4, 4989, [(ord(device_sn[0])) << 8 | ord(device_sn[1])])
+            slave_context.setValues(4, 4990, [(ord(device_sn[2])) << 8 | ord(device_sn[3])])
+            slave_context.setValues(4, 4991, [(ord(device_sn[4])) << 8 | ord(device_sn[5])])
+            slave_context.setValues(4, 4992, [(ord(device_sn[6])) << 8 | ord(device_sn[7])])
+            slave_context.setValues(4, 4993, [(ord(device_sn[8])) << 8 | ord(device_sn[9])])
+            slave_context.setValues(4, 4994, [(ord(device_sn[10])) << 8 | ord(device_sn[11])])
+            slave_context.setValues(4, 4995, [(ord(device_sn[12])) << 8 | ord(device_sn[13])])
+            slave_context.setValues(4, 4996, [(ord(device_sn[14])) << 8 | ord(device_sn[15])])
+            
+            print(f"已写入光伏设备SN到寄存器4989-4996: {device_sn[:16]}")
+            return True
+            
+        except Exception as e:
+            print(f"写入光伏设备SN失败: {e}")
+            return False
     
     def start_modbus_server(self, device_info):
         """为指定设备启动Modbus服务器"""
@@ -82,6 +258,9 @@ class ModbusManager:
         try:
             # 创建Modbus上下文
             context = self.create_modbus_context(device_info)
+            if context is None:
+                # 创建失败（SN不存在），直接返回False
+                return False
             self.modbus_contexts[device_key] = context
             
             # 创建设备标识
