@@ -70,6 +70,9 @@ class SimulationWindow(QMainWindow):
         self.last_pv_update_time = None
         self.last_reset_date = datetime.now().date()
         
+        # 储能能量统计相关属性
+        self.last_storage_update_time = None
+        
         # Modbus服务器管理器
         self.modbus_manager = ModbusManager(self.network_model, self.scene)
         
@@ -215,6 +218,10 @@ class SimulationWindow(QMainWindow):
         """加载网络数据到设备树"""
         if not self.network_model:
             return
+            
+        # 清除设备缓存，因为网络模型已变化
+        if hasattr(self, 'modbus_manager') and self.modbus_manager:
+            self.modbus_manager.clear_device_cache()
             
         self.device_tree.clear()
         
@@ -692,6 +699,10 @@ class SimulationWindow(QMainWindow):
     
     def refresh_device_tree(self):
         """刷新设备树"""
+        # 清除设备缓存，因为网络模型可能已变化
+        if hasattr(self, 'modbus_manager') and self.modbus_manager:
+            self.modbus_manager.clear_device_cache()
+            
         self.load_network_data()
         self.search_input.clear()
         self.category_combo.setCurrentText("全部设备")
@@ -1056,11 +1067,31 @@ class SimulationWindow(QMainWindow):
             QMessageBox.critical(self, "错误", f"下电失败: {str(e)}")
             self.statusBar().showMessage("下电操作失败")
     
+    def check_and_reset_daily_data(self):
+        """检查并执行每日数据重置"""
+        try:
+            from datetime import datetime
+            current_date = datetime.now().date()
+            
+            # 检查是否需要每日重置
+            if hasattr(self, 'last_reset_date') and current_date != self.last_reset_date:
+                self.reset_daily_pv_energy()
+                self.reset_daily_storage_energy()
+                self.last_reset_date = current_date
+                print(f"已重置所有设备的每日数据 - {current_date}")
+            elif not hasattr(self, 'last_reset_date'):
+                self.last_reset_date = current_date
+        except Exception as e:
+            print(f"每日数据重置检查失败: {str(e)}")
+
     def auto_power_flow_calculation(self):
         """自动潮流计算主方法"""
         try:
             if not self.network_model or not hasattr(self.network_model, 'net'):
                 return
+                
+            # 检查每日重置
+            self.check_and_reset_daily_data()
                 
             for device in self.generated_devices:
                 device_type, device_idx = device.split('_', 1)
@@ -1087,6 +1118,7 @@ class SimulationWindow(QMainWindow):
                 self.statusBar().showMessage("潮流计算成功")
                 
                 self.update_pv_energy()
+                self.update_storage_energy()
                 # 更新设备树状态
                 self.update_device_tree_status()
                 
@@ -1109,15 +1141,6 @@ class SimulationWindow(QMainWindow):
     def update_pv_energy(self):
         """更新光伏设备的能量统计信息"""
         try:
-            # 检查是否需要每日重置
-            from datetime import datetime
-            current_date = datetime.now().date()
-            if hasattr(self, 'last_reset_date') and current_date != self.last_reset_date:
-                self.reset_daily_pv_energy()
-                self.last_reset_date = current_date
-            elif not hasattr(self, 'last_reset_date'):
-                self.last_reset_date = current_date
-                
             if not hasattr(self, 'canvas') or not self.canvas:
                 return
                 
@@ -1161,6 +1184,65 @@ class SimulationWindow(QMainWindow):
                     
         except Exception as e:
             print(f"更新光伏能量统计失败: {str(e)}")
+            
+    def update_storage_energy(self):
+        """更新储能设备的能量统计信息"""
+        try:
+            if not hasattr(self, 'canvas') or not self.canvas:
+                return
+                
+            # 获取当前场景中的所有储能设备
+            storage_items = []
+            for item in self.canvas.scene().items():
+                if hasattr(item, 'component_type') and item.component_type == 'storage':
+                    storage_items.append(item)
+            
+            if not storage_items:
+                return
+            
+            # 遍历所有储能设备
+            for storage_item in storage_items:
+                device_idx = storage_item.component_index
+                
+                # 检查网络模型中是否存在该设备
+                if not hasattr(self.network_model, 'net') or device_idx not in self.network_model.net.storage.index:
+                    continue
+                
+                try:
+                    # 获取当前功率值（MW）
+                    current_power_mw = self.network_model.net.storage.at[device_idx, 'p_mw']
+                    
+                    # 计算时间间隔（使用定时器中的实际值）
+                    timer_interval_ms = self.auto_calc_timer.interval()
+                    time_interval_hours = timer_interval_ms / (1000.0 * 3600.0)  # 毫秒转小时
+                    
+                    # 调用StorageItem的实时数据更新方法
+                    storage_item.update_realtime_data(current_power_mw, time_interval_hours)
+                    
+                except Exception as e:
+                    print(f"更新储能设备 {device_idx} 能量统计时出错: {e}")
+                    
+        except Exception as e:
+            print(f"更新储能能量统计失败: {str(e)}")
+            
+    def reset_daily_storage_energy(self):
+        """重置储能设备的每日能量统计"""
+        try:
+            if not hasattr(self, 'canvas') or not self.canvas:
+                return
+                
+            # 获取当前场景中的所有储能设备
+            storage_items = []
+            for item in self.canvas.scene().items():
+                if hasattr(item, 'component_type') and item.component_type == 'storage':
+                    storage_items.append(item)
+            
+            # 遍历所有储能设备，重置每日数据
+            for storage_item in storage_items:
+                storage_item.reset_daily_energy()
+                
+        except Exception as e:
+            print(f"重置储能设备每日能量统计失败: {str(e)}")
 
     def update_device_tree_status(self):
         """更新设备树状态"""

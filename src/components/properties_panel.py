@@ -189,7 +189,7 @@ class PropertiesPanel(QWidget):
                     if use_power_factor:
                         continue  # 跳过
                 # 功率因数模式参数：仅在使用功率因数模式时显示
-                elif prop_name in ['sn_mva', 'cos_phi']:
+                elif prop_name in ['cos_phi']:
                     if not use_power_factor:
                         continue  # 跳过
             
@@ -316,6 +316,14 @@ class PropertiesPanel(QWidget):
                     if 'sn' in self.property_widgets:
                         self.property_widgets['sn'].setText(new_value)
             
+            # 当额定功率改变时，更新相关功率限制和Modbus寄存器
+            if prop_name == 'sn_mva':
+                # 如果有update_power_limits方法则调用
+                if hasattr(self.current_item, 'update_power_limits'):
+                    self.current_item.update_power_limits()
+                # 同步更新Modbus寄存器
+                self._update_modbus_registers(prop_name, new_value)
+            
             # 特殊处理线路和变压器的use_standard_type属性改变
             if prop_name == 'use_standard_type' and self.current_item.component_type in ['line', 'transformer']:
                 # 重新刷新属性面板显示
@@ -348,6 +356,71 @@ class PropertiesPanel(QWidget):
             
             # 发出信号
             self.property_changed.emit(self.current_item.component_type, prop_name, new_value)
+            
+    def _update_modbus_registers(self, prop_name, new_value):
+        """当属性改变时，同步更新对应设备的Modbus寄存器
+        
+        参数:
+            prop_name: 属性名称
+            new_value: 新的属性值
+        """
+        if not self.current_item or prop_name != 'sn_mva':
+            return
+            
+        try:
+            # 获取设备信息
+            device_type = self.current_item.component_type
+            device_index = self.current_item.properties.get('index', 0)
+            device_name = self.current_item.properties.get('name', f'{device_type}_{device_index}')
+            
+            # 通过主窗口获取ModbusManager实例
+            main_window = self.parent()
+            while main_window and not hasattr(main_window, 'modbus_manager'):
+                main_window = main_window.parent()
+                
+            if not main_window or not hasattr(main_window, 'modbus_manager'):
+                return
+                
+            modbus_manager = main_window.modbus_manager
+            
+            # 构建设备键
+            device_key = f"{device_type}_{device_index}"
+            
+            # 检查设备是否正在运行Modbus服务
+            if device_key not in modbus_manager.running_services:
+                return
+                
+            # 获取设备上下文
+            context = modbus_manager.modbus_contexts.get(device_key)
+            if not context:
+                return
+                
+            slave_context = context[1]  # 设备ID为1
+            
+            # 根据设备类型更新对应的寄存器
+            if device_type == 'storage':
+                # 储能设备：额定功率占用寄存器7-8
+                rated_power_value = int(float(new_value) * 1000 * 10)  # 转换为0.1kW单位
+                low_word = rated_power_value & 0xFFFF
+                high_word = (rated_power_value >> 16) & 0xFFFF
+                slave_context.setValues(4, 8, [low_word])   # 额定功率低位
+                slave_context.setValues(4, 9, [high_word])  # 额定功率高位
+                print(f"已更新储能设备 {device_name} 的额定功率寄存器: {new_value} MVA")
+                
+            elif device_type == 'charger':
+                # 充电桩设备：额定功率占用寄存器4
+                rated_power_value = int(float(new_value) * 1000)  # 转换为kW单位
+                slave_context.setValues(4, 4, [rated_power_value])
+                print(f"已更新充电桩设备 {device_name} 的额定功率寄存器: {new_value} MVA")
+                
+            elif device_type == 'static_generator':
+                # 光伏设备：额定功率占用寄存器5000
+                rated_power_value = int(float(new_value) * 1000 * 10)  # 转换为0.1kVA单位
+                slave_context.setValues(4, 5000, [rated_power_value])
+                print(f"已更新光伏设备 {device_name} 的额定功率寄存器: {new_value} MVA")
+                
+        except Exception as e:
+            print(f"更新Modbus寄存器失败: {e}")
             
     def get_component_properties(self, component_type):
         """获取组件属性定义"""
@@ -460,6 +533,7 @@ class PropertiesPanel(QWidget):
             'storage': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
                 'geodata': {'type': 'readonly', 'label': '位置'},
+                'sn_mva': {'type': 'float', 'label': '额定功率 (MVA)', 'default': 1.0, 'min': 0.1, 'max': 10000.0, 'decimals': 3},
                 'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 0.0, 'min': -10000.0, 'max': 10000.0, 'decimals': 3},
                 'max_e_mwh': {'type': 'float', 'label': '最大储能容量 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0, 'decimals': 3},
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
@@ -472,6 +546,7 @@ class PropertiesPanel(QWidget):
             'charger': {
                 'index': {'type': 'readonly', 'label': '组件索引'},
                 'geodata': {'type': 'readonly', 'label': '位置'},
+                'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 1.0, 'min': 0.1, 'max': 1000.0},
                 # 通用参数
                 'use_power_factor': {'type': 'bool', 'label': '使用功率因数模式', 'default': False},
                 
@@ -479,7 +554,6 @@ class PropertiesPanel(QWidget):
                 'p_mw': {'type': 'float', 'label': '有功功率 (MW)', 'default': 0.1, 'min': 0.0, 'max': 1000.0},
                 
                 # 功率因数模式参数
-                'sn_mva': {'type': 'float', 'label': '额定容量 (MVA)', 'default': 0.1, 'min': 0.1, 'max': 1000.0},
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
                 'mode': {'type': 'choice', 'label': '模式', 'choices': ['underexcited', 'overexcited'], 'default': 'underexcited'},
                 

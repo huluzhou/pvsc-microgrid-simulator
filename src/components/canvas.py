@@ -232,6 +232,10 @@ class NetworkCanvas(QGraphicsView):
             # 连接信号
             item.signals.itemSelected.connect(self.handle_item_selected)
             
+            # 清除Modbus设备缓存，因为场景已变化
+            if hasattr(self, 'modbus_manager') and self.modbus_manager:
+                self.modbus_manager.clear_device_cache()
+            
             return item
         
         return None
@@ -1124,6 +1128,10 @@ class NetworkCanvas(QGraphicsView):
     
     def clear_canvas(self):
         """清空画布"""
+        # 清除Modbus设备缓存，因为场景将被清空
+        if hasattr(self, 'modbus_manager') and self.modbus_manager:
+            self.modbus_manager.clear_device_cache()
+            
         self.scene.clear()
         self.draw_grid()
 

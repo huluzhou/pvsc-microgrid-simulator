@@ -52,7 +52,9 @@ class ModbusManager:
                     'ip': effective_ip,
                     'port': int(item.properties.get('port', 502)),
                     'p_mw': float(item.properties.get('p_mw', 0)),
-                    'q_mvar': float(item.properties.get('q_mvar', 0))
+                    'q_mvar': float(item.properties.get('q_mvar', 0)),
+                    'sn_mva': float(item.properties.get('sn_mva', 0)),
+                    'max_e_mwh': float(item.properties.get('max_e_mwh', None)),
                 }
                 self.ip_devices.append(device_info)
         
@@ -90,7 +92,7 @@ class ModbusManager:
         # 今日发电量: 5002
         # 总发电量: 5003
         # 当前功率: 5030
-        sgen_read_registers = {
+        sgen_input_registers = {
             4989: 0,  # sn
             4989 + 1: 0,
             4989 + 2: 0,
@@ -116,7 +118,7 @@ class ModbusManager:
                 di=ModbusSparseDataBlock({}),
                 co=ModbusSparseDataBlock({}),
                 hr=ModbusSparseDataBlock(sgen_hold_registers),
-                ir=ModbusSparseDataBlock(sgen_read_registers)
+                ir=ModbusSparseDataBlock(sgen_input_registers)
             )
         }
         
@@ -138,8 +140,8 @@ class ModbusManager:
             1: ModbusDeviceContext(
                 di=ModbusSparseDataBlock({}),
                 co=ModbusSparseDataBlock({}),
-                hr=ModbusSparseDataBlock(meter_registers),
-                ir=ModbusSparseDataBlock({})
+                hr=ModbusSparseDataBlock({}),
+                ir=ModbusSparseDataBlock(meter_registers)
             )
         }
         
@@ -148,23 +150,100 @@ class ModbusManager:
     def _create_storage_context(self, device_info):
         """创建储能设备专用上下文"""
         # 储能设备寄存器映射
-        # SOC: 4 (保持寄存器)
-        # 最大容量: 5 (保持寄存器)
-        storage_registers = {
-            4: 0,  # SOC百分比
-            5: 0   # 最大容量
+        storage_input_registers = {
+            0: 0,  # state1
+            2: 0,  # SOC
+            8: 0,  # 额定功率
+            9: 0,
+            12: 0,  # 剩余可放电容量
+            39: 0,  # 额定容量
+            40: 0,  # pcs_num
+            41: 0,  # battery_cluster_num
+            42: 0,  # battery_cluster_capacity
+            43: 0,  # battery_cluster_power
+            399: 0,  # state4
+            408: 0,  # state2
+            412: 0,  # A相电流
+            413: 0,  # B相电流
+            414: 0,  # C相电流
+            419: 0,  # 有功功率
+            420: 0,
+            426: 0,  # 日充电量
+            427: 0,  # 日放电量
+            428: 0,  # 累计充电总量
+            429: 0,
+            430: 0,  # 累计放电总量
+            431: 0,
+            839: 0.0,  # state3
+        }
+        storage_hold_registers = {
+            4: 0,  # 设置功率
+            55: 0,  # 开关机
         }
         
         device_context = {
             1: ModbusDeviceContext(
                 di=ModbusSparseDataBlock({}),
                 co=ModbusSparseDataBlock({}),
-                hr=ModbusSparseDataBlock(storage_registers),
-                ir=ModbusSparseDataBlock(storage_registers)
+                hr=ModbusSparseDataBlock(storage_hold_registers),
+                ir=ModbusSparseDataBlock(storage_input_registers)
             )
         }
         
-        return ModbusServerContext(devices=device_context, single=False)
+        context = ModbusServerContext(devices=device_context, single=False)
+        
+        # 写入储能配置参数
+        if not self._write_storage_device_init(context, device_info):
+            return None
+            
+        return context
+        
+    def _write_storage_device_init(self, context, device_info):
+        """向储能设备的输入寄存器写入配置参数
+        
+        参数:
+            context: Modbus服务器上下文
+            device_info: 设备信息字典
+            
+        返回:
+            bool: 成功返回True，失败返回False
+        """
+        try:
+            slave_context = context[1]
+            
+            # 从设备信息中获取配置参数，使用合理的默认值
+            rated_power = int(device_info.get('p_mw', 1.0) * 1000)  # 额定功率 (kW)
+            rated_capacity = int(device_info.get('max_e_mwh', 1.0) * 1000)  # 额定容量 (kWh)
+            pcs_num = int(device_info.get('pcs_num', 1))  # PCS数量
+            battery_cluster_num = int(device_info.get('battery_cluster_num', 2))  # 电池簇数量
+            battery_cluster_capacity = int(device_info.get('battery_cluster_capacity', 1000))  # 电池簇容量 (kWh)
+            battery_cluster_power = int(device_info.get('battery_cluster_power', 500))  # 电池簇功率 (kW)
+            
+            # 写入对应的寄存器
+            # 额定功率占用两个寄存器 (7-8)，正确的高低16位拆分
+            rated_power_value = int(device_info.get('p_mw', 1.0) * 1000 * 10)  # 转换为0.1kW单位
+            
+            # 将32位值拆分为高低16位
+            low_word = rated_power_value & 0xFFFF  # 低16位
+            high_word = (rated_power_value >> 16) & 0xFFFF  # 高16位
+            
+            slave_context.setValues(4, 8, [low_word])   # 额定功率低位
+            slave_context.setValues(4, 9, [high_word])  # 额定功率高位
+            
+            slave_context.setValues(4, 39, [rated_capacity])  # 额定容量
+            slave_context.setValues(4, 40, [pcs_num])  # PCS数量
+            slave_context.setValues(4, 41, [battery_cluster_num])  # 电池簇数量
+            slave_context.setValues(4, 42, [battery_cluster_capacity])  # 电池簇容量
+            slave_context.setValues(4, 43, [battery_cluster_power])  # 电池簇功率
+            
+            print(f"已写入储能设备配置参数: 额定功率={rated_power}kW, 额定容量={rated_capacity}kWh, "
+                  f"PCS数量={pcs_num}, 电池簇数量={battery_cluster_num}, "
+                  f"电池簇容量={battery_cluster_capacity}kWh, 电池簇功率={battery_cluster_power}kW")
+            return True
+            
+        except Exception as e:
+            print(f"写入储能设备配置参数失败: {e}")
+            return False
     
     def _create_charger_context(self, device_info):
         """创建充电桩设备专用上下文"""
@@ -176,29 +255,58 @@ class ModbusManager:
         # 枪2状态: 101 (保持寄存器)
         # 枪3状态: 102 (保持寄存器)
         # 枪4状态: 103 (保持寄存器)
-        charger_hold_registers = {
+        charger_input_registers = {
             0: 0,  # 有功功率
             2: 0,  # 需求功率
             4: 0,  # 额定功率
-        }
-        charger_input_registers = {
-            100: 0,  # gun1
-            101: 0,  # gun2
-            102: 0,  # gun3
-            103: 0,  # gun4
+            100: 1,  # gun1 - 初始状态1
+            101: 2,  # gun2 - 初始状态2
+            102: 3,  # gun3 - 初始状态3
+            103: 4,  # gun4 - 初始状态4
         }
         
         device_context = {
             1: ModbusDeviceContext(
                 di=ModbusSparseDataBlock({}),
                 co=ModbusSparseDataBlock({}),
-                hr=ModbusSparseDataBlock(charger_registers),
-                ir=ModbusSparseDataBlock(charger_registers)
+                hr=ModbusSparseDataBlock({}),
+                ir=ModbusSparseDataBlock(charger_input_registers)
             )
         }
+        context = ModbusServerContext(devices=device_context, single=False)
         
-        return ModbusServerContext(devices=device_context, single=False)
-    
+        # 写入额定功率和枪状态信息
+        if not self._write_charger_device_init(context, device_info):
+            return None
+
+        return context
+        
+    def _write_charger_device_init(self, context, device_info):
+        """向充电桩设备的输入寄存器写入额定功率和枪状态信息
+        
+        返回:
+            bool: 成功返回True，如果设备信息不完整返回False
+        """
+        try:
+            slave_context = context[1]
+            
+            # 写入额定功率 (单位: kW)
+            rated_power = int(device_info.get('sn_mva', 1.0) * 1000)  # 转换为kW
+            slave_context.setValues(4, 4, [rated_power])
+            
+            # 写入枪状态信息 (1, 2, 3, 4)
+            slave_context.setValues(4, 100, [1])  # 枪1状态: 1
+            slave_context.setValues(4, 101, [2])  # 枪2状态: 2
+            slave_context.setValues(4, 102, [3])  # 枪3状态: 3
+            slave_context.setValues(4, 103, [4])  # 枪4状态: 4
+            
+            print(f"已写入充电桩设备额定功率: {rated_power}kW 和枪状态信息 (1,2,3,4)")
+            return True
+            
+        except Exception as e:
+            print(f"写入充电桩设备初始化信息失败: {e}")
+            return False
+
     def _create_default_context(self, device_info):
         """创建默认通用上下文"""
         default_registers = {0: 0, 1: 0, 2: 0, 3: 0}
@@ -241,6 +349,10 @@ class ModbusManager:
             slave_context.setValues(4, 4996, [(ord(device_sn[14])) << 8 | ord(device_sn[15])])
             
             print(f"已写入光伏设备SN到寄存器4989-4996: {device_sn[:16]}")
+            
+            # 写入额定功率 0.1kva
+            rated_power = int(device_info["sn_mva"] * 1000 * 10)
+            slave_context.setValues(4, 5000, [rated_power])
             return True
             
         except Exception as e:
@@ -307,15 +419,20 @@ class ModbusManager:
     def update_meter_context(self, index, slave_context):
         """更新电表特定上下文数据"""
         try:
-            # 从场景中获取电表图形项
+            # 使用缓存机制提高性能
             from .network_items import MeterItem
+            if not hasattr(self, '_meter_cache'):
+                self._meter_cache = {}
             
-            # 查找对应的电表图形项
-            meter_item = None
-            for item in self.scene.items():
-                if isinstance(item, MeterItem) and item.component_index == index:
-                    meter_item = item
-                    break
+            # 检查缓存，如果存在且索引匹配则直接使用
+            meter_item = self._meter_cache.get(index)
+            if meter_item is None or meter_item.component_index != index:
+                # 仅在缓存未命中时遍历场景
+                for item in self.scene.items():
+                    if isinstance(item, MeterItem) and item.component_index == index:
+                        meter_item = item
+                        self._meter_cache[index] = meter_item
+                        break
             
             if not meter_item:
                 print(f"未找到电表图形项: {index}")
@@ -376,7 +493,7 @@ class ModbusManager:
             power_kw = int(power_value / 50 * 100)
             
             # 写入保持寄存器（功能码3，地址0）
-            slave_context.setValues(3, 0, [power_kw])
+            slave_context.setValues(4, 0, [power_kw])
             
         except Exception as e:
             print(f"更新电表上下文失败: {e}")
@@ -402,13 +519,20 @@ class ModbusManager:
             # 获取功率数据
             power_mw = self.network_model.net.res_sgen.loc[index, "p_mw"]
             
-            # 获取光伏图形项
+            # 使用缓存机制提高性能
             from .network_items import PVItem
-            pv_item = None
-            for item in self.scene.items():
-                if isinstance(item, PVItem) and item.component_index == index:
-                    pv_item = item
-                    break
+            if not hasattr(self, '_pv_cache'):
+                self._pv_cache = {}
+            
+            # 检查缓存，如果存在且索引匹配则直接使用
+            pv_item = self._pv_cache.get(index)
+            if pv_item is None or pv_item.component_index != index:
+                # 仅在缓存未命中时遍历场景
+                for item in self.scene.items():
+                    if isinstance(item, PVItem) and item.component_index == index:
+                        pv_item = item
+                        self._pv_cache[index] = pv_item
+                        break
             
             if pv_item is None:
                 raise RuntimeError(f"未找到光伏设备 {index} 的图形项")
@@ -442,35 +566,152 @@ class ModbusManager:
         except Exception as e:
             raise RuntimeError(f"Modbus寄存器更新失败: {e}")
     
-    def update_storage_context(self, device_info, slave_context, **kwargs):
+    def update_storage_context(self, index, device_info, slave_context):
         """更新储能设备特定上下文数据"""
         try:
-            # 更新储能状态寄存器 (寄存器地址4-7)
-            soc = int(kwargs.get('soc_percent', 0) * 100)  # SOC百分比
-            max_e = int(kwargs.get('max_e_mwh', 0) * 1000)  # 最大容量
+            # 使用缓存机制提高性能 - 通过场景直接查找设备
+            from .network_items import StorageItem
+            if not hasattr(self, '_storage_cache'):
+                self._storage_cache = {}
             
-            slave_context.setValues(3, 4, [soc])
-            slave_context.setValues(3, 5, [max_e])
-            slave_context.setValues(4, 4, [soc])
-            slave_context.setValues(4, 5, [max_e])
+            # 检查缓存，如果存在且索引匹配则直接使用
+            storage_item = self._storage_cache.get(index)
+            if storage_item is None or storage_item.component_index != index:
+                # 仅在缓存未命中时遍历场景
+                for item in self.scene.items():
+                    if isinstance(item, StorageItem) and item.component_index == index:
+                        storage_item = item
+                        self._storage_cache[index] = storage_item
+                        break
             
+            if storage_item is None:
+                raise RuntimeError(f"未找到储能设备 {index} 的图形项")
+            
+            # 从network_item获取实时计算的数据，确保数据范围有效
+            soc_percent = max(0.0, min(100.0, storage_item.soc_percent))  # 限制在0-100%
+            rated_capacity = max(0.0, device_info.get("max_e_mwh", 1.0))  # 额定容量MWh，确保非负
+            active_power = float(self.network_model.net.res_storage.loc[index, "p_mw"])
+            
+            # 从network_item获取能量统计数据，确保非负
+            today_charge_energy = max(0.0, storage_item.today_charge_energy)
+            today_discharge_energy = max(0.0, storage_item.today_discharge_energy)
+            total_charge_energy = max(0.0, storage_item.total_charge_energy)
+            total_discharge_energy = max(0.0, storage_item.total_discharge_energy)
+            
+            # 更新基础状态寄存器 - 使用合理的16位范围
+            soc = max(0, min(100, int(soc_percent)))  # SOC百分比，限制在0-100
+            max_e = max(0, min(65535, int(rated_capacity * 1000)))  # 最大容量kWh，限制16位
+            
+            slave_context.setValues(3, 4, [soc])  # 输入寄存器4: SOC
+            slave_context.setValues(3, 5, [max_e])  # 输入寄存器5: 最大容量
+            slave_context.setValues(4, 4, [soc])  # 保持寄存器4: SOC
+            slave_context.setValues(4, 5, [max_e])  # 保持寄存器5: 最大容量
+            
+            # 剩余可放电容量 (kWh * 10，保留1位小数)
+            remaining_kwh = rated_capacity * (soc_percent / 100.0)
+            remaining_capacity = max(0, min(65535, int(remaining_kwh * 10)))
+            slave_context.setValues(4, 12, [remaining_capacity])
+            
+            # 日充电量 (kWh * 10，保留1位小数)
+            daily_charge = max(0, min(65535, int(today_charge_energy * 10)))
+            slave_context.setValues(4, 426, [daily_charge])
+            
+            # 日放电量 (kWh * 10，保留1位小数)
+            daily_discharge = max(0, min(65535, int(today_discharge_energy * 10)))
+            slave_context.setValues(4, 427, [daily_discharge])
+            
+            # 累计充电量 - 32位无符号整数 (kWh * 10)
+            total_charge_wh = int(total_charge_energy * 10)
+            total_charge_low = total_charge_wh & 0xFFFF
+            total_charge_high = (total_charge_wh >> 16) & 0xFFFF
+            slave_context.setValues(4, 428, [total_charge_low])
+            slave_context.setValues(4, 429, [total_charge_high])
+            
+            # 累计放电量 - 32位无符号整数 (kWh * 10)
+            total_discharge_wh = int(total_discharge_energy * 10)
+            total_discharge_low = total_discharge_wh & 0xFFFF
+            total_discharge_high = (total_discharge_wh >> 16) & 0xFFFF
+            slave_context.setValues(4, 430, [total_discharge_low])
+            slave_context.setValues(4, 431, [total_discharge_high])
+            
+            # 计算电流 - 修正单相220V计算逻辑
+            # 电流(A) = 功率(kW) * 1000 / 电压(V)
+            # 转换为0.1A单位：* 10
+            if abs(active_power) > 0.001:  # 避免浮点误差
+                current_a = abs(active_power) * 1000 / 220.0  # A
+                current_value = max(0, min(65535, int(current_a * 10)))  # 0.1A单位
+            else:
+                current_value = 0
+                
+            # 三相电流值相同（简化处理）
+            slave_context.setValues(4, 412, [current_value])  # A相
+            slave_context.setValues(4, 413, [current_value])  # B相
+            slave_context.setValues(4, 414, [current_value])  # C相
+            
+            # 调试信息（可选，生产环境可注释掉）
+            if abs(active_power) > 0.001:
+                print(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A")
+            
+        except KeyError as e:
+            print(f"储能设备数据缺失: {e}")
+        except ValueError as e:
+            print(f"数据格式错误: {e}")
         except Exception as e:
             print(f"更新储能上下文失败: {e}")
     
-    def update_charger_context(self, device_info, slave_context, **kwargs):
-        """更新充电桩特定上下文数据"""
+    def update_charger_context(self, index, slave_context):
+        """更新充电桩设备的Modbus寄存器数据（仅更新有功功率和需求功率）
+        
+        寄存器映射：
+        - 0: 有功功率 (kW) - 实时当前功率
+        - 2: 需求功率 (kW) - 最大需求功率
+        """
+        # 寄存器地址常量
+        REG_ACTIVE_POWER = 0
+        REG_REQUIRED_POWER = 2
+        INPUT_REG = 4  # 使用输入寄存器存储实时数据
+        MAX_32BIT_UINT = 0xFFFFFFFF
+
         try:
-            # 更新充电桩状态寄存器 (寄存器地址4-7)
-            status = 1 if kwargs.get('in_service', True) else 0
-            max_p = int(kwargs.get('max_p_mw', 0) * 1000)  # 最大充电功率
+            # 获取充电桩功率数据
+            power_mw = self.network_model.net.res_load.loc[index, "p_mw"]
             
-            slave_context.setValues(3, 4, [status])
-            slave_context.setValues(3, 5, [max_p])
-            slave_context.setValues(4, 4, [status])
-            slave_context.setValues(4, 5, [max_p])
+            # 使用缓存机制提高性能
+            from .network_items import ChargerItem
+            if not hasattr(self, '_charger_cache'):
+                self._charger_cache = {}
             
+            # 检查缓存，如果存在且索引匹配则直接使用
+            charger_item = self._charger_cache.get(index)
+            if charger_item is None or charger_item.component_index != index:
+                # 仅在缓存未命中时遍历场景
+                for item in self.scene.items():
+                    if isinstance(item, ChargerItem) and item.component_index == index:
+                        charger_item = item
+                        self._charger_cache[index] = charger_item
+                        break
+            
+            if charger_item is None:
+                raise RuntimeError(f"未找到充电桩设备 {index} 的图形项")
+            
+            # 数据转换和验证
+            active_power_kw = int(round(abs(power_mw) * 1000*10))  # MW -> kW
+            required_power_kw = int(round(charger_item.properties.get('max_p_mw', 50) * 1000*10))  # 最大需求功率
+            
+            # 数据范围检查
+            active_power_kw = max(0, min(active_power_kw, MAX_32BIT_UINT))
+            required_power_kw = max(0, min(required_power_kw, MAX_32BIT_UINT))
+            
+            # 写入寄存器数据（输入寄存器）
+            slave_context.setValues(INPUT_REG, REG_ACTIVE_POWER, [active_power_kw])
+            slave_context.setValues(INPUT_REG, REG_REQUIRED_POWER, [required_power_kw])
+            
+        except KeyError as e:
+            raise RuntimeError(f"充电桩设备数据缺失: {e}")
+        except ValueError as e:
+            raise RuntimeError(f"数据格式错误: {e}")
         except Exception as e:
-            print(f"更新充电桩上下文失败: {e}")
+            raise RuntimeError(f"Modbus寄存器更新失败: {e}")
     
     def start_all_modbus_servers(self):
         """启动所有具有IP属性设备的Modbus服务器"""
@@ -540,11 +781,11 @@ class ModbusManager:
                         
                 elif device_type == 'sgen' and hasattr(self.network_model.net, 'sgen'):
                     if device_idx in self.network_model.net.sgen.index:
-                        self.update_sgen_context(device_idx, self.modbus_contexts[f"{device_type}_{device_idx}"])
+                        self.update_sgen_context(device_idx, device_info, self.modbus_contexts[f"{device_type}_{device_idx}"])
 
                 elif device_type == 'storage' and hasattr(self.network_model.net, 'storage'):
                     if device_idx in self.network_model.net.storage.index:
-                        self.update_storage_context(device_idx, self.modbus_contexts[f"{device_type}_{device_idx}"])
+                        self.update_storage_context(device_idx, device_info,self.modbus_contexts[f"{device_type}_{device_idx}"])
 
                 elif device_type == 'charger' and hasattr(self.network_model.net, 'charger'):
                     if device_idx in self.network_model.net.charger.index:
@@ -552,6 +793,18 @@ class ModbusManager:
                         
             except Exception as e:
                 print(f"更新设备Modbus数据失败 {device_info['name']}: {e}")
+    
+    def clear_device_cache(self):
+        """清除所有设备缓存，在场景变化时调用"""
+        if hasattr(self, '_storage_cache'):
+            self._storage_cache.clear()
+        if hasattr(self, '_meter_cache'):
+            self._meter_cache.clear()
+        if hasattr(self, '_pv_cache'):
+            self._pv_cache.clear()
+        if hasattr(self, '_charger_cache'):
+            self._charger_cache.clear()
+        print("设备缓存已清除")
     
     def get_device_count(self):
         """获取设备数量统计"""

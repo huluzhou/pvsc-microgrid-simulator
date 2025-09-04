@@ -509,8 +509,18 @@ class BaseNetworkItem(QGraphicsItem):
         if self.scene():
             # 先断开所有连接
             self.disconnect_all_connections()
+            
+            # 清除Modbus设备缓存，因为场景已变化
+            scene = self.scene()
+            if scene:
+                views = scene.views()
+                if views:
+                    canvas = views[0]
+                    if hasattr(canvas, 'modbus_manager') and canvas.modbus_manager:
+                        canvas.modbus_manager.clear_device_cache()
+            
             # 从场景中移除
-            self.scene().removeItem(self)
+            scene.removeItem(self)
             print(f"删除组件: {self.component_name}")
     
     def contextMenuEvent(self, event):
@@ -604,6 +614,7 @@ class StorageItem(BaseNetworkItem):
         self.properties = {
             "name": component_name,  # 名称
             "index": self.component_index,  # 组件索引
+            "sn_mva": 1.0,
             "geodata": (0, 0),
             "p_mw": 10.0,  # 额定功率
             "max_e_mwh": 50.0,  # 最大储能容量
@@ -628,6 +639,46 @@ class StorageItem(BaseNetworkItem):
             QPointF(0, -28),   # 线头端点（上侧）
         ]
         self.original_connection_points = self.connection_points.copy()
+        
+        # 实时数据变量初始化
+        self.soc_percent = 50.0  # 荷电状态百分比
+        self.today_charge_energy = 0.0  # 今日充电电量 (kWh)
+        self.today_discharge_energy = 0.0  # 今日放电电量 (kWh)
+        self.total_charge_energy = 0.0  # 累计充电电量 (kWh)
+        self.total_discharge_energy = 0.0  # 累计放电电量 (kWh)
+        
+    def update_realtime_data(self, current_power_mw, time_delta_hours=1.0):
+        """
+        更新实时数据
+        
+        Args:
+            current_power_mw: 当前功率 (MW)，正值为放电，负值为充电
+            time_delta_hours: 时间间隔 (小时)
+        """
+        # 功率转换为 kW
+        current_power_kw = current_power_mw * 1000
+        
+        # 计算电量变化 (kWh)
+        energy_delta = abs(current_power_kw) * time_delta_hours
+        
+        # 更新SOC
+        max_energy_kwh = self.properties.get("max_e_mwh", 50.0) * 1000
+        if current_power_kw > 0:  # 放电
+            self.soc_percent = max(0, self.soc_percent - (energy_delta / max_energy_kwh) * 100)
+            self.today_discharge_energy += energy_delta
+            self.total_discharge_energy += energy_delta
+        elif current_power_kw < 0:  # 充电
+            self.soc_percent = min(100, self.soc_percent + (energy_delta / max_energy_kwh) * 100)
+            self.today_charge_energy += energy_delta
+            self.total_charge_energy += energy_delta
+            
+        # 更新属性中的SOC值
+        self.properties["soc_percent"] = self.soc_percent
+        
+    def reset_daily_energy(self):
+        """重置今日电量数据"""
+        self.today_charge_energy = 0.0
+        self.today_discharge_energy = 0.0
 
 
         
@@ -648,7 +699,8 @@ class ChargerItem(BaseNetworkItem):
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
-            "p_mw": 5.0,  # 充电功率
+            "sn_mva": 1.0,
+            "p_mw": 1.0,  # 充电功率
             "efficiency": 0.95,  # 充电效率
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
@@ -957,6 +1009,7 @@ class StaticGeneratorItem(BaseNetworkItem):
         }
         self.today_discharge_energy = 0.0
         self.total_discharge_energy = 0.0
+        self.update_power_limits()
         self.label.setPlainText(self.properties["name"])
         
         # 连接约束：光伏可以连接一个母线和一个电表
@@ -971,6 +1024,12 @@ class StaticGeneratorItem(BaseNetworkItem):
             QPointF(0, -28)   # 线头端点（下方）
         ]
         self.original_connection_points = self.connection_points.copy()
+        
+    def update_power_limits(self):
+        """更新功率限制值"""
+        sn_mva = self.properties.get("sn_mva", 1.0)
+        self.active_power_limit = sn_mva * 1000 * 1.1  # kw (110% 额定功率)
+        self.active_power_limit_per = sn_mva * 1000    # kw (100% 额定功率)
 
 
 class MeterItem(BaseNetworkItem):
