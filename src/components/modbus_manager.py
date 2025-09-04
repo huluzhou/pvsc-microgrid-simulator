@@ -195,7 +195,7 @@ class ModbusManager:
         # 写入储能配置参数
         if not self._write_storage_device_init(context, device_info):
             return None
-            
+        self.state = 'halt'   
         return context
         
     def _write_storage_device_init(self, context, device_info):
@@ -648,9 +648,35 @@ class ModbusManager:
             slave_context.setValues(4, 413, [current_value])  # B相
             slave_context.setValues(4, 414, [current_value])  # C相
             
+            # 从network_item获取储能设备当前状态
+            current_state = storage_item.state  # 直接从StorageItem实例获取状态
+            
+            # 状态映射表
+            state_map = {
+                'halt': {'reg840': 0, 'reg409': 0, 'reg1': 1},      # 停机
+                'ready': {'reg840': 1, 'reg409': 1, 'reg1': 1},     # 就绪
+                'charge': {'reg840': 1, 'reg409': 3, 'reg1': 2},    # 充电
+                'discharge': {'reg840': 1, 'reg409': 4, 'reg1': 3}, # 放电
+                'fault': {'reg840': 1, 'reg409': 2, 'reg1': 4}      # 故障
+            }
+            
+            state_values = state_map.get(current_state, state_map['ready'])
+            
+            # 设置状态相关寄存器
+            slave_context.setValues(4, 840 - 1, [state_values['reg840']])  # 状态寄存器840
+            slave_context.setValues(4, 409 - 1, [state_values['reg409']])  # 状态寄存器409
+            slave_context.setValues(4, 1 - 1, [state_values['reg1']])      # 状态寄存器1
+            
+            # 设置可用状态寄存器400
+            # 判断设备是否可用：只有在就绪、充电、放电状态时为可用
+            if current_state in ['ready', 'charge', 'discharge']:
+                slave_context.setValues(4, 400 - 1, [1])  # 可用
+            else:
+                slave_context.setValues(4, 400 - 1, [0])  # 不可用（停机或故障）
+            
             # 调试信息（可选，生产环境可注释掉）
             if abs(active_power) > 0.001:
-                print(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A")
+                print(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
             
         except KeyError as e:
             print(f"储能设备数据缺失: {e}")
@@ -726,8 +752,18 @@ class ModbusManager:
         
         try:
             if device_key in self.modbus_servers:
+                # 对于储能设备，停止Modbus服务器时设置状态为poweroff
+                if device_type == 'storage':
+                    from .network_items import StorageItem
+                    # 查找对应的储能设备并设置状态
+                    for item in self.scene.items():
+                        if isinstance(item, StorageItem) and item.component_index == device_idx:
+                            item.state = 'power_off'
+                            print(f"储能设备 {device_idx} 已设置为poweroff状态")
+                            break
+                
                 # 由于StartTcpServer内部管理资源，只需清理引用
-                server_thread = self.modbus_servers[device_key]
+                self.modbus_servers[device_key]
                 
                 # 清理上下文和引用
                 if device_key in self.modbus_contexts:

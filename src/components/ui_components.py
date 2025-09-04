@@ -167,7 +167,7 @@ class UIComponentManager:
         try:
             plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans', 'SimSun', 'Arial Unicode MS']
             plt.rcParams['axes.unicode_minus'] = False
-        except:
+        except (OSError, KeyError, ValueError):
             pass
         
         # 初始化图表

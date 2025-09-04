@@ -1093,25 +1093,8 @@ class SimulationWindow(QMainWindow):
             # 检查每日重置
             self.check_and_reset_daily_data()
                 
-            for device in self.generated_devices:
-                device_type, device_idx = device.split('_', 1)
-                device_idx = int(device_idx)
-                
-                if device_type == 'load':
-                    if device_idx in self.network_model.net.load.index:
-                        load_data = self.data_generator_manager.generate_device_data('load', device_idx, self.network_model)
-                        if device_idx in load_data:
-                            load_values = load_data[device_idx]
-                            self.network_model.net.load.loc[device_idx, 'p_mw'] = load_values['p_mw']
-                            self.network_model.net.load.loc[device_idx, 'q_mvar'] = load_values['q_mvar']
-                            
-                elif device_type == 'sgen':
-                    if device_idx in self.network_model.net.sgen.index:
-                        sgen_data = self.data_generator_manager.generate_device_data('sgen', device_idx, self.network_model)
-                        if device_idx in sgen_data:
-                            sgen_values = sgen_data[device_idx]
-                            self.network_model.net.sgen.loc[device_idx, 'p_mw'] = sgen_values['p_mw']
-                            self.network_model.net.sgen.loc[device_idx, 'q_mvar'] = sgen_values['q_mvar']
+            self._update_device_data_before_power_flow(self.generated_devices, self.network_model, self.data_generator_manager)
+            self._update_para_from_modbus()
             # 运行潮流计算
             try:
                 pp.runpp(self.network_model.net)
@@ -1244,6 +1227,187 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             print(f"重置储能设备每日能量统计失败: {str(e)}")
 
+    def _update_para_from_modbus(self):
+        """
+        从Modbus寄存器读取数据并更新设备参数
+        
+        根据不同的设备类型，读取对应的Modbus寄存器值并更新设备参数：
+        - 储能设备：读取控制寄存器（开关机状态等）
+        - 负荷设备：读取功率设定值
+        - 发电设备：读取功率设定值和控制状态
+        """
+        try:
+            if not hasattr(self, 'modbus_manager') or not self.modbus_manager:
+                return
+                
+            if not self.network_model or not hasattr(self.network_model, 'net'):
+                return
+                
+            # 获取所有正在运行的Modbus设备
+            running_devices = self.modbus_manager.running_services
+            
+            for device_key in running_devices:
+                device_type, device_idx = device_key.rsplit('_', 1)
+                device_idx = int(device_idx)
+                
+                # 获取设备的Modbus上下文
+                slave_context = self.modbus_manager.modbus_contexts.get(device_key)
+                if not slave_context:
+                    continue
+                
+                try:
+                    if device_type == 'storage':
+                        self._update_storage_from_modbus(device_idx, slave_context)
+                    # elif device_type == 'charger':
+                    #     self._update_charger_from_modbus(device_idx, slave_context)
+                    # elif device_type == 'sgen':
+                    #     self._update_sgen_from_modbus(device_idx, slave_context)
+                        
+                except Exception as e:
+                    print(f"更新设备 {device_key} 参数失败: {e}")
+                    
+        except Exception as e:
+            print(f"Modbus参数更新失败: {str(e)}")
+            
+    def _update_storage_from_modbus(self, device_idx, slave_context):
+        """从Modbus更新储能设备参数"""
+        try:
+            if device_idx not in self.network_model.net.storage.index:
+                return
+                
+            # 读取储能控制寄存器55（开关机状态）
+            try:
+                power_on = slave_context.getValues(4, 55, 1)[0]  # 寄存器55
+                power_on = bool(power_on)
+            except (IndexError, ValueError, AttributeError):
+                power_on = False  # 默认关机
+                
+            # 读取功率设定值（如果有的话）
+            try:
+                power_setpoint = slave_context.getValues(4, 0, 1)[0]  # 寄存器0
+                power_setpoint = power_setpoint / 1000.0  # kW -> MW
+            except (IndexError, ValueError, AttributeError):
+                power_setpoint = None
+                
+            # 获取储能设备的实际功率数据
+            try:
+                if device_idx in self.network_model.net.storage.index:
+                    actual_power = self.network_model.net.res_storage.loc[device_idx, 'p_mw']
+                else:
+                    actual_power = 0.0
+            except (KeyError, AttributeError):
+                actual_power = 0.0
+            
+            # 更新储能设备参数
+            storage_items = [item for item in self.canvas.scene().items() 
+                           if hasattr(item, 'component_type') and item.component_type == 'storage' 
+                           and item.component_index == device_idx]
+            
+            for storage_item in storage_items:
+                # 更新开关机状态
+                if power_on:
+                    # 根据实际功率确定当前运行状态
+                    if abs(actual_power) < 0.001:  # 功率接近0，视为就绪状态
+                        storage_item.state = 'ready'
+                    elif actual_power > 0:  # 功率为正，正在放电
+                        storage_item.state = 'discharge'
+                    elif actual_power < 0:  # 功率为负，正在充电
+                        storage_item.state = 'charge'
+                else:
+                    storage_item.state = 'halt'
+                    
+                # 更新功率设定值
+                if power_setpoint is not None:
+                    # 这里可以根据需要设置储能的功率目标
+                    pass
+                    
+        except Exception as e:
+            print(f"更新储能设备 {device_idx} 参数失败: {e}")
+            
+    def _update_charger_from_modbus(self, device_idx, slave_context):
+        """从Modbus更新充电器设备参数"""
+        try:
+            if device_idx not in self.network_model.net.load.index:
+                return
+                
+            # 读取负荷功率设定值
+            try:
+                p_mw = slave_context.getValues(4, 0, 1)[0]  # 有功功率寄存器
+                p_mw = p_mw / 1000.0  # kW -> MW
+                self.network_model.net.load.loc[device_idx, 'p_mw'] = p_mw
+            except (IndexError, ValueError, AttributeError):
+                pass
+                
+                
+        except Exception as e:
+            print(f"更新负荷设备 {device_idx} 参数失败: {e}")
+            
+    def _update_sgen_from_modbus(self, device_idx, slave_context):
+        """从Modbus更新静态发电设备参数"""
+        try:
+            if device_idx not in self.network_model.net.sgen.index:
+                return
+                
+            # 读取发电功率设定值
+            try:
+                p_mw = slave_context.getValues(4, 0, 1)[0]  # 有功功率寄存器
+                p_mw = p_mw / 1000.0  # kW -> MW
+                self.network_model.net.sgen.loc[device_idx, 'p_mw'] = p_mw
+            except (IndexError, ValueError, AttributeError):
+                pass
+                
+            try:
+                q_mvar = slave_context.getValues(4, 1, 1)[0]  # 无功功率寄存器
+                q_mvar = q_mvar / 1000.0  # kVar -> MVar
+                self.network_model.net.sgen.loc[device_idx, 'q_mvar'] = q_mvar
+            except (IndexError, ValueError, AttributeError):
+                pass
+                
+        except Exception as e:
+            print(f"更新静态发电设备 {device_idx} 参数失败: {e}")
+            
+    def _update_device_data_before_power_flow(self, generated_devices, network_model, data_generator_manager):
+        """
+        在潮流计算前更新设备数据
+        
+        Args:
+            generated_devices (list): 生成的设备列表，格式为['type_idx', ...]
+            network_model: 网络模型对象
+            data_generator_manager: 数据生成器管理器
+            
+        Returns:
+            bool: 更新成功返回True，失败返回False
+        """
+        try:
+            if not network_model or not hasattr(network_model, 'net'):
+                return False
+                
+            for device in generated_devices:
+                device_type, device_idx = device.split('_', 1)
+                device_idx = int(device_idx)
+                
+                if device_type == 'load':
+                    if device_idx in network_model.net.load.index:
+                        load_data = data_generator_manager.generate_device_data('load', device_idx, network_model)
+                        if device_idx in load_data:
+                            load_values = load_data[device_idx]
+                            network_model.net.load.loc[device_idx, 'p_mw'] = load_values['p_mw']
+                            network_model.net.load.loc[device_idx, 'q_mvar'] = load_values['q_mvar']
+                            
+                elif device_type == 'sgen':
+                    if device_idx in network_model.net.sgen.index:
+                        sgen_data = data_generator_manager.generate_device_data('sgen', device_idx, network_model)
+                        if device_idx in sgen_data:
+                            sgen_values = sgen_data[device_idx]
+                            network_model.net.sgen.loc[device_idx, 'p_mw'] = sgen_values['p_mw']
+                            network_model.net.sgen.loc[device_idx, 'q_mvar'] = sgen_values['q_mvar']
+                            
+            return True
+            
+        except Exception as e:
+            print(f"更新设备数据失败: {str(e)}")
+            return False
+
     def update_device_tree_status(self):
         """更新设备树状态"""
         try:
@@ -1283,7 +1447,7 @@ class SimulationWindow(QMainWindow):
                         elif device_type == 'storage' and hasattr(self.network_model.net, 'res_storage'):
                             if device_id in self.network_model.net.res_storage.index:
                                 item.setText(2, "正常")
-                    except:
+                    except (KeyError, AttributeError, ValueError):
                         item.setText(2, "异常")
                 
                 # 递归更新子项
