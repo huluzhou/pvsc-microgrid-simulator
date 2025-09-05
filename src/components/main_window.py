@@ -12,7 +12,7 @@ from PySide6.QtGui import QIcon, QAction
 from components.canvas import NetworkCanvas
 from components.component_palette import ComponentPalette
 from components.properties_panel import PropertiesPanel
-
+import pandapower as pp
 class MainWindow(QMainWindow):
     """主窗口类"""
 
@@ -270,7 +270,7 @@ class MainWindow(QMainWindow):
     # 删除基本网络验证方法（与潮流计算相关）
     
     def validate_network(self):
-        """验证网络拓扑和参数"""
+        """使用pandapower内置函数验证网络拓扑和参数"""
         try:
             # 检查是否有网络模型
             if not hasattr(self.canvas, 'network_model') or not self.canvas.network_model:
@@ -295,39 +295,100 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "网络诊断", "网络中没有电源（外部电网、发电机或光伏）。")
                 return False
             
-            # 检查网络连通性和拓扑
+            # 使用pandapower内置诊断函数
             diagnostic_results = []
             
-            # 检查孤立母线
-            connected_buses = set()
-            if not network_model.net.line.empty:
-                connected_buses.update(network_model.net.line['from_bus'])
-                connected_buses.update(network_model.net.line['to_bus'])
-            if not network_model.net.trafo.empty:
-                connected_buses.update(network_model.net.trafo['hv_bus'])
-                connected_buses.update(network_model.net.trafo['lv_bus'])
+            try:
+                # 运行诊断检查
+                diag_report = pp.diagnostic(network_model.net)
+                
+                # 解析诊断报告
+                if diag_report:
+                    diagnostic_results.extend(diag_report)
+                    
+            except ImportError:
+                # 如果pandapower诊断模块不可用，使用自定义诊断
+                diagnostic_results.append("警告：pandapower诊断模块不可用，使用基础诊断")
+                
+                # 检查孤立母线
+                connected_buses = set()
+                if not network_model.net.line.empty:
+                    connected_buses.update(network_model.net.line['from_bus'])
+                    connected_buses.update(network_model.net.line['to_bus'])
+                if not network_model.net.trafo.empty:
+                    connected_buses.update(network_model.net.trafo['hv_bus'])
+                    connected_buses.update(network_model.net.trafo['lv_bus'])
+                
+                isolated_buses = set(network_model.net.bus.index) - connected_buses
+                if isolated_buses and len(isolated_buses) > 1:
+                    diagnostic_results.append(f"发现 {len(isolated_buses)} 个孤立母线: {list(isolated_buses)}")
+                
+                # 检查负载和发电机是否连接到有效母线
+                invalid_connections = []
+                for component_type in ['load', 'gen', 'sgen', 'ext_grid', 'storage']:
+                    if hasattr(network_model.net, component_type):
+                        component_table = getattr(network_model.net, component_type)
+                        if not component_table.empty:
+                            invalid_buses = set(component_table['bus']) - set(network_model.net.bus.index)
+                            if invalid_buses:
+                                invalid_connections.append(f"{component_type}: {list(invalid_buses)}")
+                
+                if invalid_connections:
+                    diagnostic_results.append(f"发现无效的母线连接: {', '.join(invalid_connections)}")
             
-            isolated_buses = set(network_model.net.bus.index) - connected_buses
-            if isolated_buses and len(isolated_buses) > 1:
-                diagnostic_results.append(f"发现 {len(isolated_buses)} 个孤立母线: {list(isolated_buses)}")
+            # 检查电网连通性
+            try:
+                import pandapower.topology as topology
+                
+                # 检查网络是否连通
+                unsupplied_buses = topology.unsupplied_buses(network_model.net)
+                if unsupplied_buses:
+                    diagnostic_results.append(f"发现未供电母线: {list(unsupplied_buses)}")
+                
+                # 检查是否存在环网
+                if not network_model.net.bus.empty and not network_model.net.line.empty:
+                    try:
+                        cycles = topology.cycles(network_model.net)
+                        if cycles:
+                            diagnostic_results.append(f"检测到环网结构，可能影响潮流计算收敛性")
+                    except:
+                        pass  # 忽略环网检查错误
+                        
+            except ImportError:
+                pass  # 如果拓扑模块不可用，跳过连通性检查
             
-            # 检查负载和发电机是否连接到有效母线
-            invalid_connections = []
-            for component_type in ['load', 'gen', 'sgen', 'ext_grid', 'storage']:
-                if hasattr(network_model.net, component_type):
-                    component_table = getattr(network_model.net, component_type)
-                    if not component_table.empty:
-                        invalid_buses = set(component_table['bus']) - set(network_model.net.bus.index)
-                        if invalid_buses:
-                            invalid_connections.append(f"{component_type}: {list(invalid_buses)}")
+            # 检查负载平衡
+            total_load = 0
+            total_generation = 0
             
-            if invalid_connections:
-                diagnostic_results.append(f"发现无效的母线连接: {', '.join(invalid_connections)}")
+            if not network_model.net.load.empty:
+                total_load += network_model.net.load['p_mw'].sum()
+            if not network_model.net.sgen.empty:
+                total_generation += network_model.net.sgen['p_mw'].sum()
+            if not network_model.net.gen.empty:
+                total_generation += network_model.net.gen['p_mw'].sum()
+            
+            if total_load > 0 and total_generation > 0:
+                balance_ratio = abs(total_generation - total_load) / max(total_generation, total_load)
+                if balance_ratio > 0.1:  # 不平衡超过10%
+                    diagnostic_results.append(
+                        f"功率不平衡: 负载 {total_load:.2f} MW, 发电 {total_generation:.2f} MW, "
+                        f"不平衡率 {balance_ratio*100:.1f}%"
+                    )
+            
+            # 检查电压等级一致性
+            if not network_model.net.bus.empty:
+                voltage_levels = network_model.net.bus['vn_kv'].unique()
+                if len(voltage_levels) > 3:  # 超过3个电压等级
+                    diagnostic_results.append(
+                        f"检测到多个电压等级: {sorted(voltage_levels)} kV，注意变压器配置"
+                    )
             
             # 显示诊断结果
             if diagnostic_results:
-                result_text = "\n".join(diagnostic_results)
-                QMessageBox.warning(self, "网络诊断", f"网络诊断发现以下问题：\n\n{result_text}\n\n建议修复后再进入仿真模式。")
+                result_text = "\n".join(f"• {result}" for result in diagnostic_results)
+                QMessageBox.warning(self, "网络诊断", 
+                    f"网络诊断发现以下问题：\n\n{result_text}\n\n建议修复后再进入仿真模式。")
                 return False
             else:
                 QMessageBox.information(self, "网络诊断", "网络诊断通过！")

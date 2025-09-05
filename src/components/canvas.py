@@ -299,11 +299,9 @@ class NetworkCanvas(QGraphicsView):
                 print("没有有效的母线组件，无法创建网络模型")
                 return False
             
-            # 第二步：创建连接到母线的组件（负载、发电机等）
-            for item in items:
-                if item.component_type == 'bus':
-                    continue  # 母线已经处理过了
-                
+            # 第二步：创建连接到母线的组件（负载、发电机等，但不包括电表）
+            non_meter_items = [item for item in items if item.component_type != 'bus' and item.component_type != 'meter']
+            for item in non_meter_items:
                 try:
                     # 查找该组件连接的母线
                     connected_buses = self.get_connected_buses(item, bus_map)
@@ -381,14 +379,20 @@ class NetworkCanvas(QGraphicsView):
                                 item.properties if hasattr(item, 'properties') else {}
                             )
                             print(f"创建线路: {item.component_name} -> 母线 {from_bus}-{to_bus}")
-                    
-                    elif item.component_type == 'meter':
-                        # 创建电表测量设备
-                        meter_idx = self.network_model.create_measurement(
-                            id(item),
-                            item.properties if hasattr(item, 'properties') else {}
-                        )
-                        print(f"创建电表: {item.component_name} -> 测量索引 {meter_idx}")
+                
+                except Exception as e:
+                    print(f"创建组件 {item.component_name} 时出错: {str(e)}")
+                    # 继续处理其他组件，不中断整个过程
+
+            # 第三步：最后创建电表设备（确保所有其他设备已创建）
+            meter_items = [item for item in items if item.component_type == 'meter']
+            for item in meter_items:
+                try:
+                    meter_idx = self.network_model.create_measurement(
+                        id(item),
+                        item.properties if hasattr(item, 'properties') else {}
+                    )
+                    print(f"创建电表: {item.component_name} -> 测量索引 {meter_idx}")
                             
                 
                 except Exception as e:
@@ -573,6 +577,79 @@ class NetworkCanvas(QGraphicsView):
         connected_type = getattr(connected_item, 'component_type', None)
         connected_index = getattr(connected_item, 'component_index', 0)
         
+        # 获取网络模型中的实际索引
+        actual_index = connected_index
+        if hasattr(self, 'network_model') and self.network_model:
+            # 对于不同类型的组件，获取其在网络模型中的实际索引
+            if connected_type == 'static_generator':
+                # 检查静态发电机是否存在
+                if hasattr(self.network_model.net, 'sgen') and not self.network_model.net.sgen.empty:
+                    if connected_index < len(self.network_model.net.sgen)+1:
+                        actual_index = connected_index
+                    else:
+                        print(f"警告：静态发电机索引 {connected_index} 超出范围，使用索引 0")
+                        actual_index = 0
+                else:
+                    print(f"警告：网络中没有静态发电机，无法创建电表关联")
+                    return
+            elif connected_type == 'load':
+                # 检查负载是否存在
+                if hasattr(self.network_model.net, 'load') and not self.network_model.net.load.empty:
+                    if connected_index < len(self.network_model.net.load)+1:
+                        actual_index = connected_index
+                    else:
+                        print(f"警告：负载索引 {connected_index} 超出范围，使用索引 0")
+                        actual_index = 0
+                else:
+                    print(f"警告：网络中没有负载，无法创建电表关联")
+                    return
+            elif connected_type == 'gen':
+                # 检查发电机是否存在
+                if hasattr(self.network_model.net, 'gen') and not self.network_model.net.gen.empty:
+                    if connected_index < len(self.network_model.net.gen)+1:
+                        actual_index = connected_index
+                    else:
+                        print(f"警告：发电机索引 {connected_index} 超出范围，使用索引 0")
+                        actual_index = 0
+                else:
+                    print(f"警告：网络中没有发电机，无法创建电表关联")
+                    return
+            elif connected_type == 'bus':
+                # 检查母线是否存在
+                if hasattr(self.network_model.net, 'bus') and not self.network_model.net.bus.empty:
+                    if connected_index < len(self.network_model.net.bus)+1:
+                        actual_index = connected_index
+                    else:
+                        print(f"警告：母线索引 {connected_index} 超出范围，使用索引 0")
+                        actual_index = 0
+                else:
+                    print(f"警告：网络中没有母线，无法创建电表关联")
+                    return
+            elif connected_type == 'transformer':
+                # 检查变压器是否存在
+                if hasattr(self.network_model.net, 'trafo') and not self.network_model.net.trafo.empty:
+                    if connected_index < len(self.network_model.net.trafo)+1:
+                        actual_index = connected_index
+                    else:
+                        print(f"警告：变压器索引 {connected_index} 超出范围，使用索引 0")
+                        actual_index = 0
+                else:
+                    print(f"警告：网络中没有变压器，无法创建电表关联")
+                    return
+            elif connected_type == 'line':
+                # 检查线路是否存在
+                if hasattr(self.network_model.net, 'line') and not self.network_model.net.line.empty:
+                    if connected_index < len(self.network_model.net.line):
+                        actual_index = connected_index
+                    else:
+                        print(f"警告：线路索引 {connected_index} 超出范围，使用索引 0")
+                        actual_index = 0
+                else:
+                    print(f"警告：网络中没有线路，无法创建电表关联")
+                    return
+        else:
+            actual_index = connected_index
+        
         if not connected_type:
             return
         
@@ -588,7 +665,7 @@ class NetworkCanvas(QGraphicsView):
         
         # 更新电表的测量属性
         meter_item.properties['element_type'] = element_type
-        meter_item.properties['element'] = connected_index
+        meter_item.properties['element'] = actual_index
         
         # 根据组件类型和连接点索引设置测量侧
         side = self._determine_measurement_side(connected_item, connected_point_index)

@@ -296,6 +296,17 @@ class SimulationWindow(QMainWindow):
                 status = "正常" if hasattr(self.network_model.net, 'res_storage') and not self.network_model.net.res_storage.empty and idx in self.network_model.net.res_storage.index else "未计算"
                 storage_item = QTreeWidgetItem(storage_root, [f"Storage {idx}: {storage_name}", "储能", status])
                 storage_item.setData(0, Qt.UserRole, ('storage', idx))
+                
+        # 添加电表
+        if hasattr(self.network_model.net, 'measurement') and not self.network_model.net.measurement.empty:
+            meter_root = QTreeWidgetItem(self.device_tree, ["电表", "分类", "-"])
+            for idx, meter in self.network_model.net.measurement.iterrows():
+                meter_name = meter.get('name', f'Meter_{idx}')
+                element_type = meter.get('element_type', '未知')
+                element_idx = meter.get('element', idx)
+                status = "正常" if meter.get('in_service', True) else "离线"
+                meter_item = QTreeWidgetItem(meter_root, [f"Meter {idx}: {meter_name} ({element_type}_{element_idx})", "电表", status])
+                meter_item.setData(0, Qt.UserRole, ('meter', idx))
         
         # 展开所有节点
         self.device_tree.expandAll()
