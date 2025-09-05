@@ -1158,7 +1158,7 @@ class SimulationWindow(QMainWindow):
                 self._energy_cache['pv_items'].clear()
                 self._energy_cache['storage_items'].clear()
                 
-                for item in self.canvas.scene().items():
+                for item in self.canvas.scene.items():
                     if hasattr(item, 'component_type'):
                         if item.component_type == 'static_generator':
                             self._energy_cache['pv_items'][item.component_index] = item
@@ -1214,7 +1214,7 @@ class SimulationWindow(QMainWindow):
                 
             # 获取当前场景中的所有储能设备
             storage_items = []
-            for item in self.canvas.scene().items():
+            for item in self.canvas.scene.items():
                 if hasattr(item, 'component_type') and item.component_type == 'storage':
                     storage_items.append(item)
             
@@ -1396,7 +1396,7 @@ class SimulationWindow(QMainWindow):
             # 更新缓存（如果需要）
             if not self._storage_items_cache or self._storage_items_cache.get('_last_update', 0) < time.time() - 5:
                 self._storage_items_cache.clear()
-                for item in self.canvas.scene().items():
+                for item in self.canvas.scene.items():
                     if hasattr(item, 'component_type') and item.component_type == 'storage':
                         self._storage_items_cache[item.component_index] = item
                 self._storage_items_cache['_last_update'] = time.time()
@@ -1453,7 +1453,7 @@ class SimulationWindow(QMainWindow):
             # 更新缓存
             if not self._charger_items_cache or self._charger_items_cache.get('_last_update', 0) < time.time() - 5:
                 self._charger_items_cache.clear()
-                for item in self.canvas.scene().items():
+                for item in self.canvas.scene.items():
                     if hasattr(item, 'component_type') and item.component_type == 'load':
                         # 假设负荷类型中的充电桩有特殊标识
                         self._charger_items_cache[item.component_index] = item
@@ -1487,7 +1487,7 @@ class SimulationWindow(QMainWindow):
             # 更新缓存
             if not self._sgen_items_cache or self._sgen_items_cache.get('_last_update', 0) < time.time() - 5:
                 self._sgen_items_cache.clear()
-                for item in self.canvas.scene().items():
+                for item in self.canvas.scene.items():
                     if hasattr(item, 'component_type') and item.component_type == 'static_generator':
                         self._sgen_items_cache[item.component_index] = item
                 self._sgen_items_cache['_last_update'] = time.time()
@@ -2121,7 +2121,7 @@ class SimulationWindow(QMainWindow):
                 
             # 获取当前场景中的所有光伏设备
             pv_items = []
-            for item in self.canvas.scene().items():
+            for item in self.canvas.scene.items():
                 if hasattr(item, 'component_type') and item.component_type == 'static_generator':
                     pv_items.append(item)
             
