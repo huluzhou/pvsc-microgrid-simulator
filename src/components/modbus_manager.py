@@ -264,12 +264,15 @@ class ModbusManager:
             102: 3,  # gun3 - 初始状态3
             103: 4,  # gun4 - 初始状态4
         }
+        charger_hold_registers = {
+            0:0, #功率限制
+        }
         
         device_context = {
             1: ModbusDeviceContext(
                 di=ModbusSparseDataBlock({}),
                 co=ModbusSparseDataBlock({}),
-                hr=ModbusSparseDataBlock({}),
+                hr=ModbusSparseDataBlock(charger_hold_registers),
                 ir=ModbusSparseDataBlock(charger_input_registers)
             )
         }
@@ -417,17 +420,24 @@ class ModbusManager:
             return False
 
     def update_meter_context(self, index, slave_context):
-        """更新电表特定上下文数据"""
+        """更新电表特定上下文数据 - 优化缓存结构
+        
+        缓存机制优化：
+        - 使用单一缓存结构，减少内存占用
+        - 直接按索引存储设备对象，避免重复查找
+        - 功率值实时获取，确保数据准确性
+        """
         try:
-            # 使用缓存机制提高性能
             from .network_items import MeterItem
+            
+            # 初始化单一缓存结构（如果尚未初始化）
             if not hasattr(self, '_meter_cache'):
                 self._meter_cache = {}
             
-            # 检查缓存，如果存在且索引匹配则直接使用
+            # 检查并获取电表设备
             meter_item = self._meter_cache.get(index)
-            if meter_item is None or meter_item.component_index != index:
-                # 仅在缓存未命中时遍历场景
+            if meter_item is None:
+                # 仅在首次访问时查找设备
                 for item in self.scene.items():
                     if isinstance(item, MeterItem) and item.component_index == index:
                         meter_item = item
@@ -437,8 +447,8 @@ class ModbusManager:
             if not meter_item:
                 print(f"未找到电表图形项: {index}")
                 return
-                
-            # 从电表图形项的properties中获取参数
+            
+            # 直接获取映射参数（不缓存，因为访问开销很小）
             element_type = meter_item.properties.get('element_type', None)
             element = meter_item.properties.get('element', None)
             side = meter_item.properties.get('side', None)
@@ -446,50 +456,37 @@ class ModbusManager:
             if not element_type or not element or not side:
                 print(f"电表 {index} 缺少必要参数")
                 return
-
-            # 获取网络中的实际功率数据
+            
+            # 实时获取功率数据（不缓存）
             power_value = 0.0
-
-            if element_type == "load":
-                if element in self.network_model.net.load.index:
+            try:
+                if element_type == "load" and element in self.network_model.net.load.index:
                     power_value = self.network_model.net.res_load.loc[element, "p_mw"]
-
-            if element_type == "bus":
-                if element in self.network_model.net.bus.index:
+                elif element_type == "bus" and element in self.network_model.net.bus.index:
                     power_value = self.network_model.net.res_bus.loc[element, "p_mw"]
-
-            elif element_type == "sgen":
-                if element in self.network_model.net.sgen.index:
+                elif element_type == "sgen" and element in self.network_model.net.sgen.index:
                     power_value = self.network_model.net.res_sgen.loc[element, "p_mw"]
-                    
-            elif element_type == 'storage':
-                if element in self.network_model.net.storage.index:
+                elif element_type == 'storage' and element in self.network_model.net.storage.index:
                     power_value = self.network_model.net.res_storage.loc[element, 'p_mw']
-                    
-            elif element_type == 'line':
-                if element in self.network_model.net.line.index:
-                    # 获取线路功率，根据side参数确定方向
+                elif element_type == 'line' and element in self.network_model.net.line.index:
                     if side == 'from':
                         power_value = self.network_model.net.res_line.loc[element, 'p_from_mw']
                     elif side == 'to':
                         power_value = self.network_model.net.res_line.loc[element, 'p_to_mw']
                     else:
-                        # 默认使用from侧功率
                         power_value = self.network_model.net.res_line.loc[element, 'p_from_mw']
-                        
-            elif element_type == 'trafo':
-                if element in self.network_model.net.trafo.index:
-                    # 获取变压器功率，根据side参数确定方向
+                elif element_type == 'trafo' and element in self.network_model.net.trafo.index:
                     if side == 'hv':
                         power_value = self.network_model.net.res_trafo.loc[element, 'p_hv_mw']
                     elif side == 'lv':
                         power_value = self.network_model.net.res_trafo.loc[element, 'p_lv_mw']
                     else:
-                        # 默认使用高压侧功率
                         power_value = self.network_model.net.res_trafo.loc[element, 'p_hv_mw']
+                        
+            except (KeyError, AttributeError):
+                power_value = 0.0
             
             # 将功率值转换为整数（单位：kW）
-            # power_kw = int(abs(power_value) * 1000)
             power_kw = int(power_value / 50 * 100)
             
             # 写入保持寄存器（功能码3，地址0）
@@ -497,6 +494,7 @@ class ModbusManager:
             
         except Exception as e:
             print(f"更新电表上下文失败: {e}")
+
 
     def update_sgen_context(self, index, slave_context):
         """更新光伏设备的Modbus寄存器数据

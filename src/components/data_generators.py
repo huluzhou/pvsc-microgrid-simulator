@@ -342,7 +342,7 @@ class DataGeneratorManager:
                 self.pv_generator.set_cloud_cover(kwargs['cloud_cover'])
     
     def generate_device_data(self, device_type, index, network_model):
-        """生成指定设备类型的数据
+        """实时生成指定设备类型的数据
         
         Args:
             device_type: 设备类型 ('load', 'sgen')
@@ -350,12 +350,14 @@ class DataGeneratorManager:
             network_model: 网络模型
             
         Returns:
-            dict: 生成的数据字典
+            dict: 实时生成的数据字典
         """
-        if device_type == 'load':
-            return self.load_generator.generate_load_data(index, network_model)
-        elif device_type == 'sgen':
-            return self.pv_generator.generate_pv_data(index, network_model)
+        # 实时生成数据，移除所有缓存机制
+        if device_type == 'load' and device_type in self.generators:
+            return self.generators[device_type].generate_load_data(index, network_model)
+        elif device_type == 'sgen' and device_type in self.generators:
+            return self.generators[device_type].generate_pv_data(index, network_model)
+        
         return {}
     
     def start_generation(self, device_type=None):
@@ -364,46 +366,82 @@ class DataGeneratorManager:
         Args:
             device_type: 设备类型，如果为None则启动所有生成器
         """
+        # 批量操作，避免重复遍历
         if device_type is None:
-            for generator in self.generators.values():
-                generator.start_generation()
+            # 使用列表推导式批量启动
+            [gen.start_generation() for gen in self.generators.values()]
         elif device_type in self.generators:
             self.generators[device_type].start_generation()
     
     def stop_generation(self, device_type=None):
-        """停止数据生成
+        """停止数据生成 - 优化版本
         
         Args:
             device_type: 设备类型，如果为None则停止所有生成器
         """
         if device_type is None:
-            for generator in self.generators.values():
-                generator.stop_generation()
+            # 使用列表推导式批量停止
+            [gen.stop_generation() for gen in self.generators.values()]
         elif device_type in self.generators:
             self.generators[device_type].stop_generation()
     
     def set_interval(self, interval, device_type=None):
-        """设置生成间隔
+        """设置生成间隔 - 优化版本
         
         Args:
             interval: 生成间隔（秒）
             device_type: 设备类型，如果为None则应用到所有生成器
         """
         if device_type is None:
+            # 批量设置，避免重复遍历
             for generator in self.generators.values():
                 generator.set_interval(interval)
         elif device_type in self.generators:
             self.generators[device_type].set_interval(interval)
     
     def set_variation(self, variation, device_type=None):
-        """设置变化幅度
+        """设置变化幅度 - 优化版本
         
         Args:
             variation: 变化幅度百分比（5-50%）
             device_type: 设备类型，如果为None则应用到所有生成器
         """
         if device_type is None:
+            # 批量设置，避免重复遍历
             for generator in self.generators.values():
                 generator.set_variation(variation)
         elif device_type in self.generators:
             self.generators[device_type].set_variation(variation)
+    
+    def generate_batch_data(self, device_list, network_model):
+        """批量生成多个设备的数据 - 新增优化方法
+        
+        Args:
+            device_list: 设备列表，格式为[(device_type, index), ...]
+            network_model: 网络模型
+            
+        Returns:
+            dict: 批量生成的数据结果
+        """
+        if not device_list or not network_model:
+            return {}
+        
+        # 按设备类型分组，避免重复遍历
+        device_groups = {}
+        for device_type, index in device_list:
+            if device_type not in device_groups:
+                device_groups[device_type] = []
+            device_groups[device_type].append(index)
+        
+        # 批量生成每类设备的数据
+        results = {}
+        for device_type, indices in device_groups.items():
+            if device_type in self.generators:
+                generator = self.generators[device_type]
+                for index in indices:
+                    data = generator.generate_data(index, network_model)
+                    if data:
+                        key = f"{device_type}_{index}"
+                        results[key] = data.get(index, {})
+        
+        return results
