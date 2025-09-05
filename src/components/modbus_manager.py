@@ -54,7 +54,7 @@ class ModbusManager:
                     'p_mw': float(item.properties.get('p_mw', 0)),
                     'q_mvar': float(item.properties.get('q_mvar', 0)),
                     'sn_mva': float(item.properties.get('sn_mva', 0)),
-                    'max_e_mwh': float(item.properties.get('max_e_mwh', None)),
+                    'max_e_mwh': float(item.properties.get('max_e_mwh', 1.0)),
                 }
                 self.ip_devices.append(device_info)
         
@@ -646,8 +646,15 @@ class ModbusManager:
             slave_context.setValues(4, 413, [current_value])  # B相
             slave_context.setValues(4, 414, [current_value])  # C相
             
-            # 从network_item获取储能设备当前状态
-            current_state = storage_item.state  # 直接从StorageItem实例获取状态
+            # 根据功率值自动判断储能设备状态
+            if abs(active_power) < 0.001:
+                current_state = 'ready'  # 功率接近0，处于就绪状态
+            elif active_power > 0:  # 正值为充电
+                current_state = 'charge'
+            elif active_power < 0:  # 负值为放电
+                current_state = 'discharge'
+            else:
+                current_state = storage_item.state  # 保持原有状态
             
             # 状态映射表
             state_map = {
@@ -673,8 +680,8 @@ class ModbusManager:
                 slave_context.setValues(4, 400 - 1, [0])  # 不可用（停机或故障）
             
             # 调试信息（可选，生产环境可注释掉）
-            if abs(active_power) > 0.001:
-                print(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
+            # if abs(active_power) > 0.001:
+            #     print(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
             
         except KeyError as e:
             print(f"储能设备数据缺失: {e}")
@@ -795,6 +802,9 @@ class ModbusManager:
             self.modbus_contexts.clear()
             self.running_services.clear()
             
+            # 清空IP设备列表，避免后续更新尝试
+            self.ip_devices.clear()
+            
             print("已停止所有Modbus服务器")
             return True
         except Exception as e:
@@ -807,23 +817,41 @@ class ModbusManager:
             try:
                 device_type = device_info['type']
                 device_idx = device_info['index']
+                device_key = f"{device_type}_{device_idx}"
+                
+                # 检查设备服务是否仍在运行
+                if device_key not in self.running_services:
+                    continue
+                    
+                # 检查设备上下文是否存在
+                if device_key not in self.modbus_contexts:
+                    continue
+                    
+                # 获取正确的slave context
+                server_context = self.modbus_contexts[device_key]
+                if hasattr(server_context, '__getitem__'):
+                    # ModbusServerContext通过[slave_id]访问slave context
+                    slave_context = server_context[1]  # 使用slave ID 1
+                else:
+                    # 如果已经是slave context，直接使用
+                    slave_context = server_context
                 
                 # 从网络模型中获取最新的功率数据
                 if device_type == 'meter' and hasattr(self.network_model.net, 'meter'):
                     if device_idx in self.network_model.net.meter.index:
-                        self.update_meter_context(device_idx, self.modbus_contexts[f"{device_type}_{device_idx}"])
+                        self.update_meter_context(device_idx, slave_context)
                         
                 elif device_type == 'sgen' and hasattr(self.network_model.net, 'sgen'):
                     if device_idx in self.network_model.net.sgen.index:
-                        self.update_sgen_context(device_idx, device_info, self.modbus_contexts[f"{device_type}_{device_idx}"])
+                        self.update_sgen_context(device_idx, device_info, slave_context)
 
                 elif device_type == 'storage' and hasattr(self.network_model.net, 'storage'):
                     if device_idx in self.network_model.net.storage.index:
-                        self.update_storage_context(device_idx, device_info,self.modbus_contexts[f"{device_type}_{device_idx}"])
+                        self.update_storage_context(device_idx, device_info, slave_context)
 
-                elif device_type == 'charger' and hasattr(self.network_model.net, 'charger'):
-                    if device_idx in self.network_model.net.charger.index:
-                        self.update_charger_context(device_idx, self.modbus_contexts[f"{device_type}_{device_idx}"])
+                elif device_type == 'charger' and hasattr(self.network_model.net, 'load'):  # 充电桩作为负载
+                    if device_idx in self.network_model.net.load.index:
+                        self.update_charger_context(device_idx, slave_context)
                         
             except Exception as e:
                 print(f"更新设备Modbus数据失败 {device_info['name']}: {e}")

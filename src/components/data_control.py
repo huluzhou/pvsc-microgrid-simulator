@@ -204,7 +204,7 @@ class DataControlManager:
         self.parent_window.storage_power_slider = QSlider(Qt.Horizontal)
         self.parent_window.storage_power_slider.setRange(-1000, 1000)  # 滑块范围：-100.0到100.0MW（乘以10）
         self.parent_window.storage_power_slider.setValue(0)
-        self.parent_window.storage_power_slider.setMinimumWidth(300)
+        self.parent_window.storage_power_slider.setMinimumWidth(100)
         self.parent_window.storage_power_slider.valueChanged.connect(self.on_storage_power_changed)
         
         self.parent_window.storage_power_spinbox = QDoubleSpinBox()
@@ -216,10 +216,10 @@ class DataControlManager:
         storage_power_layout = QHBoxLayout()
         storage_power_layout.addWidget(self.parent_window.storage_power_slider)
         storage_power_layout.addWidget(self.parent_window.storage_power_spinbox)
-        storage_manual_panel_layout.addRow("功率控制 (正值=放电, 负值=充电):", storage_power_layout)
+        storage_manual_panel_layout.addRow("功率控制:", storage_power_layout)
         
         # 功率说明标签
-        power_info_label = QLabel("提示：正值表示放电（向电网供电），负值表示充电（从电网取电）")
+        power_info_label = QLabel("提示：正值表示充电（从电网取电），负值表示放电（向电网供电）")
         power_info_label.setStyleSheet("color: #666; font-size: 12px;")
         storage_manual_panel_layout.addRow("", power_info_label)
         

@@ -616,7 +616,7 @@ class StorageItem(BaseNetworkItem):
             "index": self.component_index,  # 组件索引
             "sn_mva": 1.0,
             "geodata": (0, 0),
-            "p_mw": 10.0,  # 额定功率
+            "p_mw": 1.0,  # 额定功率
             "max_e_mwh": 50.0,  # 最大储能容量
             "soc_percent": 50.0,  # 荷电状态百分比
             "bus": None,  # 连接的母线
@@ -653,7 +653,7 @@ class StorageItem(BaseNetworkItem):
         更新实时数据
         
         Args:
-            current_power_mw: 当前功率 (MW)，正值为放电，负值为充电
+            current_power_mw: 当前功率 (MW)，正值为充电，负值为放电
             time_delta_hours: 时间间隔 (小时)
         """
         # 功率转换为 kW
@@ -664,14 +664,14 @@ class StorageItem(BaseNetworkItem):
         
         # 更新SOC
         max_energy_kwh = self.properties.get("max_e_mwh", 50.0) * 1000
-        if current_power_kw > 0:  # 放电
-            self.soc_percent = max(0, self.soc_percent - (energy_delta / max_energy_kwh) * 100)
-            self.today_discharge_energy += energy_delta
-            self.total_discharge_energy += energy_delta
-        elif current_power_kw < 0:  # 充电
+        if current_power_kw > 0:  # 充电
             self.soc_percent = min(100, self.soc_percent + (energy_delta / max_energy_kwh) * 100)
             self.today_charge_energy += energy_delta
             self.total_charge_energy += energy_delta
+        elif current_power_kw < 0:  # 放电
+            self.soc_percent = max(0, self.soc_percent - (energy_delta / max_energy_kwh) * 100)
+            self.today_discharge_energy += energy_delta
+            self.total_discharge_energy += energy_delta
             
         # 更新属性中的SOC值
         self.properties["soc_percent"] = self.soc_percent

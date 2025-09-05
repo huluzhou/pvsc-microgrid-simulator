@@ -1127,6 +1127,7 @@ class SimulationWindow(QMainWindow):
                     
             except Exception as e:
                 self.statusBar().showMessage(f"潮流计算失败: {str(e)}")
+                return  # 潮流计算失败，跳过后续数据更新操作
                 
         except Exception as e:
             print(f"自动潮流计算错误: {str(e)}")
@@ -1411,24 +1412,7 @@ class SimulationWindow(QMainWindow):
                 
                 # 更新开关机状态，根据实际功率判断充放电状态
                 if power_on:
-                    try:
-                        # 获取实际功率数据
-                        if (hasattr(self.network_model.net, 'res_storage') and 
-                            not self.network_model.net.res_storage.empty and
-                            device_idx in self.network_model.net.res_storage.index):
-                            actual_power = float(self.network_model.net.res_storage.loc[device_idx, 'p_mw'])
-                        else:
-                            actual_power = float(self.network_model.net.storage.loc[device_idx, 'p_mw'])
-                        
-                        # 根据实际功率确定当前运行状态
-                        if abs(actual_power) < 0.001:
-                            storage_item.state = 'ready'
-                        elif actual_power > 0:
-                            storage_item.state = 'discharge'
-                        elif actual_power < 0:
-                            storage_item.state = 'charge'
-                    except (KeyError, AttributeError, ValueError):
-                        storage_item.state = 'ready'  # 默认状态
+                    storage_item.state = 'ready'  # 默认状态
                 else:
                     storage_item.state = 'halt'
                     
