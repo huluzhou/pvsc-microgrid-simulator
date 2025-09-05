@@ -88,14 +88,14 @@ class SimulationWindow(QMainWindow):
         
         self.init_ui()
         self.load_network_data()
-        self.auto_calc_timer.start(1000)
-        self.is_auto_calculating = True
+        # 默认不启动自动计算，需要用户手动启动
+        self.is_auto_calculating = False
         # 初始化新的计算控制UI状态
         if hasattr(self, 'start_calc_btn'):
-            self.start_calc_btn.setChecked(True)
-            self.start_calc_btn.setText("停止仿真")
+            self.start_calc_btn.setChecked(False)
+            self.start_calc_btn.setText("开始仿真")
         if hasattr(self, 'calc_status_label'):
-            self.calc_status_label.setText("仿真状态: 运行中")
+            self.calc_status_label.setText("仿真状态: 已停止")
 
     def init_ui(self):
         """初始化用户界面"""
@@ -1090,6 +1090,11 @@ class SimulationWindow(QMainWindow):
             if not self.network_model or not hasattr(self.network_model, 'net'):
                 return
                 
+            # 性能监控：跳过计算如果上次计算未完成
+            if hasattr(self, '_is_calculating') and self._is_calculating:
+                return
+            self._is_calculating = True
+                
             # 检查每日重置
             self.check_and_reset_daily_data()
                 
@@ -1108,18 +1113,23 @@ class SimulationWindow(QMainWindow):
                 # 批量更新能量统计
                 self._update_energy_stats_batch()
                 
-                # 条件更新设备树状态（减少频率）
-                if not hasattr(self, '_tree_update_counter'):
-                    self._tree_update_counter = 0
-                self._tree_update_counter += 1
-                if self._tree_update_counter % 5 == 0:  # 每5次更新一次
+                # 智能更新策略：仅在数据变化时更新UI
+                if not hasattr(self, '_ui_update_counter'):
+                    self._ui_update_counter = 0
+                self._ui_update_counter += 1
+                
+                # 每3次计算更新一次设备树（约6秒一次）
+                if self._ui_update_counter % 3 == 0:
                     self.update_device_tree_status()
                 
-                # 更新功率曲线
-                self.power_monitor.update_power_curve()
+                # 每2次计算更新一次功率曲线（约4秒一次）
+                if self._ui_update_counter % 2 == 0:
+                    self.power_monitor.update_power_curve()
                 
-                # 条件更新组件参数表格
-                if hasattr(self, 'current_component_type') and self.current_component_type:
+                # 仅在选择设备且有变化时更新参数表格
+                if (hasattr(self, 'current_component_type') and 
+                    self.current_component_type and 
+                    self._ui_update_counter % 4 == 0):
                     self.update_component_params_table()
                 
                 # 批量更新Modbus数据
@@ -1132,6 +1142,10 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             print(f"自动潮流计算错误: {str(e)}")
             self.statusBar().showMessage("自动潮流计算发生错误")
+        finally:
+            # 重置计算状态标志
+            if hasattr(self, '_is_calculating'):
+                self._is_calculating = False
     
 
 

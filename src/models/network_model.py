@@ -249,10 +249,20 @@ class NetworkModel:
             properties: 充电站属性
         
         Returns:
-            int: pandapower负载索引（充电站作为负载处理）
+            int: pandapower负载索引（充电站作为负载处理，但使用独立的索引）
         """
-        # 充电站作为可控负载处理
+        # 充电站作为可控负载处理，但为了避免与负载索引冲突，使用特殊前缀
         use_power_factor = properties.get("use_power_factor", False)
+        
+        # 为充电桩分配独立的索引，避免与负载冲突
+        charger_index = properties.get("index", None)
+        if charger_index is None:
+            # 如果没有指定索引，使用当前负载数量+1000作为充电桩的起始索引
+            charger_index = len(self.net.load) + 1000
+        else:
+            # 如果指定了索引，确保不与现有负载冲突
+            # 为充电桩索引添加1000偏移量，避免与负载索引重叠
+            charger_index = charger_index + 1000
         
         if use_power_factor:
             # 使用功率因数模式 - 调用create_load_from_cosphi
@@ -266,8 +276,8 @@ class NetworkModel:
                 sn_mva=sn_mva,
                 cos_phi=cos_phi,
                 mode=mode,
-                name=properties.get("name", "Load"),
-                index=properties.get("index", None),
+                name=properties.get("name", f"Charger_{charger_index-1000}"),
+                index=charger_index,
                 in_service=properties.get("in_service", True),
             )
         else:
@@ -278,8 +288,8 @@ class NetworkModel:
                 self.net,
                 bus=bus,
                 p_mw=p_mw,
-                name=properties.get("name", "Load"),
-                index=properties.get("index", None),
+                name=properties.get("name", f"Charger_{charger_index-1000}"),
+                index=charger_index,
                 in_service=properties.get("in_service", True),
             )
         self.component_map[item_id] = {"type": "charger", "idx": charger_idx}
@@ -429,32 +439,47 @@ class NetworkModel:
         elif component_type == "storage":
             self.net.storage.loc[idx, "p_mw"] = properties.get("p_mw", self.net.storage.loc[idx, "p_mw"])
             self.net.storage.loc[idx, "max_e_mwh"] = properties.get("max_e_mwh", self.net.storage.loc[idx, "max_e_mwh"])
-        
+
         elif component_type == "charger":
-            # 根据use_power_factor参数决定如何更新功率值
+            # 充电桩作为负载处理，但使用独立的索引（已偏移1000）
             use_power_factor = properties.get("use_power_factor", False)
             
-            if use_power_factor:
-                # 使用功率因数模式 - 根据sn_mva和cos_phi计算p_mw
-                sn_mva = properties.get("sn_mva", 0.1)
-                cos_phi = properties.get("cos_phi", 0.9)
+            # 确保索引在有效范围内（已考虑1000偏移）
+            if idx < len(self.net.load)+1000:
+                if use_power_factor:
+                    # 使用功率因数模式 - 与负载保持一致
+                    sn_mva = properties.get("sn_mva", 1.0)
+                    cos_phi = properties.get("cos_phi", 0.9)
+                    
+                    # 根据功率因数计算有功功率
+                    p_mw = sn_mva * cos_phi
+                    self.net.load.loc[idx, "p_mw"] = p_mw
+                    
+                    # 如果存在q_mvar列，也更新无功功率
+                    if "q_mvar" in self.net.load.columns:
+                        sin_phi = (1 - cos_phi**2)**0.5
+                        q_mvar = sn_mva * sin_phi  # 负载通常消耗感性无功功率
+                        self.net.load.loc[idx, "q_mvar"] = q_mvar
+                    
+                    # 更新视在功率（与负载保持一致）
+                    if "sn_mva" in self.net.load.columns:
+                        self.net.load.loc[idx, "sn_mva"] = sn_mva
+                else:
+                    # 直接使用有功功率模式
+                    self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
                 
-                # 根据功率因数计算有功功率
-                p_mw = sn_mva * cos_phi
-                self.net.load.loc[idx, "p_mw"] = p_mw
+                # 更新名称属性
+                self.net.load.loc[idx, "name"] = properties.get("name", self.net.load.loc[idx, "name"])
                 
-                # 如果存在q_mvar列，也更新无功功率
-                if "q_mvar" in self.net.load.columns:
-                    sin_phi = (1 - cos_phi**2)**0.5
-                    q_mvar = sn_mva * sin_phi  # 负载通常消耗感性无功功率
-                    self.net.load.loc[idx, "q_mvar"] = q_mvar
-            else:
-                # 直接使用有功功率
-                self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
-            
-            # 更新其他属性
-            if "in_service" in self.net.load.columns:
-                self.net.load.loc[idx, "in_service"] = properties.get("in_service", self.net.load.loc[idx, "in_service"])
+                # 更新其他与负载一致的属性
+                if "const_z_percent" in self.net.load.columns:
+                    self.net.load.loc[idx, "const_z_percent"] = properties.get("const_z_percent", self.net.load.loc[idx, "const_z_percent"])
+                if "const_i_percent" in self.net.load.columns:
+                    self.net.load.loc[idx, "const_i_percent"] = properties.get("const_i_percent", self.net.load.loc[idx, "const_i_percent"])
+                if "scaling" in self.net.load.columns:
+                    self.net.load.loc[idx, "scaling"] = properties.get("scaling", self.net.load.loc[idx, "scaling"])
+                if "in_service" in self.net.load.columns:
+                    self.net.load.loc[idx, "in_service"] = properties.get("in_service", self.net.load.loc[idx, "in_service"])
         
         elif component_type == "static_generator":
             # 根据use_power_factor参数决定如何更新功率值

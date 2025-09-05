@@ -104,7 +104,7 @@ class UIComponentManager:
         control_layout = QHBoxLayout()
         self.parent_window.start_calc_btn = QPushButton("开始仿真")
         self.parent_window.start_calc_btn.setCheckable(True)
-        self.parent_window.start_calc_btn.setChecked(True)  # 默认开始计算
+        self.parent_window.start_calc_btn.setChecked(False)  # 默认开始计算
         self.parent_window.start_calc_btn.clicked.connect(self.parent_window.toggle_calculation)
 
         control_layout.addWidget(self.parent_window.start_calc_btn)
