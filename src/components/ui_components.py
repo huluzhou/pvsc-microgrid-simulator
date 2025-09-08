@@ -56,7 +56,7 @@ class UIComponentManager:
         # 设备分类选择
         category_layout = QHBoxLayout()
         self.parent_window.category_combo = QComboBox()
-        self.parent_window.category_combo.addItems(["全部设备", "母线", "线路", "变压器", "发电设备", "负载设备", "储能设备"])
+        self.parent_window.category_combo.addItems(["全部设备", "母线", "线路", "变压器", "发电设备", "负载设备", "储能设备", "测量设备"])
         self.parent_window.category_combo.currentTextChanged.connect(self.parent_window.filter_by_category)
         
         self.parent_window.refresh_tree_btn = QPushButton("刷新")

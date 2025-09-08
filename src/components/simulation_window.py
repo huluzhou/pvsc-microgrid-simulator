@@ -401,6 +401,10 @@ class SimulationWindow(QMainWindow):
                 if hasattr(self.network_model.net, 'res_storage') and not self.network_model.net.res_storage.empty:
                     if component_idx in self.network_model.net.res_storage.index:
                         result_data = self.network_model.net.res_storage.loc[component_idx]
+            elif component_type == 'meter':
+                # 电表设备特殊处理 - 显示测量结果
+                component_data = None
+                result_data = self.show_meter_measurement_details(component_idx)
             else:
                 return
                 
@@ -413,8 +417,9 @@ class SimulationWindow(QMainWindow):
                     all_params[f"结果_{param}"] = value
                     
             # 再添加组件参数
-            for param, value in component_data.items():
-                all_params[f"参数_{param}"] = value
+            if component_data is not None:
+                for param, value in component_data.items():
+                    all_params[f"参数_{param}"] = value
             
             self.component_params_table.setRowCount(len(all_params))
             for i, (param, value) in enumerate(all_params.items()):
@@ -445,6 +450,72 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             print(f"更新组件参数表格时出错: {str(e)}")
 
+    def show_meter_measurement_details(self, meter_idx):
+        """显示电表设备的测量结果详情"""
+        try:
+            # 获取电表图形项
+            meter_item = self.get_meter_item_by_type_and_id('meter', meter_idx)
+            if not meter_item:
+                return {"error": f"未找到电表设备: {meter_idx}"}
+            
+            # 获取电表属性
+            properties = meter_item.properties
+            
+            # 获取测量参数
+            meas_type = properties.get('meas_type', 'p')
+            element_type = properties.get('element_type', 'bus')
+            element_idx = properties.get('element', 0)
+            side = properties.get('side', None)
+            
+            # 获取实时测量值
+            measurement_value = 0.0
+            para = ""
+            try:
+                if element_type == 'load' and hasattr(self.network_model.net, 'res_load'):
+                    if element_idx in self.network_model.net.res_load.index:
+                        measurement_value = self.network_model.net.res_load.loc[element_idx, 'p_mw']
+                        para = "p_mw"
+                elif element_type == 'sgen' and hasattr(self.network_model.net, 'res_sgen'):
+                    if element_idx in self.network_model.net.res_sgen.index:
+                        measurement_value = self.network_model.net.res_sgen.loc[element_idx, 'p_mw']
+                        para = "p_mw"
+                elif element_type == 'storage' and hasattr(self.network_model.net, 'res_storage'):
+                    if element_idx in self.network_model.net.res_storage.index:
+                        measurement_value = self.network_model.net.res_storage.loc[element_idx, 'p_mw']
+                        para = "p_mw"
+                elif element_type == 'bus' and hasattr(self.network_model.net, 'res_bus'):  
+                    if element_idx in self.network_model.net.res_bus.index:
+                        measurement_value = self.network_model.net.res_bus.loc[element_idx, 'p_mw']
+                        para = "p_mw"
+                elif element_type == 'line' and hasattr(self.network_model.net, 'res_line'):
+                    if element_idx in self.network_model.net.res_line.index:
+                        if side == "from":
+                            measurement_value = self.network_model.net.res_line.loc[element_idx, 'p_from_mw']
+                            para = "p_from_mw"
+                        elif side == "to":
+                            measurement_value = self.network_model.net.res_line.loc[element_idx, 'p_to_mw']
+                            para = "p_to_mw"
+                elif element_type == 'trafo' and hasattr(self.network_model.net, 'res_trafo'):
+                    if element_idx in self.network_model.net.res_trafo.index:
+                        if side == "hv":
+                            measurement_value = self.network_model.net.res_trafo.loc[element_idx, 'p_hv_mw']
+                            para = "p_hv_mw"
+                        elif side == "lv":
+                            measurement_value = self.network_model.net.res_trafo.loc[element_idx, 'p_lv_mw']
+                            para = "p_lv_mw"
+            except Exception as e:
+                return {"error": f"获取测量值时出错: {str(e)}"}
+            
+            # 构建返回字典
+            result = {
+                para: measurement_value,
+            }
+            
+            return result
+                
+        except Exception as e:
+            return {"error": f"获取电表详情时出错: {str(e)}"}
+
     def get_component_type_chinese(self, component_type):
         """获取组件类型的中文名称"""
         type_map = {
@@ -455,7 +526,8 @@ class SimulationWindow(QMainWindow):
             'gen': '发电机',
             'sgen': '光伏',
             'ext_grid': '外部电网',
-            'storage': '储能'
+            'storage': '储能',
+            'meter': '电表'
         }
         return type_map.get(component_type, component_type)
             
@@ -496,7 +568,8 @@ class SimulationWindow(QMainWindow):
             "变压器": ["变压器"],
             "发电设备": ["发电机", "光伏", "外部电网"],
             "负载设备": ["负载"],
-            "储能设备": ["储能"]
+            "储能设备": ["储能"],
+            "测量设备": ["电表"]
         }
         
         show_categories = category_map.get(category, [])
@@ -534,7 +607,8 @@ class SimulationWindow(QMainWindow):
             "发电机": len(self.network_model.net.gen),
             "光伏": len(self.network_model.net.sgen),
             "外部电网": len(self.network_model.net.ext_grid),
-            "储能": len(self.network_model.net.storage)
+            "储能": len(self.network_model.net.storage),
+            "电表":len(self.network_model.net.measurement)
         }
         
         total = sum(stats.values())
