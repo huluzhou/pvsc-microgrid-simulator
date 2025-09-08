@@ -357,25 +357,6 @@ class MainWindow(QMainWindow):
             except ImportError:
                 pass  # 如果拓扑模块不可用，跳过连通性检查
             
-            # 检查负载平衡
-            total_load = 0
-            total_generation = 0
-            
-            if not network_model.net.load.empty:
-                total_load += network_model.net.load['p_mw'].sum()
-            if not network_model.net.sgen.empty:
-                total_generation += network_model.net.sgen['p_mw'].sum()
-            if not network_model.net.gen.empty:
-                total_generation += network_model.net.gen['p_mw'].sum()
-            
-            if total_load > 0 and total_generation > 0:
-                balance_ratio = abs(total_generation - total_load) / max(total_generation, total_load)
-                if balance_ratio > 0.1:  # 不平衡超过10%
-                    diagnostic_results.append(
-                        f"功率不平衡: 负载 {total_load:.2f} MW, 发电 {total_generation:.2f} MW, "
-                        f"不平衡率 {balance_ratio*100:.1f}%"
-                    )
-            
             # 检查电压等级一致性
             if not network_model.net.bus.empty:
                 voltage_levels = network_model.net.bus['vn_kv'].unique()
