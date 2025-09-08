@@ -61,14 +61,14 @@ class DataControlManager:
         
         # 光伏功率控制
         self.parent_window.sgen_power_slider = QSlider(Qt.Horizontal)
-        self.parent_window.sgen_power_slider.setRange(0, 200)  # 0-20MW
-        self.parent_window.sgen_power_slider.setValue(100)
+        self.parent_window.sgen_power_slider.setRange(0, 100)  # 0-1MW
+        self.parent_window.sgen_power_slider.setValue(50)
         self.parent_window.sgen_power_slider.setMinimumWidth(100)
         self.parent_window.sgen_power_slider.valueChanged.connect(self.on_sgen_power_changed)
         
         self.parent_window.sgen_power_spinbox = QDoubleSpinBox()
-        self.parent_window.sgen_power_spinbox.setRange(0.0, 20.0)
-        self.parent_window.sgen_power_spinbox.setValue(10.0)
+        self.parent_window.sgen_power_spinbox.setRange(0.0, 1.0)
+        self.parent_window.sgen_power_spinbox.setValue(0.5)
         self.parent_window.sgen_power_spinbox.setSuffix(" MW")
         self.parent_window.sgen_power_spinbox.valueChanged.connect(self.on_sgen_power_spinbox_changed)
         
@@ -134,14 +134,14 @@ class DataControlManager:
         
         # 负载有功功率控制
         self.parent_window.load_power_slider = QSlider(Qt.Horizontal)
-        self.parent_window.load_power_slider.setRange(0, 200)  # 0-100MW
-        self.parent_window.load_power_slider.setValue(100)
+        self.parent_window.load_power_slider.setRange(0, 100)  # 0-10MW
+        self.parent_window.load_power_slider.setValue(50)
         self.parent_window.load_power_slider.setMinimumWidth(100)
         self.parent_window.load_power_slider.valueChanged.connect(self.on_load_power_changed)
         
         self.parent_window.load_power_spinbox = QDoubleSpinBox()
-        self.parent_window.load_power_spinbox.setRange(0.0, 100.0)
-        self.parent_window.load_power_spinbox.setValue(50.0)
+        self.parent_window.load_power_spinbox.setRange(0.0, 2.0)
+        self.parent_window.load_power_spinbox.setValue(1.0)
         self.parent_window.load_power_spinbox.setSuffix(" MW")
         self.parent_window.load_power_spinbox.valueChanged.connect(self.on_load_power_spinbox_changed)
         
@@ -152,14 +152,14 @@ class DataControlManager:
         
         # 负载无功功率控制
         self.parent_window.load_reactive_power_slider = QSlider(Qt.Horizontal)
-        self.parent_window.load_reactive_power_slider.setRange(0, 200)  # 0-50MVar
-        self.parent_window.load_reactive_power_slider.setValue(50)
+        self.parent_window.load_reactive_power_slider.setRange(0, 100.0)  # 0-50MVar
+        self.parent_window.load_reactive_power_slider.setValue(0)
         self.parent_window.load_reactive_power_slider.setMinimumWidth(100)
         self.parent_window.load_reactive_power_slider.valueChanged.connect(self.on_load_reactive_power_changed)
         
         self.parent_window.load_reactive_power_spinbox = QDoubleSpinBox()
-        self.parent_window.load_reactive_power_spinbox.setRange(0.0, 50.0)
-        self.parent_window.load_reactive_power_spinbox.setValue(12.5)
+        self.parent_window.load_reactive_power_spinbox.setRange(0.0, 2.0)
+        self.parent_window.load_reactive_power_spinbox.setValue(0)
         self.parent_window.load_reactive_power_spinbox.setSuffix(" MVar")
         self.parent_window.load_reactive_power_spinbox.valueChanged.connect(self.on_load_reactive_power_spinbox_changed)
         
@@ -202,13 +202,13 @@ class DataControlManager:
         
         # 有功功率控制（正值为放电，负值为充电）
         self.parent_window.storage_power_slider = QSlider(Qt.Horizontal)
-        self.parent_window.storage_power_slider.setRange(-1000, 1000)  # 滑块范围：-100.0到100.0MW（乘以10）
+        self.parent_window.storage_power_slider.setRange(-100, 100)  # 滑块范围：-100.0到100.0MW（乘以10）
         self.parent_window.storage_power_slider.setValue(0)
         self.parent_window.storage_power_slider.setMinimumWidth(100)
         self.parent_window.storage_power_slider.valueChanged.connect(self.on_storage_power_changed)
         
         self.parent_window.storage_power_spinbox = QDoubleSpinBox()
-        self.parent_window.storage_power_spinbox.setRange(-100.0, 100.0)
+        self.parent_window.storage_power_spinbox.setRange(-1.0, 1.0)
         self.parent_window.storage_power_spinbox.setValue(0.0)
         self.parent_window.storage_power_spinbox.setSuffix(" MW")
         self.parent_window.storage_power_spinbox.valueChanged.connect(self.on_storage_power_spinbox_changed)
@@ -518,83 +518,53 @@ class DataControlManager:
                     
                     if 'q_mvar_rated' in self.parent_window.network_model.net.load.columns:
                         rated_reactive = self.parent_window.network_model.net.load.loc[component_idx, 'q_mvar_rated']
-                        self.parent_window.base_reactive_power_value = abs(rated_reactive) if rated_reactive != 0 else 0.5
+                        self.parent_window.base_reactive_power_value = abs(rated_reactive) if rated_reactive != 0 else 1.0
                     else:
-                        self.parent_window.base_reactive_power_value = 0.5
+                        self.parent_window.base_reactive_power_value = 0.0
                     
-                    # 更新滑块和输入框的值
-                    if hasattr(self.parent_window, 'power_slider') and self.parent_window.base_power_value > 0:
-                        percentage = int((p_mw / self.parent_window.base_power_value) * 100)
-                        percentage = max(0, min(200, percentage))
-                        self.parent_window.power_slider.blockSignals(True)
-                        self.parent_window.power_slider.setValue(percentage)
-                        self.parent_window.power_slider.blockSignals(False)
+                    # 根据额定功率动态设置滑块和输入框范围（0-150%额定功率）
+                    max_power = self.parent_window.base_power_value * 1.5
+                    max_reactive = self.parent_window.base_reactive_power_value * 1.5
                     
-                    if hasattr(self.parent_window, 'power_spinbox'):
-                        self.parent_window.power_spinbox.blockSignals(True)
-                        self.parent_window.power_spinbox.setValue(p_mw)
-                        self.parent_window.power_spinbox.blockSignals(False)
+                    # 更新专用负载控制组件
+                    if hasattr(self.parent_window, 'load_power_slider'):
+                        self.parent_window.load_power_slider.setRange(0, int(max_power * 100))  # 精确到0.01MW
+                        self.parent_window.load_power_slider.setValue(int(p_mw * 100))
                     
-                    if hasattr(self.parent_window, 'reactive_power_slider') and self.parent_window.base_reactive_power_value > 0:
-                        percentage = int((q_mvar / self.parent_window.base_reactive_power_value) * 100)
-                        percentage = max(0, min(200, percentage))
-                        self.parent_window.reactive_power_slider.blockSignals(True)
-                        self.parent_window.reactive_power_slider.setValue(percentage)
-                        self.parent_window.reactive_power_slider.blockSignals(False)
+                    if hasattr(self.parent_window, 'load_power_spinbox'):
+                        self.parent_window.load_power_spinbox.setRange(0.0, max_power)
+                        self.parent_window.load_power_spinbox.setValue(p_mw)
                     
-                    if hasattr(self.parent_window, 'reactive_power_spinbox'):
-                        self.parent_window.reactive_power_spinbox.blockSignals(True)
-                        self.parent_window.reactive_power_spinbox.setValue(q_mvar)
-                        self.parent_window.reactive_power_spinbox.blockSignals(False)
+                    if hasattr(self.parent_window, 'load_reactive_power_slider'):
+                        self.parent_window.load_reactive_power_slider.setRange(0, int(max_reactive * 100))
+                        self.parent_window.load_reactive_power_slider.setValue(int(q_mvar * 100))
+                    
+                    if hasattr(self.parent_window, 'load_reactive_power_spinbox'):
+                        self.parent_window.load_reactive_power_spinbox.setRange(0.0, max_reactive)
+                        self.parent_window.load_reactive_power_spinbox.setValue(q_mvar)
                         
             elif component_type == 'sgen':
                 if component_idx < len(self.parent_window.network_model.net.sgen):
                     p_mw = abs(self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw'])
                     
-                    # 获取额定功率，如果不存在则使用默认值10.0
+                    # 获取额定功率，如果不存在则使用默认值1.0
                     if 'p_mw_rated' in self.parent_window.network_model.net.sgen.columns:
                         rated_power = self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw_rated']
-                        self.parent_window.base_power_value = abs(rated_power) if rated_power != 0 else 10.0
+                        self.parent_window.base_power_value = abs(rated_power) if rated_power != 0 else 1.0
                     else:
-                        self.parent_window.base_power_value = 10.0
+                        self.parent_window.base_power_value = 1.0
                     
-                    # 更新滑块和输入框的值
-                    if hasattr(self.parent_window, 'power_slider') and self.parent_window.base_power_value > 0:
-                        percentage = int((p_mw / self.parent_window.base_power_value) * 100)
-                        percentage = max(0, min(200, percentage))
-                        self.parent_window.power_slider.blockSignals(True)
-                        self.parent_window.power_slider.setValue(percentage)
-                        self.parent_window.power_slider.blockSignals(False)
+                    # 根据额定功率动态设置滑块和输入框范围（0-150%额定功率）
+                    max_power = self.parent_window.base_power_value * 1.5
                     
-                    if hasattr(self.parent_window, 'power_spinbox'):
-                        self.parent_window.power_spinbox.blockSignals(True)
-                        self.parent_window.power_spinbox.setValue(p_mw)
-                        self.parent_window.power_spinbox.blockSignals(False)
-                        
-            elif component_type == 'storage':
-                if component_idx < len(self.parent_window.network_model.net.storage):
-                    p_mw = self.parent_window.network_model.net.storage.loc[component_idx, 'p_mw']
+                    # 更新专用光伏控制组件
+                    if hasattr(self.parent_window, 'sgen_power_slider'):
+                        self.parent_window.sgen_power_slider.setRange(0, int(max_power * 100))  # 精确到0.01MW
+                        self.parent_window.sgen_power_slider.setValue(int(p_mw * 100))
                     
-                    # 获取额定功率，如果不存在则使用默认值50.0
-                    if 'p_mw_rated' in self.parent_window.network_model.net.storage.columns:
-                        rated_power = self.parent_window.network_model.net.storage.loc[component_idx, 'p_mw_rated']
-                        self.parent_window.base_power_value = abs(rated_power) if rated_power != 0 else 50.0
-                    else:
-                        self.parent_window.base_power_value = 50.0
-                    
-                    # 更新滑块和输入框的值
-                    if hasattr(self.parent_window, 'power_slider'):
-                        # 储能设备的滑块范围是-200%到200%，对应-2倍到2倍额定功率
-                        percentage = int((p_mw / self.parent_window.base_power_value) * 100)
-                        percentage = max(-200, min(200, percentage))
-                        self.parent_window.power_slider.blockSignals(True)
-                        self.parent_window.power_slider.setValue(percentage)
-                        self.parent_window.power_slider.blockSignals(False)
-                    
-                    if hasattr(self.parent_window, 'power_spinbox'):
-                        self.parent_window.power_spinbox.blockSignals(True)
-                        self.parent_window.power_spinbox.setValue(p_mw)
-                        self.parent_window.power_spinbox.blockSignals(False)
+                    if hasattr(self.parent_window, 'sgen_power_spinbox'):
+                        self.parent_window.sgen_power_spinbox.setRange(0.0, max_power)
+                        self.parent_window.sgen_power_spinbox.setValue(p_mw)
                         
         except Exception as e:
             print(f"更新手动控制值时出错: {e}")
@@ -602,9 +572,9 @@ class DataControlManager:
     # 滑块和输入框变化回调方法
     def on_manual_power_changed(self, value):
         """手动功率滑块改变时的回调"""
-        # 将滑块值（0-200%）转换为实际功率值
+        # 将滑块值（百分比）转换为实际功率值
         if hasattr(self.parent_window, 'power_spinbox') and hasattr(self.parent_window, 'base_power_value'):
-            # 使用基准功率值计算实际功率
+            # 使用基准功率值计算实际功率（精确到0.01MW）
             new_power = self.parent_window.base_power_value * (value / 100.0)
             # 暂时断开信号连接，避免循环调用
             self.parent_window.power_spinbox.blockSignals(True)
@@ -613,23 +583,12 @@ class DataControlManager:
             
             # 自动应用功率设置到设备
             self.apply_manual_power_settings()
-    
-    def on_manual_power_spinbox_changed(self, value):
-        """手动功率输入框改变时的回调"""
-        if hasattr(self.parent_window, 'power_slider') and hasattr(self.parent_window, 'base_power_value') and self.parent_window.base_power_value > 0:
-            percentage = int((value / self.parent_window.base_power_value) * 100)
-            percentage = max(0, min(200, percentage))  # 限制在0-200%范围内
-            self.parent_window.power_slider.blockSignals(True)
-            self.parent_window.power_slider.setValue(percentage)
-            self.parent_window.power_slider.blockSignals(False)
-            
-            # 自动应用功率设置到设备
-            self.apply_manual_power_settings()
+
     
     def on_manual_reactive_power_changed(self, value):
         """手动无功功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'reactive_power_spinbox') and hasattr(self.parent_window, 'base_reactive_power_value'):
-            # 使用基准无功功率值计算实际功率
+            # 使用基准无功功率值计算实际功率（精确到0.01MVar）
             new_power = self.parent_window.base_reactive_power_value * (value / 100.0)
             self.parent_window.reactive_power_spinbox.blockSignals(True)
             self.parent_window.reactive_power_spinbox.setValue(new_power)
@@ -642,7 +601,12 @@ class DataControlManager:
         """手动无功功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'reactive_power_slider') and hasattr(self.parent_window, 'base_reactive_power_value') and self.parent_window.base_reactive_power_value > 0:
             percentage = int((value / self.parent_window.base_reactive_power_value) * 100)
-            percentage = max(0, min(200, percentage))  # 限制在0-200%范围内
+            
+            # 获取当前滑块范围（动态范围）
+            max_slider = self.parent_window.reactive_power_slider.maximum()
+            min_slider = self.parent_window.reactive_power_slider.minimum()
+            percentage = max(min_slider, min(max_slider, percentage))
+            
             self.parent_window.reactive_power_slider.blockSignals(True)
             self.parent_window.reactive_power_slider.setValue(percentage)
             self.parent_window.reactive_power_slider.blockSignals(False)
@@ -653,18 +617,19 @@ class DataControlManager:
     def on_sgen_power_changed(self, value):
         """光伏功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'sgen_power_spinbox'):
-            # 滑块值直接对应功率值
-            power_value = value / 10.0  # 滑块范围0-200对应0-20MW
+            # 滑块值直接对应功率值（精确到0.01MW）
+            power_value = value / 100.0
             self.parent_window.sgen_power_spinbox.blockSignals(True)
             self.parent_window.sgen_power_spinbox.setValue(power_value)
             self.parent_window.sgen_power_spinbox.blockSignals(False)
-    
+
     def on_sgen_power_spinbox_changed(self, value):
         """光伏功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'sgen_power_slider'):
-            # 功率值转换为滑块值
-            slider_value = int(value * 10)  # 功率值*10对应滑块值
-            slider_value = max(0, min(200, slider_value))
+            # 功率值转换为滑块值（精确到0.01MW）
+            slider_value = int(value * 100)
+            max_slider = int(self.parent_window.sgen_power_spinbox.maximum() * 100)
+            slider_value = max(0, min(max_slider, slider_value))
             self.parent_window.sgen_power_slider.blockSignals(True)
             self.parent_window.sgen_power_slider.setValue(slider_value)
             self.parent_window.sgen_power_slider.blockSignals(False)
@@ -672,8 +637,8 @@ class DataControlManager:
     def on_load_power_changed(self, value):
         """负载功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'load_power_spinbox'):
-            # 滑块值直接对应功率值
-            power_value = value / 2.0  # 滑块范围0-200对应0-100MW
+            # 滑块值直接对应功率值（精确到0.01MW）
+            power_value = value / 100.0
             self.parent_window.load_power_spinbox.blockSignals(True)
             self.parent_window.load_power_spinbox.setValue(power_value)
             self.parent_window.load_power_spinbox.blockSignals(False)
@@ -681,9 +646,13 @@ class DataControlManager:
     def on_load_power_spinbox_changed(self, value):
         """负载功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'load_power_slider'):
-            # 功率值转换为滑块值
-            slider_value = int(value * 2)  # 功率值*2对应滑块值
-            slider_value = max(0, min(200, slider_value))
+            # 功率值转换为滑块值（精确到0.01MW）
+            slider_value = int(value * 100)
+            
+            # 获取当前滑块范围
+            max_slider = self.parent_window.load_power_slider.maximum()
+            slider_value = max(0, min(max_slider, slider_value))
+            
             self.parent_window.load_power_slider.blockSignals(True)
             self.parent_window.load_power_slider.setValue(slider_value)
             self.parent_window.load_power_slider.blockSignals(False)
@@ -691,8 +660,8 @@ class DataControlManager:
     def on_load_reactive_power_changed(self, value):
         """负载无功功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'load_reactive_power_spinbox'):
-            # 滑块值直接对应无功功率值
-            power_value = value / 4.0  # 滑块范围0-200对应0-50MVar
+            # 滑块值直接对应无功功率值（精确到0.01MVar）
+            power_value = value / 100.0
             self.parent_window.load_reactive_power_spinbox.blockSignals(True)
             self.parent_window.load_reactive_power_spinbox.setValue(power_value)
             self.parent_window.load_reactive_power_spinbox.blockSignals(False)
@@ -700,9 +669,13 @@ class DataControlManager:
     def on_load_reactive_power_spinbox_changed(self, value):
         """负载无功功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'load_reactive_power_slider'):
-            # 无功功率值转换为滑块值
-            slider_value = int(value * 4)  # 功率值*4对应滑块值
-            slider_value = max(0, min(200, slider_value))
+            # 无功功率值转换为滑块值（精确到0.01MVar）
+            slider_value = int(value * 100)
+            
+            # 获取当前滑块范围
+            max_slider = self.parent_window.load_reactive_power_slider.maximum()
+            slider_value = max(0, min(max_slider, slider_value))
+            
             self.parent_window.load_reactive_power_slider.blockSignals(True)
             self.parent_window.load_reactive_power_slider.setValue(slider_value)
             self.parent_window.load_reactive_power_slider.blockSignals(False)
@@ -710,18 +683,23 @@ class DataControlManager:
     def on_storage_power_changed(self, value):
         """储能功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'storage_power_spinbox'):
-            # 滑块值除以10得到实际功率值（MW）
-            new_power = value / 10.0
+            # 滑块值直接对应功率值（精确到0.01MW）
+            power_value = value / 100.0
             self.parent_window.storage_power_spinbox.blockSignals(True)
-            self.parent_window.storage_power_spinbox.setValue(new_power)
+            self.parent_window.storage_power_spinbox.setValue(power_value)
             self.parent_window.storage_power_spinbox.blockSignals(False)
-    
+
     def on_storage_power_spinbox_changed(self, value):
         """储能功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'storage_power_slider'):
-            # 功率值乘以10得到滑块值
-            slider_value = int(value * 10)
-            slider_value = max(-1000, min(1000, slider_value))
+            # 功率值转换为滑块值（精确到0.01MW）
+            slider_value = int(value * 100)
+            
+            # 获取当前滑块范围
+            min_slider = self.parent_window.storage_power_slider.minimum()
+            max_slider = self.parent_window.storage_power_slider.maximum()
+            slider_value = max(min_slider, min(max_slider, slider_value))
+            
             self.parent_window.storage_power_slider.blockSignals(True)
             self.parent_window.storage_power_slider.setValue(slider_value)
             self.parent_window.storage_power_slider.blockSignals(False)
