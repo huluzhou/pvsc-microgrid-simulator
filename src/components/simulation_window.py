@@ -1273,6 +1273,34 @@ class SimulationWindow(QMainWindow):
             print(f"批量更新设备数据失败: {str(e)}")
             return False
 
+    def get_meter_item_by_type_and_id(self, device_type, device_id):
+        """根据设备类型和ID获取对应的电表项
+        
+        Args:
+            device_type (str): 设备类型，如 'meter'
+            device_id (int): 设备ID
+            
+        Returns:
+            object: 对应的电表图形项对象，如果未找到返回None
+        """
+        try:
+            if device_type != 'meter' or not hasattr(self, 'canvas') or not self.canvas:
+                return None
+                
+            # 遍历画布上的所有项目
+            for item in self.canvas.scene.items():
+                if (hasattr(item, 'component_type') and 
+                    item.component_type == 'meter' and 
+                    hasattr(item, 'component_index') and 
+                    item.component_index == device_id):
+                    return item
+                    
+            return None
+            
+        except Exception as e:
+            print(f"获取电表项失败: {str(e)}")
+            return None
+
     def update_device_tree_status(self):
         """更新设备树状态"""
         try:
@@ -1308,7 +1336,13 @@ class SimulationWindow(QMainWindow):
                 if data:
                     device_type, device_id = data
                     
-                    # 快速检查设备状态
+                    # 处理电表类型
+                    if device_type == 'meter':
+                        meter_item = self.get_meter_item_by_type_and_id(device_type, device_id)
+                        device_type = meter_item.properties['element_type']
+                        device_id = meter_item.properties['element']
+
+                    # 快速检查其他设备状态
                     if device_type in result_indices and device_id in result_indices[device_type]:
                         item.setText(2, "正常")
                         item.setForeground(2, QColor("green"))
