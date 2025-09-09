@@ -124,12 +124,13 @@ class PowerMonitor:
                     return abs(self.network_model.net.res_ext_grid.loc[device_id, 'p_mw'])
                 else:
                     return 0.0
-                    
+            elif device_type == "电表":
+                return self._get_meter_power(device_id)
         except Exception as e:
             print(f"获取设备功率失败: {str(e)}")
         
-        return 0.0
-    
+            return 0.0
+        
     def update_power_curve(self):
         """更新所有监控设备的功率曲线数据"""
         try:
@@ -331,3 +332,132 @@ class PowerMonitor:
         
         # 更新图表显示
         self.display_power_curve()
+        
+    def _get_meter_power(self, meter_id):
+        """
+        获取指定电表的功率测量值
+        
+        参数:
+            meter_id (str): 电表设备的唯一标识符
+            
+        返回:
+            float: 电表测量的功率值（单位：MW），如果获取失败则返回0.0
+        """
+        try:
+            # 仅使用父窗口的缓存方法
+            if not hasattr(self.parent_window, 'get_meter_item_by_type_and_id'):
+                print("父窗口未提供缓存方法，无法获取电表数据")
+                return 0.0
+                
+            meter_measurement = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
+            if not meter_measurement:
+                return 0.0
+                
+            # 直接提取配置并查询测量值
+            measurement_config = self._extract_measurement_config(meter_measurement.properties)
+            return self._query_measurement_value(measurement_config) if measurement_config else 0.0
+            
+        except Exception as e:
+            print(f"获取电表{meter_id}功率时出错: {str(e)}")
+            return 0.0
+    
+    def _extract_measurement_config(self, measurement_row):
+        """
+        从测量行数据中提取测量配置信息
+        
+        参数:
+            measurement_row (pd.Series): 测量配置数据行
+            
+        返回:
+            dict: 包含测量配置的词典，如果提取失败返回None
+        """
+        try:
+            return {
+                'measurement_type': measurement_row['meas_type'],
+                'element_type': measurement_row['element_type'],
+                'element_idx': measurement_row['element'],
+                'side': measurement_row.get('side', None)
+            }
+        except (KeyError, IndexError) as e:
+            print(f"提取测量配置时出错: {str(e)}")
+            return None
+    
+    def _query_measurement_value(self, config):
+        """
+        根据测量配置查询实时测量值
+        
+        参数:
+            config (dict): 包含测量配置的字典
+            
+        返回:
+            float: 测量到的功率值（单位：MW）
+        """
+        element_type = config['element_type']
+        element_idx = config['element_idx']
+        side = config['side']
+        
+        # 定义各元素类型的查询映射
+        query_map = {
+            'load': {
+                'result_attr': 'res_load',
+                'value_key': 'p_mw'
+            },
+            'sgen': {
+                'result_attr': 'res_sgen',
+                'value_key': 'p_mw'
+            },
+            'storage': {
+                'result_attr': 'res_storage',
+                'value_key': 'p_mw'
+            },
+            'bus': {
+                'result_attr': 'res_bus',
+                'value_key': 'p_mw'
+            },
+            'line': {
+                'result_attr': 'res_line',
+                'side_mapping': {
+                    'from': 'p_from_mw',
+                    'to': 'p_to_mw',
+                }
+            },
+            'trafo': {
+                'result_attr': 'res_trafo',
+                'side_mapping': {
+                    'hv': 'p_hv_mw',
+                    'lv': 'p_lv_mw',
+                }
+            }
+        }
+        
+        # 检查元素类型是否支持
+        if element_type not in query_map:
+            print(f"不支持的元素类型: {element_type}")
+            return 0.0
+            
+        query_info = query_map[element_type]
+        result_attr = query_info['result_attr']
+        
+        # 检查网络模型是否包含结果数据
+        if not hasattr(self.network_model.net, result_attr):
+            return 0.0
+            
+        result_df = getattr(self.network_model.net, result_attr)
+        if element_idx not in result_df.index:
+            return 0.0
+            
+        # 获取测量值
+        try:
+            if 'side_mapping' in query_info:
+                # 处理有side参数的元素类型（line, trafo）
+                value_key = query_info['side_mapping'].get(side, query_info['side_mapping'][None])
+            else:
+                # 处理无side参数的元素类型
+                value_key = query_info['value_key']
+                
+            measurement_value = result_df.loc[element_idx, value_key]
+            return abs(float(measurement_value))
+            
+        except (KeyError, ValueError) as e:
+            print(f"获取测量值时出错: {str(e)}")
+            return 0.0

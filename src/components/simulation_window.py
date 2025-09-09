@@ -215,6 +215,9 @@ class SimulationWindow(QMainWindow):
         if hasattr(self, 'modbus_manager') and self.modbus_manager:
             self.modbus_manager.clear_device_cache()
             
+        # 使电表缓存失效，因为网络模型已变化
+        self.invalidate_meter_cache()
+            
         self.device_tree.clear()
         
         # 添加母线
@@ -616,125 +619,6 @@ class SimulationWindow(QMainWindow):
         stats_text += " | ".join([f"{k}: {v}" for k, v in stats.items() if v > 0])
         
         self.device_stats_label.setText(stats_text)
-    
-    def export_results_csv(self):
-        """导出仿真结果为CSV格式"""
-        if not self.network_model:
-            QMessageBox.warning(self, "警告", "没有可用的网络模型")
-            return
-            
-        # 检查是否有潮流计算结果
-        has_results = hasattr(self.network_model.net, 'res_bus') and not self.network_model.net.res_bus.empty
-        if not has_results:
-            QMessageBox.warning(self, "警告", "请先运行潮流计算")
-            return
-            
-        try:
-            from PyQt5.QtWidgets import QFileDialog
-            import pandas as pd
-            from datetime import datetime
-            
-            # 选择保存路径
-            file_path, _ = QFileDialog.getSaveFileName(
-                self, "导出CSV文件", 
-                f"powerflow_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                "CSV文件 (*.csv)"
-            )
-            
-            if not file_path:
-                return
-                
-            # 收集所有结果数据
-            all_results = []
-            
-            # 母线结果
-            if hasattr(self.network_model.net, 'res_bus') and not self.network_model.net.res_bus.empty:
-                for idx, res in self.network_model.net.res_bus.iterrows():
-                    bus_data = self.network_model.net.bus.loc[idx]
-                    all_results.append({
-                        '组件类型': '母线',
-                        '组件ID': idx,
-                        '组件名称': bus_data.get('name', f'Bus_{idx}'),
-                        '电压幅值(p.u.)': res['vm_pu'],
-                        '电压角度(度)': res['va_degree'],
-                        '有功功率(MW)': res.get('p_mw', 0),
-                        '无功功率(MVar)': res.get('q_mvar', 0),
-                        '负载率(%)': '',
-                        '状态': '正常' if 0.95 <= res['vm_pu'] <= 1.05 else '异常'
-                    })
-            
-            # 线路结果
-            if hasattr(self.network_model.net, 'res_line') and not self.network_model.net.res_line.empty:
-                for idx, res in self.network_model.net.res_line.iterrows():
-                    line_data = self.network_model.net.line.loc[idx]
-                    all_results.append({
-                        '组件类型': '线路',
-                        '组件ID': idx,
-                        '组件名称': line_data.get('name', f'Line_{idx}'),
-                        '电压幅值(p.u.)': '',
-                        '电压角度(度)': '',
-                        '有功功率(MW)': res['p_from_mw'],
-                        '无功功率(MVar)': res['q_from_mvar'],
-                        '负载率(%)': res['loading_percent'],
-                        '状态': '正常' if res['loading_percent'] <= 80 else ('过载' if res['loading_percent'] > 100 else '警告')
-                    })
-            
-            # 变压器结果
-            if hasattr(self.network_model.net, 'res_trafo') and not self.network_model.net.res_trafo.empty:
-                for idx, res in self.network_model.net.res_trafo.iterrows():
-                    trafo_data = self.network_model.net.trafo.loc[idx]
-                    all_results.append({
-                        '组件类型': '变压器',
-                        '组件ID': idx,
-                        '组件名称': trafo_data.get('name', f'Trafo_{idx}'),
-                        '电压幅值(p.u.)': '',
-                        '电压角度(度)': '',
-                        '有功功率(MW)': res['p_hv_mw'],
-                        '无功功率(MVar)': res['q_hv_mvar'],
-                        '负载率(%)': res['loading_percent'],
-                        '状态': '正常' if res['loading_percent'] <= 80 else ('过载' if res['loading_percent'] > 100 else '警告')
-                    })
-            
-            # 负载结果
-            if hasattr(self.network_model.net, 'res_load') and not self.network_model.net.res_load.empty:
-                for idx, res in self.network_model.net.res_load.iterrows():
-                    load_data = self.network_model.net.load.loc[idx]
-                    all_results.append({
-                        '组件类型': '负载',
-                        '组件ID': idx,
-                        '组件名称': load_data.get('name', f'Load_{idx}'),
-                        '电压幅值(p.u.)': '',
-                        '电压角度(度)': '',
-                        '有功功率(MW)': res['p_mw'],
-                        '无功功率(MVar)': res['q_mvar'],
-                        '负载率(%)': '',
-                        '状态': '运行'
-                    })
-            
-            # 发电机结果
-            if hasattr(self.network_model.net, 'res_gen') and not self.network_model.net.res_gen.empty:
-                for idx, res in self.network_model.net.res_gen.iterrows():
-                    gen_data = self.network_model.net.gen.loc[idx]
-                    all_results.append({
-                        '组件类型': '发电机',
-                        '组件ID': idx,
-                        '组件名称': gen_data.get('name', f'Gen_{idx}'),
-                        '电压幅值(p.u.)': '',
-                        '电压角度(度)': '',
-                        '有功功率(MW)': res['p_mw'],
-                        '无功功率(MVar)': res['q_mvar'],
-                        '负载率(%)': '',
-                        '状态': '运行'
-                    })
-            
-            # 创建DataFrame并保存
-            df = pd.DataFrame(all_results)
-            df.to_csv(file_path, index=False, encoding='utf-8-sig')
-            
-            QMessageBox.information(self, "成功", f"仿真结果已导出到:\n{file_path}")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"导出CSV文件失败:\n{str(e)}")
     
     
     def closeEvent(self, event):
@@ -1361,19 +1245,36 @@ class SimulationWindow(QMainWindow):
             if device_type != 'meter' or not hasattr(self, 'canvas') or not self.canvas:
                 return None
                 
-            # 遍历画布上的所有项目
-            for item in self.canvas.scene.items():
-                if (hasattr(item, 'component_type') and 
-                    item.component_type == 'meter' and 
-                    hasattr(item, 'component_index') and 
-                    item.component_index == device_id):
-                    return item
-                    
-            return None
+            # 使用缓存避免重复遍历
+            if not hasattr(self, '_meter_cache'):
+                self._build_meter_cache()
+            
+            return self._meter_cache.get(device_id)
             
         except Exception as e:
             print(f"获取电表项失败: {str(e)}")
             return None
+    
+    def _build_meter_cache(self):
+        """构建电表项缓存，避免重复遍历画布"""
+        self._meter_cache = {}
+        if not hasattr(self, 'canvas') or not self.canvas or not self.canvas.scene:
+            return
+            
+        try:
+            for item in self.canvas.scene.items():
+                if (hasattr(item, 'component_type') and 
+                    item.component_type == 'meter' and 
+                    hasattr(item, 'component_index')):
+                    self._meter_cache[item.component_index] = item
+        except Exception as e:
+            print(f"构建电表缓存失败: {str(e)}")
+            self._meter_cache = {}
+    
+    def invalidate_meter_cache(self):
+        """使电表缓存失效，当画布内容变化时调用"""
+        if hasattr(self, '_meter_cache'):
+            delattr(self, '_meter_cache')
 
     def update_device_tree_status(self):
         """更新设备树状态"""
