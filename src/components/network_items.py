@@ -1078,3 +1078,323 @@ class MeterItem(BaseNetworkItem):
         ]
         self.original_connection_points = self.connection_points.copy()
         
+
+    def export_properties(self, file_path=None):
+        """
+        导出组件属性到JSON文件
+        
+        Args:
+            file_path: 文件路径，如果为None则使用默认命名
+            
+        Returns:
+            bool: 导出是否成功
+        """
+        try:
+            if not file_path:
+                # 生成默认文件名
+                file_path = f"{self.component_type}_{self.component_index}_properties.json"
+            
+            # 准备导出数据
+            export_data = {
+                'component_type': self.component_type,
+                'component_name': self.component_name,
+                'properties': self.properties
+            }
+            
+            import json
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, indent=4, ensure_ascii=False)
+                
+            return True
+            
+        except Exception as e:
+            print(f"导出属性时出错: {e}")
+            return False
+    
+    def import_properties(self, file_path):
+        """
+        从JSON文件导入组件属性
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            bool: 导入是否成功
+        """
+        try:
+            import json
+            with open(file_path, 'r', encoding='utf-8') as f:
+                import_data = json.load(f)
+            
+            # 验证组件类型匹配
+            if import_data.get('component_type') != self.component_type:
+                print(f"组件类型不匹配: 期望 {self.component_type}, 实际 {import_data.get('component_type')}")
+                return False
+            
+            # 更新属性
+            imported_properties = import_data.get('properties', {})
+            
+            # 保留关键字段（如index）
+            preserved_fields = ['index', 'component_type']
+            for field in preserved_fields:
+                if field in self.properties:
+                    imported_properties[field] = self.properties[field]
+            
+            self.properties.update(imported_properties)
+            
+            # 更新标签
+            if 'name' in self.properties:
+                self.label.setPlainText(self.properties['name'])
+            
+            return True
+            
+        except Exception as e:
+            print(f"导入属性时出错: {e}")
+            return False
+    
+    def get_topology_format(self) -> dict:
+        """获取符合topology.json格式的组件数据"""
+        # 基础数据
+        data = {
+            'index': self.properties.get('index', self.component_index),
+            'name': self.properties.get('name', f"{self.component_type}-{self.component_index}"),
+            'type': self._get_chinese_type()
+        }
+        
+        # 根据组件类型添加特定字段
+        if self.component_type == 'bus':
+            data.update({
+                'vn_kv': self.properties.get('vn_kv', 10.0)
+            })
+        elif self.component_type == 'transformer':
+            data.update({
+                'hv_bus': self.properties.get('hv_bus', 1),
+                'lv_bus': self.properties.get('lv_bus', 2),
+                'sn_mva': self.properties.get('sn_mva', 1.0),
+                'vn_hv_kv': self.properties.get('vn_hv_kv', 10.0),
+                'vn_lv_kv': self.properties.get('vn_lv_kv', 0.4),
+                'vkr_percent': self.properties.get('vkr_percent', 1.0),
+                'vk_percent': self.properties.get('vk_percent', 6.0),
+                'pfe_kw': self.properties.get('pfe_kw', 1.0),
+                'i0_percent': self.properties.get('i0_percent', 0.1)
+            })
+        elif self.component_type == 'load':
+            data.update({
+                'bus': self.properties.get('bus', 1),
+                'p_mw': self.properties.get('p_mw', 0.1),
+                'q_mvar': self.properties.get('q_mvar', 0.05)
+            })
+        elif self.component_type == 'storage':
+            data.update({
+                'bus': self.properties.get('bus', 1),
+                'max_e_mwh': self.properties.get('max_e_mwh', 1.0)
+            })
+        elif self.component_type == 'static_generator':
+            data.update({
+                'bus': self.properties.get('bus', 1),
+                'p_mw': self.properties.get('p_mw', 1.0)
+            })
+        elif self.component_type == 'external_grid':
+            data.update({
+                'bus': self.properties.get('bus', 1)
+            })
+        elif self.component_type == 'measurement':
+            data.update({
+                'element': self.properties.get('element', 1),
+                'element_type': self.properties.get('element_type', 'bus'),
+                'meas_type': self.properties.get('meas_type', 'p')
+            })
+        elif self.component_type == 'charger':
+            data.update({
+                'bus': self.properties.get('bus', 1)
+            })
+        
+        # 添加位置信息
+        if hasattr(self, 'pos'):
+            pos = self.pos()
+            data['geodata'] = [pos.x(), pos.y()]
+        
+        return self._clean_properties(data)
+    
+    def _get_chinese_type(self) -> str:
+        """获取中文类型名称"""
+        type_map = {
+            'bus': '母线',
+            'line': '线路',
+            'transformer': '变压器',
+            'load': '负载',
+            'storage': '储能',
+            'static_generator': '光伏',
+            'external_grid': '外部电网',
+            'measurement': '电表',
+            'charger': '充电站'
+        }
+        return type_map.get(self.component_type, self.component_type)
+    
+    def _clean_properties(self, properties: dict) -> dict:
+        """清理不需要的字段"""
+        # 定义需要清理的字段
+        fields_to_clean = [
+            'ip_address', 'port', 'device_id', 'protocol', 'update_rate',
+            'timeout', 'retry_count', 'communication_status', 'last_update',
+            'connection_string', 'database_name', 'username', 'password',
+            'api_key', 'endpoint', 'webhook_url', 'notification_settings',
+            'display_settings', 'ui_preferences', 'custom_colors',
+            'animation_enabled', 'tooltip_enabled', 'grid_snap',
+            'auto_save', 'backup_enabled'
+        ]
+        
+        cleaned = {}
+        for key, value in properties.items():
+            if key not in fields_to_clean:
+                cleaned[key] = value
+        
+        return cleaned
+
+    def is_connection_point_available(self, point_index, connecting_item=None):
+        """检查指定连接点是否可用"""
+        if point_index not in self.connection_point_states:
+            return True
+        
+        connections = self.connection_point_states[point_index]
+        
+        # 如果已经有2个连接，不能再连接
+        if len(connections) >= 2:
+            return False
+        
+        # 如果只有1个连接
+        if len(connections) == 1:
+            existing_item = connections[0]
+            # 如果现有连接是电表，新连接可以是任何非电表组件
+            if hasattr(existing_item, 'component_type') and existing_item.component_type == 'meter':
+                return connecting_item is None or (hasattr(connecting_item, 'component_type') and connecting_item.component_type != 'meter')
+            # 如果现有连接不是电表，新连接必须是电表
+            else:
+                return connecting_item is not None and hasattr(connecting_item, 'component_type') and connecting_item.component_type == 'meter'
+        
+        return True
+    
+    def get_available_connection_points(self, connecting_item=None):
+        """获取所有可用的连接点索引"""
+        available_points = []
+        for i in range(len(self.connection_points)):
+            if self.is_connection_point_available(i, connecting_item):
+                available_points.append(i)
+        return available_points
+    
+    def validate_connections(self):
+        """验证连接是否满足约束"""
+        if len(self.current_connections) < self.min_connections:
+            return False, f"{self.component_name}至少需要{self.min_connections}个连接"
+        if self.max_connections != -1 and len(self.current_connections) > self.max_connections:
+            return False, f"{self.component_name}最多只能有{self.max_connections}个连接"
+        return True, ""
+    
+    def disconnect_all_connections(self):
+        """断开所有连接"""
+        if hasattr(self, 'scene') and self.scene():
+            # 获取画布对象
+            canvas = None
+            for view in self.scene().views():
+                if hasattr(view, 'disconnect_all_from_item'):
+                    canvas = view
+                    break
+            
+            if canvas:
+                canvas.disconnect_all_from_item(self)
+    
+    def delete_component(self):
+        """删除组件"""
+        if self.scene():
+            # 先断开所有连接
+            self.disconnect_all_connections()
+            
+            # 清除Modbus设备缓存，因为场景已变化
+            scene = self.scene()
+            if scene:
+                views = scene.views()
+                if views:
+                    canvas = views[0]
+                    if hasattr(canvas, 'modbus_manager') and canvas.modbus_manager:
+                        canvas.modbus_manager.clear_device_cache()
+            
+            # 从场景中移除
+            scene.removeItem(self)
+            print(f"删除组件: {self.component_name}")
+    
+    def contextMenuEvent(self, event):
+        """右键菜单事件"""
+        menu = QMenu()
+        
+        # 添加旋转选项
+        rotate_action = menu.addAction("旋转90°")
+        rotate_action.triggered.connect(lambda: self.rotate_component(90))
+        
+        menu.addSeparator()
+        
+        # 添加断开连接选项
+        disconnect_action = menu.addAction("断开所有连接")
+        disconnect_action.triggered.connect(self.disconnect_all_connections)
+        
+        # 添加删除选项
+        delete_action = menu.addAction("删除组件")
+        delete_action.triggered.connect(self.delete_component)
+        
+        # 显示菜单
+        menu.exec(event.screenPos())
+    
+    def mousePressEvent(self, event):
+        """鼠标按下事件"""
+        super().mousePressEvent(event)
+        
+        if event.button() == Qt.LeftButton:
+            import time
+            current_time = int(time.time() * 1000)  # 当前时间（毫秒）
+            
+            # 检查是否为双击
+            if current_time - self.last_click_time < self.double_click_threshold:
+                self.handle_double_click()
+                return  # 双击时直接返回，不执行单击逻辑
+            
+            # 选中当前项
+            self.setSelected(True)
+            # 手动发出选中信号
+            print(f"发出选中信号: {self.component_type}")
+            self.signals.itemSelected.emit(self)
+            
+            self.last_click_time = current_time
+    
+    def handle_double_click(self):
+        """处理双击事件，弹出名称编辑对话框"""
+        current_name = self.properties.get('name', self.component_name)
+        
+        # 弹出输入对话框
+        new_name, ok = QInputDialog.getText(
+            None,
+            '修改组件名称',
+            f'请输入新的{self.component_name}名称:',
+            text=current_name
+        )
+        
+        if ok and new_name:
+            # 更新所有名称相关的属性
+            self.properties['name'] = new_name
+            self.component_name = new_name
+            self.label.setPlainText(new_name)
+            
+            # 通知属性面板刷新并触发信号
+            try:
+                scene = self.scene()
+                if scene:
+                    views = scene.views()
+                    if views:
+                        main_window = views[0].window()
+                        if hasattr(main_window, 'properties_panel'):
+                            # 如果当前组件被选中，刷新属性面板显示
+                            if main_window.properties_panel.current_item == self:
+                                main_window.properties_panel.update_properties(self)
+                            # 触发属性变化信号，确保主窗口能处理这个变化
+                            main_window.properties_panel.property_changed.emit(self.component_type, 'name', new_name)
+            except Exception as e:
+                print(f"刷新属性面板时出错: {e}")
+        

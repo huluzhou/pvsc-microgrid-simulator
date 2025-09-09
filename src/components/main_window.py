@@ -12,6 +12,7 @@ from PySide6.QtGui import QIcon, QAction
 from components.canvas import NetworkCanvas
 from components.component_palette import ComponentPalette
 from components.properties_panel import PropertiesPanel
+from utils.topology_utils import TopologyManager
 import pandapower as pp
 class MainWindow(QMainWindow):
     """主窗口类"""
@@ -19,6 +20,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        self.topology_manager = TopologyManager()
         self.init_ui()
 
     def init_ui(self):
@@ -37,8 +39,7 @@ class MainWindow(QMainWindow):
         # 创建属性面板
         self.create_properties_panel()
 
-        # 创建工具栏
-        self.create_toolbar()
+        # 移除工具栏，功能由菜单栏完全覆盖
 
         # 创建菜单栏
         self.create_menu()
@@ -78,40 +79,6 @@ class MainWindow(QMainWindow):
         # 连接属性面板的属性变化信号
         self.properties_panel.property_changed.connect(self.on_property_changed)
 
-    def create_toolbar(self):
-        """创建工具栏"""
-        toolbar = QToolBar("工具栏", self)
-        toolbar.setIconSize(QSize(32, 32))
-        self.addToolBar(toolbar)
-
-        # 文件操作按钮
-        new_action = QAction("新建", self)
-        new_action.setShortcut("Ctrl+N")
-        new_action.setToolTip("新建网络")
-        toolbar.addAction(new_action)
-        
-        open_action = QAction("打开", self)
-        open_action.setShortcut("Ctrl+O")
-        open_action.setToolTip("打开网络文件")
-        toolbar.addAction(open_action)
-        
-        save_action = QAction("保存", self)
-        save_action.setShortcut("Ctrl+S")
-        save_action.setToolTip("保存网络")
-        toolbar.addAction(save_action)
-        
-        toolbar.addSeparator()
-        
-        # 仿真模式按钮
-        simulation_action = QAction("仿真模式", self)
-        simulation_action.setShortcut("F5")
-        simulation_action.setToolTip("进入仿真模式 (F5)")
-        simulation_action.triggered.connect(self.enter_simulation_mode)
-        toolbar.addAction(simulation_action)
-        
-        toolbar.addSeparator()
-        
-        # 删除快速仿真按钮（潮流计算功能已移除）
 
     def create_menu(self):
         """创建菜单栏"""
@@ -120,14 +87,17 @@ class MainWindow(QMainWindow):
         
         new_action = QAction("新建", self)
         new_action.setShortcut("Ctrl+N")
+        new_action.triggered.connect(self.new_topology)
         file_menu.addAction(new_action)
         
         open_action = QAction("打开", self)
         open_action.setShortcut("Ctrl+O")
+        open_action.triggered.connect(self.open_topology)
         file_menu.addAction(open_action)
         
         save_action = QAction("保存", self)
         save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self.save_topology)
         file_menu.addAction(save_action)
         
         file_menu.addSeparator()
@@ -388,3 +358,75 @@ class MainWindow(QMainWindow):
             "<p>基于PySide6和pandapower的电网仿真工具</p>"
             "<p>版本: 0.1.0</p>"
         )
+
+    def open_topology(self):
+        """从文件打开网络拓扑"""
+        try:
+            # 使用TopologyManager导入拓扑
+            success = self.topology_manager.import_topology(
+                self.canvas.scene, 
+                self
+            )
+            
+            if success:
+                self.statusBar().showMessage("拓扑结构已加载", 3000)
+                # 刷新画布视图
+                self.canvas.fit_in_view()
+            else:
+                self.statusBar().showMessage("加载取消或失败", 3000)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "加载错误", f"加载拓扑结构时发生错误：\n{str(e)}")
+            self.statusBar().showMessage("加载失败", 3000)
+
+    def save_topology(self):
+        """保存当前网络拓扑到文件"""
+        try:
+            # 使用TopologyManager保存拓扑
+            success = self.topology_manager.export_topology(
+                self.canvas.scene, 
+                self
+            )
+            
+            if success:
+                self.statusBar().showMessage("拓扑结构已保存", 3000)
+            else:
+                self.statusBar().showMessage("保存取消或无网络组件", 3000)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "保存错误", f"保存拓扑结构时发生错误：\n{str(e)}")
+            self.statusBar().showMessage("保存失败", 3000)
+
+    def new_topology(self):
+        """创建新的网络拓扑（清空当前场景）"""
+        try:
+            # 检查当前是否有组件，询问是否保存
+            has_items = False
+            for item in self.canvas.scene.items():
+                if hasattr(item, 'component_type'):
+                    has_items = True
+                    break
+            
+            if has_items:
+                reply = QMessageBox.question(
+                    self, 
+                    "新建网络", 
+                    "当前网络中有组件，是否保存当前网络？",
+                    QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                    QMessageBox.Save
+                )
+                
+                if reply == QMessageBox.Save:
+                    # 先保存当前网络
+                    if not self.save_topology():
+                        return  # 如果保存取消，不新建
+                elif reply == QMessageBox.Cancel:
+                    return  # 取消新建操作
+            
+            # 清空当前场景
+            self.canvas.scene.clear()
+            self.statusBar().showMessage("已创建新网络", 3000)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "新建错误", f"创建新网络时发生错误：\n{str(e)}")
+            self.statusBar().showMessage("新建失败", 3000)
