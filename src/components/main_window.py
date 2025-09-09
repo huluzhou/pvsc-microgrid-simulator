@@ -423,8 +423,13 @@ class MainWindow(QMainWindow):
                 elif reply == QMessageBox.Cancel:
                     return  # 取消新建操作
             
-            # 清空当前场景
-            self.canvas.scene.clear()
+            # 清空当前场景（使用画布的专用清空方法）
+            self.canvas.clear_canvas()
+            
+            # 重置组件计数器
+            from components.network_items import BaseNetworkItem
+            BaseNetworkItem.reset_component_counters()
+            
             self.statusBar().showMessage("已创建新网络", 3000)
             
         except Exception as e:

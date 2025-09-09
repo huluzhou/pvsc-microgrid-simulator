@@ -24,8 +24,8 @@ class TopologyManager:
             'Transformer': TransformerItem,
             'Load': LoadItem,
             'Storage': StorageItem,
-            'Static Generator': StaticGeneratorItem,
-            'External Grid': ExternalGridItem,
+            'Static_Generator': StaticGeneratorItem,
+            'External_Grid': ExternalGridItem,
             'Measurement': MeterItem,
             'Charger': ChargerItem
         }
@@ -37,8 +37,8 @@ class TopologyManager:
             'transformer': 'Transformer',
             'load': 'Load',
             'storage': 'Storage',
-            'static_generator': 'Static Generator',
-            'external_grid': 'External Grid',
+            'static_generator': 'Static_Generator',
+            'external_grid': 'External_Grid',
             'measurement': 'Measurement',
             'charger': 'Charger'
         }
@@ -118,19 +118,7 @@ class TopologyManager:
                 topology_data = json.load(f)
             
             # 清空当前场景
-            if hasattr(scene, 'clear'):
-                scene.clear()
-                
-            # 重新绘制网格背景（如果场景支持）
-            if hasattr(scene, 'parent') and scene.parent():
-                canvas = scene.parent()
-                if hasattr(canvas, 'draw_grid'):
-                    canvas.draw_grid()
-                elif hasattr(canvas, 'parent') and canvas.parent():
-                    # 尝试从主窗口获取NetworkCanvas引用
-                    main_window = canvas.parent()
-                    if hasattr(main_window, 'canvas') and hasattr(main_window.canvas, 'draw_grid'):
-                        main_window.canvas.draw_grid()
+            parent_window.canvas.clear_canvas()
             
             # 导入组件
             self._import_components(scene, topology_data)
@@ -275,7 +263,7 @@ class TopologyManager:
                         except (ValueError, TypeError):
                             pass
                             
-                elif item_type in ['Load', 'Generator', 'Storage', 'Static Generator', 'Charger', 'External Grid']:
+                elif item_type in ['Load', 'Generator', 'Storage', 'Static_Generator', 'Charger', 'External_Grid']:
                     bus = item_data.get('bus')
                     if bus is not None:
                         try:
@@ -317,10 +305,7 @@ class TopologyManager:
                                     canvas.connect_items(created_items[target_key], item)
                         except (ValueError, TypeError):
                             pass
-    
-    def _update_connection_indices(self, item, index_mapping: Dict[int, int]):
-        """更新组件连接属性中的索引映射"""
-        pass  # 不再更新连接属性中的索引，保持原始值
+
     
     def _get_topology_type(self, component_type: str) -> str:
         """获取拓扑类型"""
@@ -352,22 +337,3 @@ class TopologyManager:
         }
         return type_map.get(component_type, component_type)
     
-    def _clean_properties(self, properties: Dict[str, Any], component_type: str) -> Dict[str, Any]:
-        """清理不需要的字段"""
-        # 定义需要清理的字段
-        fields_to_clean = [
-            'ip_address', 'port', 'device_id', 'protocol', 'update_rate',
-            'timeout', 'retry_count', 'communication_status', 'last_update',
-            'connection_string', 'database_name', 'username', 'password',
-            'api_key', 'endpoint', 'webhook_url', 'notification_settings',
-            'display_settings', 'ui_preferences', 'custom_colors',
-            'animation_enabled', 'tooltip_enabled', 'grid_snap',
-            'auto_save', 'backup_enabled'
-        ]
-        
-        cleaned = {}
-        for key, value in properties.items():
-            if key not in fields_to_clean:
-                cleaned[key] = value
-        
-        return cleaned

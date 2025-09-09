@@ -104,6 +104,11 @@ class BaseNetworkItem(QGraphicsItem):
         self._component_counters[self.component_type] += 1
         return self._component_counters[self.component_type]
     
+    @classmethod
+    def reset_component_counters(cls):
+        """重置所有组件计数器"""
+        cls._component_counters.clear()
+    
     def update_label_color(self):
         """根据当前主题更新标签颜色"""
         try:
