@@ -172,6 +172,7 @@ class TopologyManager:
                 pos = bus_data.get('geodata', [100 + old_index * 100, 100])
                 bus_item = BusItem(QPointF(pos[0], pos[1]))
                 bus_item.component_index = old_index
+                bus_item.properties['index'] = old_index
                 
                 # 更新属性
                 for key, value in bus_data.items():
@@ -200,6 +201,7 @@ class TopologyManager:
                     pos = item_data.get('geodata', [200 + item_data['index'] * 50, 200])
                     item = item_class(QPointF(pos[0], pos[1]))
                     item.component_index = item_data['index']
+                    item.properties['index'] = item_data['index']
                     
                     # 更新属性 - 保持连接属性的原始索引值
                     for key, value in item_data.items():
