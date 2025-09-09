@@ -16,9 +16,10 @@ from components.network_items import BusItem, LineItem, TransformerItem, LoadIte
 class TopologyManager:
     """拓扑结构管理器，处理network_item的导入导出"""
     
-    def __init__(self):
-        # 组件类型映射
-        self.type_mapping = {
+    # 统一的映射配置
+    COMPONENT_MAPPINGS = {
+        # 类映射：显示名称 -> 类
+        'class_mapping': {
             'Bus': BusItem,
             'Line': LineItem,
             'Transformer': TransformerItem,
@@ -28,10 +29,10 @@ class TopologyManager:
             'External_Grid': ExternalGridItem,
             'Measurement': MeterItem,
             'Charger': ChargerItem
-        }
+        },
         
-        # 反向映射
-        self.reverse_mapping = {
+        # 反向映射：内部名称 -> 显示名称
+        'reverse_mapping': {
             'bus': 'Bus',
             'line': 'Line',
             'transformer': 'Transformer',
@@ -41,7 +42,60 @@ class TopologyManager:
             'external_grid': 'External_Grid',
             'measurement': 'Measurement',
             'charger': 'Charger'
-        }
+        },
+        
+        # 拓扑类型映射：内部名称 -> 拓扑类型
+        'topology_type_mapping': {
+            'bus': 'Bus',
+            'line': 'Line',
+            'transformer': 'Transformer',
+            'load': 'Load',
+            'storage': 'Storage',
+            'static_generator': 'Static_Generator',
+            'external_grid': 'External_Grid',
+            'meter': 'Measurement',
+            'charger': 'Charger'
+        },
+        
+        # 中文映射：内部名称 -> 中文名称
+        'chinese_mapping': {
+            'bus': '母线',
+            'line': '线路',
+            'transformer': '变压器',
+            'load': '负载',
+            'storage': '储能',
+            'static_generator': '光伏',
+            'external_grid': '外部电网',
+            'measurement': '电表',
+            'charger': '充电站'
+        },
+        
+        # 连接目标类型映射：内部名称 -> 显示名称
+        'connection_target_mapping': {
+            'load': 'Load',
+            'line': 'Line',
+            'transformer': 'Transformer',
+            'bus': 'Bus',
+            'generator': 'Generator',
+            'storage': 'Storage',
+            'static_generator': 'Static_Generator',
+            'external_grid': 'External_Grid'
+        },
+        
+        # 负载类型组件（需要连接bus的组件）
+        'load_types': [
+            'Load',
+            'Storage',
+            'Static_Generator',
+            'Charger',
+            'External_Grid'
+        ]
+    }
+    
+    def __init__(self):
+        # 使用统一的映射配置
+        self.type_mapping = self.COMPONENT_MAPPINGS['class_mapping']
+        self.reverse_mapping = self.COMPONENT_MAPPINGS['reverse_mapping']
     
     def export_topology(self, scene, parent_window=None) -> bool:
         """导出整个场景的拓扑结构到JSON文件"""
@@ -263,7 +317,7 @@ class TopologyManager:
                         except (ValueError, TypeError):
                             pass
                             
-                elif item_type in ['Load', 'Generator', 'Storage', 'Static_Generator', 'Charger', 'External_Grid']:
+                elif item_type in self.COMPONENT_MAPPINGS['load_types']:
                     bus = item_data.get('bus')
                     if bus is not None:
                         try:
@@ -285,18 +339,7 @@ class TopologyManager:
                             element_int = int(element)
                             
                             # 根据element_type确定目标组件类型
-                            target_type_map = {
-                                'load': 'Load',
-                                'line': 'Line',
-                                'transformer': 'Transformer',
-                                'bus': 'Bus',
-                                'generator': 'Generator',
-                                'storage': 'Storage',
-                                'static_generator': 'Static_Generator',
-                                'external_grid': 'External_Grid'
-                            }
-                            
-                            target_type = target_type_map.get(element_type)
+                            target_type = self.COMPONENT_MAPPINGS['connection_target_mapping'].get(element_type)
                             if target_type:
                                 target_key = (target_type, element_int)
                                 
@@ -309,31 +352,37 @@ class TopologyManager:
     
     def _get_topology_type(self, component_type: str) -> str:
         """获取拓扑类型"""
-        type_map = {
-            'bus': 'Bus',
-            'line': 'Line',
-            'transformer': 'Transformer',
-            'load': 'Load',
-            'storage': 'Storage',
-            'static_generator': 'Static_Generator',
-            'external_grid': 'External_Grid',
-            'meter': 'Measurement',
-            'charger': 'Charger'
-        }
-        return type_map.get(component_type, component_type)
+        return self.COMPONENT_MAPPINGS['topology_type_mapping'].get(component_type, component_type)
     
     def _get_chinese_type(self, component_type: str) -> str:
         """获取中文类型名称"""
-        type_map = {
-            'bus': '母线',
-            'line': '线路',
-            'transformer': '变压器',
-            'load': '负载',
-            'storage': '储能',
-            'static_generator': '光伏',
-            'external_grid': '外部电网',
-            'measurement': '电表',
-            'charger': '充电站'
-        }
-        return type_map.get(component_type, component_type)
+        return self.COMPONENT_MAPPINGS['chinese_mapping'].get(component_type, component_type)
+    
+    def get_all_component_types(self) -> List[str]:
+        """获取所有组件类型"""
+        return list(self.COMPONENT_MAPPINGS['class_mapping'].keys())
+    
+    def get_load_component_types(self) -> List[str]:
+        """获取所有负载类型组件"""
+        return self.COMPONENT_MAPPINGS['load_types']
+    
+    def is_load_type(self, component_type: str) -> bool:
+        """判断是否为负载类型组件"""
+        return component_type in self.COMPONENT_MAPPINGS['load_types']
+    
+    def get_class_by_type(self, type_name: str) -> Any:
+        """根据类型名称获取对应的类"""
+        return self.COMPONENT_MAPPINGS['class_mapping'].get(type_name)
+    
+    def get_internal_name(self, display_name: str) -> str:
+        """根据显示名称获取内部名称（反向查找）"""
+        for internal, display in self.COMPONENT_MAPPINGS['reverse_mapping'].items():
+            if display == display_name:
+                return internal
+        return display_name.lower()
+    
+    def validate_component_type(self, component_type: str) -> bool:
+        """验证组件类型是否有效"""
+        return (component_type in self.COMPONENT_MAPPINGS['class_mapping'] or
+                component_type in self.COMPONENT_MAPPINGS['topology_type_mapping'])
     

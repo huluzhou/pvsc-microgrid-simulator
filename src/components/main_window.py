@@ -390,8 +390,10 @@ class MainWindow(QMainWindow):
             
             if success:
                 self.statusBar().showMessage("拓扑结构已保存", 3000)
+                return True
             else:
                 self.statusBar().showMessage("保存取消或无网络组件", 3000)
+                return False
                 
         except Exception as e:
             QMessageBox.critical(self, "保存错误", f"保存拓扑结构时发生错误：\n{str(e)}")
