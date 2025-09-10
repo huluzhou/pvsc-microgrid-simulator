@@ -141,7 +141,7 @@ class ModbusManager:
                 di=ModbusSparseDataBlock({}),
                 co=ModbusSparseDataBlock({}),
                 hr=ModbusSparseDataBlock({}),
-                ir=ModbusSparseDataBlock(meter_registers)
+                ir=ModbusSparseDataBlock(meter_registers),
             )
         }
         
@@ -453,7 +453,7 @@ class ModbusManager:
             element = meter_item.properties.get('element', None)
             side = meter_item.properties.get('side', None)
             
-            if not element_type or not element or not side:
+            if not element_type or not element:
                 print(f"电表 {index} 缺少必要参数")
                 return
             
@@ -485,11 +485,10 @@ class ModbusManager:
                         
             except (KeyError, AttributeError):
                 power_value = 0.0
+            # 转换为kw
+            power_kw = int(power_value *1000 / 50 * 100)
             
-            # 将功率值转换为整数（单位：kW）
-            power_kw = int(power_value / 50 * 100)
-            
-            # 写入保持寄存器（功能码3，地址0）
+            # 写入输出寄存器（功能码4，地址0）
             slave_context.setValues(4, 0, [power_kw])
             
         except Exception as e:
@@ -837,8 +836,8 @@ class ModbusManager:
                     slave_context = server_context
                 
                 # 从网络模型中获取最新的功率数据
-                if device_type == 'meter' and hasattr(self.network_model.net, 'meter'):
-                    if device_idx in self.network_model.net.meter.index:
+                if device_type == 'meter' and hasattr(self.network_model.net, 'measurement'):
+                    if device_idx in self.network_model.net.measurement.index:
                         self.update_meter_context(device_idx, slave_context)
                         
                 elif device_type == 'sgen' and hasattr(self.network_model.net, 'sgen'):

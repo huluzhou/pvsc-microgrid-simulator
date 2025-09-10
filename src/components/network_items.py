@@ -922,8 +922,6 @@ class LoadItem(BaseNetworkItem):
             "q_mvar": 0.0,  # 无功功率
             "name": "Load 1",  # 名称
             "bus": None,  # 连接的母线
-            "ip": "192.168.1.100",
-            "port": f"{8000 + self.component_index}",
         }
         self.label.setPlainText(self.properties["name"])
         
