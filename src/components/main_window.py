@@ -223,7 +223,13 @@ class MainWindow(QMainWindow):
         try:
             if not self.canvas.create_network_model():
                 return
-            # 首先进行网络诊断
+            
+            # 首先验证IP和端口的唯一性
+            is_valid, error_msg = self.topology_manager.validate_ip_port_uniqueness(self.canvas.scene, self)
+            if not is_valid:
+                return
+            
+            # 然后进行网络诊断
             if not self.validate_network():
                 return
             

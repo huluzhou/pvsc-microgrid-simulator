@@ -16,6 +16,79 @@ from components.network_items import BusItem, LineItem, TransformerItem, LoadIte
 class TopologyManager:
     """拓扑结构管理器，处理network_item的导入导出"""
     
+    @staticmethod
+    def validate_ip_port_uniqueness(scene, parent_window=None) -> tuple:
+        """
+        验证场景中所有组件的IP地址和端口号的唯一性
+        
+        Args:
+            scene: 场景对象
+            parent_window: 父窗口，用于显示消息框
+            
+        Returns:
+            tuple: (is_valid: bool, error_message: str)
+        """
+        try:
+            # 收集所有具有IP和端口属性的组件
+            ip_port_map = {}  # 用于检测重复 {(ip, port): [component_names]}
+            invalid_components = []  # 存储有问题的组件信息
+            
+            for item in scene.items():
+                if hasattr(item, 'properties') and 'ip' in item.properties and 'port' in item.properties:
+                    ip = str(item.properties.get('ip', '')).strip()
+                    port = str(item.properties.get('port', '')).strip()
+                    
+                    # 获取组件的device_key
+                    device_key = f"{item.component_type}_{item.component_index}"
+                    
+                    # 检查IP和端口是否都有效
+                    if ip and port:
+                        key = (ip, port)
+                        if key not in ip_port_map:
+                            ip_port_map[key] = []
+                        ip_port_map[key].append(device_key)
+                    elif ip or port:  # 只有一个有值，另一个为空
+                        invalid_components.append((device_key, ip, port))
+            
+            # 检查重复
+            duplicates = []
+            for (ip, port), device_keys in ip_port_map.items():
+                if len(device_keys) > 1:
+                    duplicates.append((ip, port, device_keys))
+            
+            # 构建错误消息
+            error_messages = []
+            
+            if duplicates:
+                duplicate_msg = "发现以下IP地址和端口号的重复配置：\n"
+                for ip, port, device_keys in duplicates:
+                    duplicate_msg += f"  IP: {ip}, 端口: {port} - 被以下设备使用：{', '.join(device_keys)}\n"
+                error_messages.append(duplicate_msg)
+            
+            if invalid_components:
+                invalid_msg = "发现以下设备的IP或端口配置不完整：\n"
+                for device_key, ip, port in invalid_components:
+                    invalid_msg += f"  {device_key} - IP: '{ip}', 端口: '{port}'\n"
+                error_messages.append(invalid_msg)
+            
+            if error_messages:
+                full_error = "\n".join(error_messages)
+                if parent_window:
+                    QMessageBox.warning(
+                        parent_window,
+                        "IP和端口配置错误",
+                        full_error + "\n\n请修改配置以确保IP地址和端口号的唯一性。"
+                    )
+                return False, full_error
+            
+            return True, ""
+            
+        except Exception as e:
+            error_msg = f"验证IP和端口唯一性时发生错误：{str(e)}"
+            if parent_window:
+                QMessageBox.warning(parent_window, "验证错误", error_msg)
+            return False, error_msg
+    
     # 统一的映射配置
     COMPONENT_MAPPINGS = {
         # 类映射：显示名称 -> 类
@@ -111,6 +184,11 @@ class TopologyManager:
                     print("场景中没有网络组件")
                 return False
             
+            # 在保存前验证IP和端口的唯一性
+            is_valid, error_msg = self.validate_ip_port_uniqueness(scene, parent_window)
+            if not is_valid:
+                return False
+            
             # 准备数据
             topology_data = self._prepare_topology_data(network_items)
             
@@ -176,6 +254,9 @@ class TopologyManager:
             
             # 导入组件
             self._import_components(scene, topology_data)
+            
+            # 导入后验证IP和端口的唯一性
+            self.validate_ip_port_uniqueness(scene, parent_window)
             
             print(f"拓扑结构已从 {file_path} 导入")
             return True

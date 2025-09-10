@@ -669,6 +669,11 @@ class SimulationWindow(QMainWindow):
             if not self.network_model:
                 QMessageBox.warning(self, "警告", "没有可用的网络模型")
                 return
+            
+            # 首先验证IP和端口的唯一性
+            is_valid, error_msg = self.parent_window.topology_manager.validate_ip_port_uniqueness(self.scene, self)
+            if not is_valid:
+                return
                 
             # 启动所有Modbus服务器
             self.modbus_manager.start_all_modbus_servers()

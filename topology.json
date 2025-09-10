@@ -1,36 +1,4 @@
 {
-  "External_Grid": [
-    {
-      "index": 1,
-      "geodata": [
-        2372.0,
-        2225.0
-      ],
-      "vm_pu": 1.0,
-      "va_degree": 0.0,
-      "name": "External Grid 1",
-      "s_sc_max_mva": 1000.0,
-      "s_sc_min_mva": 800.0,
-      "rx_max": 0.1,
-      "rx_min": 0.1,
-      "bus": "1"
-    }
-  ],
-  "Load": [
-    {
-      "index": 1,
-      "geodata": [
-        2347.0,
-        2503.0
-      ],
-      "p_mw": 1.0,
-      "q_mvar": 0.0,
-      "name": "Load 1",
-      "bus": "1",
-      "ip": "192.168.1.100",
-      "port": "8001"
-    }
-  ],
   "Measurement": [
     {
       "index": 1,
@@ -51,6 +19,38 @@
       "brand": "",
       "ip": "192.168.1.100",
       "port": "8001"
+    }
+  ],
+  "Load": [
+    {
+      "index": 1,
+      "geodata": [
+        2347.0,
+        2503.0
+      ],
+      "p_mw": 1.0,
+      "q_mvar": 0.0,
+      "name": "Load 1",
+      "bus": "1",
+      "ip": "192.168.1.100",
+      "port": "8001"
+    }
+  ],
+  "External_Grid": [
+    {
+      "index": 1,
+      "geodata": [
+        2372.0,
+        2225.0
+      ],
+      "vm_pu": 1.0,
+      "va_degree": 0.0,
+      "name": "External Grid 1",
+      "s_sc_max_mva": 1000.0,
+      "s_sc_min_mva": 800.0,
+      "rx_max": 0.1,
+      "rx_min": 0.1,
+      "bus": "1"
     }
   ],
   "Bus": [

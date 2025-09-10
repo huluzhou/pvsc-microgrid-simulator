@@ -300,6 +300,50 @@ class PropertiesPanel(QWidget):
     def on_property_changed(self, prop_name, new_value):
         """属性值改变事件"""
         if self.current_item and hasattr(self.current_item, 'properties'):
+            # IP和端口唯一性验证
+            if prop_name in ['ip', 'port']:
+                # 获取新的IP和端口组合
+                new_ip = new_value if prop_name == 'ip' else self.current_item.properties.get('ip', '')
+                new_port = new_value if prop_name == 'port' else self.current_item.properties.get('port', '')
+                
+                # 检查IP和端口是否有效
+                if new_ip and new_port:
+                    # 获取画布实例以检查冲突
+                    canvas = None
+                    main_window = self.parent()
+                    while main_window and not hasattr(main_window, 'canvas'):
+                        main_window = main_window.parent()
+                    
+                    if main_window and hasattr(main_window, 'canvas'):
+                        canvas = main_window.canvas
+                    
+                    if canvas:
+                        # 检查是否与现有组件冲突（排除当前组件）
+                        for item in canvas.items():
+                            if (hasattr(item, 'properties') and 
+                                item != self.current_item and
+                                item.properties.get('ip') == new_ip and
+                                item.properties.get('port') == new_port):
+                                
+                                # 发现冲突，显示警告
+                                from PySide6.QtWidgets import QMessageBox
+                                QMessageBox.warning(
+                                    self,
+                                    "IP和端口冲突",
+                                    f"IP地址 {new_ip} 和端口 {new_port} 的组合已被组件 {item.properties.get('name', '未知')} 使用。\n\n请使用不同的IP地址或端口。"
+                                )
+                                
+                                # 恢复原来的值
+                                old_value = self.current_item.properties.get(prop_name, '')
+                                if prop_name in self.property_widgets:
+                                    widget = self.property_widgets[prop_name]
+                                    if hasattr(widget, 'setText'):
+                                        widget.setText(str(old_value))
+                                    elif hasattr(widget, 'setValue'):
+                                        widget.setValue(float(old_value))
+                                
+                                return  # 不更新属性，直接返回
+            
             # 更新组件属性
             self.current_item.properties[prop_name] = new_value
             
@@ -585,6 +629,10 @@ class PropertiesPanel(QWidget):
                 # 功率因数模式参数
                 'sn_mva': {'type': 'float', 'label': '额定功率 (MVA)', 'default': 1.0, 'min': 0.1, 'max': 10000.0},
                 'cos_phi': {'type': 'float', 'label': '功率因数', 'default': 0.9, 'min': 0.1, 'max': 1.0, 'decimals': 3},
+                
+                # 设备信息
+                'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
+                'port': {'type': 'str', 'label': '端口', 'default': ''},
                 
                 # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
