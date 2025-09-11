@@ -552,6 +552,11 @@ class NetworkCanvas(QGraphicsView):
         # 电表连接后自动获取测量元件信息
         self._update_meter_properties_on_connection(item1, item2, point_index1, point_index2)
         
+        # 连接关系发生改变，重置诊断标志位
+        if hasattr(self, 'main_window') and self.main_window:
+            self.main_window.network_is_valid = False
+            print("网络连接已改变，诊断标志位已重置")
+        
         return True
     
     def _update_meter_properties_on_connection(self, item1, item2, point_index1, point_index2):
@@ -950,6 +955,11 @@ class NetworkCanvas(QGraphicsView):
             if hasattr(conn['item2'], 'remove_connection'):
                 point_index2 = conn.get('point_index2', None) if conn['item2'].component_type != 'bus' else None
                 conn['item2'].remove_connection(conn['item1'], point_index2)
+        
+        # 连接关系发生改变，重置诊断标志位
+        if hasattr(self, 'main_window') and self.main_window:
+            self.main_window.network_is_valid = False
+            print("网络连接已改变，诊断标志位已重置")
     
     def disconnect_selected_items(self, items=None):
         """断开选中设备的所有连接"""

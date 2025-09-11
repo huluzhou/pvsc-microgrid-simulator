@@ -19,7 +19,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-
+        self.network_is_valid = False  # 网络状态标志位 
         self.topology_manager = TopologyManager()
         self.init_ui()
 
@@ -158,6 +158,11 @@ class MainWindow(QMainWindow):
         sim_menu = self.menuBar().addMenu("仿真")
         
         # 仿真模式菜单项
+        diagnostic_action = QAction("诊断", self)
+        diagnostic_action.setShortcut("F6")
+        diagnostic_action.triggered.connect(self.diagnostic_network)
+        sim_menu.addAction(diagnostic_action)
+
         simulation_mode_action = QAction("仿真模式", self)
         simulation_mode_action.setShortcut("F5")
         simulation_mode_action.triggered.connect(self.enter_simulation_mode)
@@ -215,6 +220,8 @@ class MainWindow(QMainWindow):
                 self.canvas.scene.update()
                 
             print(f"属性更新: {component_type}.{prop_name} = {new_value}")
+            self.network_is_valid = False
+            print("网络状态已标记为无效")
             
         except Exception as e:
             print(f"处理属性变化时出错: {e}")
@@ -233,7 +240,8 @@ class MainWindow(QMainWindow):
                 return
             
             # 然后进行网络诊断
-            if not self.validate_network():
+            if not self.network_is_valid:
+                QMessageBox.warning(self, "网络诊断", "网络诊断未通过，请先进行诊断。")
                 return
             
             # 如果诊断通过，创建并显示仿真界面
@@ -245,9 +253,20 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "错误", f"进入仿真模式时发生错误：{str(e)}")
-    
-    # 删除基本网络验证方法（与潮流计算相关）
-    
+    def diagnostic_network(self):
+        try:
+            if not self.canvas.create_network_model():
+                return
+            is_valid, error_msg = self.topology_manager.validate_ip_port_uniqueness(self.canvas.scene, self)
+            if not is_valid:
+                return
+            validation_results = self.validate_network()
+            if not validation_results:
+                return
+        except Exception as e:
+            print(f"网络诊断时发生错误：{e}")
+            QMessageBox.critical(self, "错误", f"网络诊断时发生错误：{str(e)}")
+
     def validate_network(self):
         """使用pandapower内置函数验证网络拓扑和参数"""
         try:
@@ -351,6 +370,7 @@ class MainWindow(QMainWindow):
                     f"网络诊断发现以下问题：\n\n{result_text}\n\n建议修复后再进入仿真模式。")
                 return False
             else:
+                self.network_is_valid = True
                 QMessageBox.information(self, "网络诊断", "网络诊断通过！")
                 return True
             

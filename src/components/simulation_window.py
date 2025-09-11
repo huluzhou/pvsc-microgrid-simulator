@@ -109,8 +109,6 @@ class SimulationWindow(QMainWindow):
             # 强制垃圾回收
             gc.collect()
             
-            print(f"已执行第{self._calc_count}次计算的内存清理")
-            
         except Exception as e:
             print(f"定期清理失败: {e}")
 
