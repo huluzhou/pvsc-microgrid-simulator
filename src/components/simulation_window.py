@@ -43,6 +43,10 @@ class SimulationWindow(QMainWindow):
     
     def __init__(self, canvas, parent=None):
         super().__init__(parent)
+        
+        # 先进行内存清理，确保之前仿真不会遗留内存
+        self._cleanup_previous_simulation()
+        
         self.canvas = canvas
         self.parent_window = parent
         self.network_model = canvas.network_model if hasattr(canvas, 'network_model') else None
@@ -96,6 +100,19 @@ class SimulationWindow(QMainWindow):
             self.start_calc_btn.setText("开始仿真")
         if hasattr(self, 'calc_status_label'):
             self.calc_status_label.setText("仿真状态: 已停止")
+    
+    def _cleanup_previous_simulation(self):
+        """清理之前仿真可能遗留的内存"""
+        try:
+            import gc
+            
+            # 强制垃圾回收
+            gc.collect()
+            
+            print(f"已执行第{self._calc_count}次计算的内存清理")
+            
+        except Exception as e:
+            print(f"定期清理失败: {e}")
 
     def init_ui(self):
         """初始化用户界面"""
@@ -622,10 +639,69 @@ class SimulationWindow(QMainWindow):
     
     
     def closeEvent(self, event):
-        """窗口关闭事件"""
-        self.auto_calc_timer.stop()
-        self.parent_window.statusBar().showMessage("已退出仿真模式")
-        event.accept()
+        """窗口关闭事件 - 增强内存清理"""
+        try:
+            # 停止所有定时器
+            self.auto_calc_timer.stop()
+            
+            # 停止所有Modbus服务器
+            if hasattr(self, 'modbus_manager'):
+                self.modbus_manager.stop_all_modbus_servers()
+                self.modbus_manager.clear_device_cache()
+            
+            # 清理数据生成器
+            if hasattr(self, 'data_generator_manager'):
+                self.data_generator_manager.stop_all_generators()
+            
+            # 清理功率监控
+            if hasattr(self, 'power_monitor'):
+                self.power_monitor.cleanup()
+            
+            # 清理缓存
+            self._clear_all_caches()
+            
+            # 断开信号连接
+            self._disconnect_all_signals()
+            
+            # 强制垃圾回收
+            import gc
+            gc.collect()
+            
+            self.parent_window.statusBar().showMessage("已退出仿真模式")
+            
+        except Exception as e:
+            print(f"关闭仿真窗口时发生错误: {e}")
+        finally:
+            event.accept()
+    
+    def _clear_all_caches(self):
+        """清理所有缓存"""
+        # 清理各种缓存
+        cache_attrs = [
+            '_energy_cache', '_meter_cache', '_pv_cache', 
+            '_storage_cache', '_charger_cache', 'generated_devices',
+            'current_component_type', 'current_component_idx'
+        ]
+        
+        for attr in cache_attrs:
+            if hasattr(self, attr):
+                cache = getattr(self, attr)
+                if isinstance(cache, dict):
+                    cache.clear()
+                elif isinstance(cache, set):
+                    cache.clear()
+                elif isinstance(cache, list):
+                    cache.clear()
+                else:
+                    setattr(self, attr, None)
+    
+    def _disconnect_all_signals(self):
+        """断开所有信号连接"""
+        try:
+            # 断开定时器信号
+            self.auto_calc_timer.timeout.disconnect()
+        except:
+            pass
     
     def update_auto_calc_timer(self):
         """更新自动潮流计算定时器间隔"""

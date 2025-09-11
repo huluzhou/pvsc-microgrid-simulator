@@ -445,3 +445,35 @@ class DataGeneratorManager:
                         results[key] = data.get(index, {})
         
         return results
+    
+    def stop_all_generators(self):
+        """停止并清理所有生成器 - 防止内存泄漏"""
+        try:
+            # 停止所有生成器
+            for generator in self.generators.values():
+                if hasattr(generator, 'stop_generation'):
+                    generator.stop_generation()
+            
+            # 清理生成器实例
+            self.generators.clear()
+            
+            # 清理实例属性
+            self.load_generator = None
+            self.pv_generator = None
+            
+        except Exception as e:
+            print(f"清理数据生成器时发生错误: {e}")
+    
+    def cleanup(self):
+        """完整清理资源"""
+        self.stop_all_generators()
+        
+        # 清理所有内部引用
+        if hasattr(self, 'generators'):
+            self.generators = {}
+        
+        if hasattr(self, 'load_generator'):
+            del self.load_generator
+        
+        if hasattr(self, 'pv_generator'):
+            del self.pv_generator

@@ -332,6 +332,40 @@ class PowerMonitor:
         
         # 更新图表显示
         self.display_power_curve()
+    
+    def cleanup(self):
+        """完整清理功率监控资源 - 防止内存泄漏"""
+        try:
+            # 清理所有监控数据
+            self.clear_all_monitors()
+            
+            # 清理历史数据
+            if hasattr(self, 'power_history'):
+                self.power_history.clear()
+            
+            # 清理设备颜色映射
+            if hasattr(self, 'device_colors'):
+                self.device_colors.clear()
+            
+            # 清理监控设备集合
+            if hasattr(self, 'monitored_devices'):
+                self.monitored_devices.clear()
+            
+            # 断开UI组件引用
+            self.ax = None
+            self.canvas = None
+            self.current_device_monitor = None
+            self.monitored_devices_list = None
+            
+            # 清理网络模型引用
+            self.network_model = None
+            
+            # 强制垃圾回收
+            import gc
+            gc.collect()
+            
+        except Exception as e:
+            print(f"清理功率监控资源时发生错误: {e}")
         
     def _get_meter_power(self, meter_id):
         """

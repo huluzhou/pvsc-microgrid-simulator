@@ -789,7 +789,7 @@ class ModbusManager:
             return False
     
     def stop_all_modbus_servers(self):
-        """停止所有Modbus服务器"""
+        """停止所有Modbus服务器 - 增强内存清理"""
         try:
             # 逐个停止每个服务器
             for device_key in list(self.modbus_servers.keys()):
@@ -804,11 +804,34 @@ class ModbusManager:
             # 清空IP设备列表，避免后续更新尝试
             self.ip_devices.clear()
             
+            # 清理所有缓存
+            self.clear_device_cache()
+            
             print("已停止所有Modbus服务器")
             return True
         except Exception as e:
             print(f"停止所有Modbus服务器失败: {e}")
             return False
+    
+    def cleanup(self):
+        """完整清理Modbus资源"""
+        try:
+            # 停止所有服务器
+            self.stop_all_modbus_servers()
+            
+            # 清理所有内部引用
+            self.modbus_contexts = {}
+            self.modbus_servers = {}
+            self.running_services = set()
+            self.ip_devices = []
+            
+            # 强制垃圾回收
+            import gc
+            gc.collect()
+            
+            print("Modbus资源已完全清理")
+        except Exception as e:
+            print(f"清理Modbus资源时发生错误: {e}")
     
     def update_all_modbus_data(self):
         """更新所有具有IP属性设备的Modbus数据"""
