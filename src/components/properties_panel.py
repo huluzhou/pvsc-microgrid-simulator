@@ -29,6 +29,9 @@ class PropertiesPanel(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
         
+        # 设置最小宽度，确保属性面板有足够的显示空间
+        self.setMinimumWidth(280)
+        
         # 标题
         title_label = QLabel("组件属性")
         title_font = QFont()
@@ -157,7 +160,7 @@ class PropertiesPanel(QWidget):
                     if use_power_factor:
                         continue  # 跳过
                 # 功率因数模式参数：仅在使用功率因数模式时显示
-                elif prop_name in ['sn_mva', 'cos_phi']:
+                elif prop_name in ['cos_phi', 'mode']:
                     if not use_power_factor:
                         continue  # 跳过
             
@@ -173,7 +176,7 @@ class PropertiesPanel(QWidget):
                     if use_power_factor:
                         continue  # 跳过
                 # 功率因数模式参数：仅在使用功率因数模式时显示
-                elif prop_name in ['sn_mva', 'cos_phi']:
+                elif prop_name in ['cos_phi', 'mode']:
                     if not use_power_factor:
                         continue  # 跳过
             
@@ -189,7 +192,7 @@ class PropertiesPanel(QWidget):
                     if use_power_factor:
                         continue  # 跳过
                 # 功率因数模式参数：仅在使用功率因数模式时显示
-                elif prop_name in ['cos_phi']:
+                elif prop_name in ['cos_phi', 'mode']:
                     if not use_power_factor:
                         continue  # 跳过
             
