@@ -26,6 +26,8 @@ class BaseNetworkItem(QGraphicsItem):
     
     # 类级别的索引计数器，用于为每种组件类型分配唯一索引
     _component_counters = {}
+    # 类级别的索引回收池，用于存储已删除组件的索引
+    _component_recycled_indices = {}
 
     def __init__(self, pos, parent=None):
         super().__init__(parent)
@@ -82,16 +84,27 @@ class BaseNetworkItem(QGraphicsItem):
         self.connection_point_states = {}  # 记录每个连接点的占用状态 {point_index: connected_item}
     
     def _get_next_index(self):
-        """获取下一个可用的组件索引"""
-        if self.component_type not in self._component_counters:
-            self._component_counters[self.component_type] = 0
-        self._component_counters[self.component_type] += 1
-        return self._component_counters[self.component_type]
+        """获取下一个可用的组件索引，优先使用回收的索引"""
+        # 确保回收池存在
+        if self.component_type not in self._component_recycled_indices:
+            self._component_recycled_indices[self.component_type] = []
+        
+        # 检查是否有可回收的索引
+        if self._component_recycled_indices[self.component_type]:
+            # 使用最小的回收索引（保持索引连续性）
+            return self._component_recycled_indices[self.component_type].pop(0)
+        else:
+            # 没有回收的索引，使用计数器生成新索引
+            if self.component_type not in self._component_counters:
+                self._component_counters[self.component_type] = 0
+            self._component_counters[self.component_type] += 1
+            return self._component_counters[self.component_type]
     
     @classmethod
     def reset_component_counters(cls):
-        """重置所有组件计数器"""
+        """重置所有组件计数器和回收池"""
         cls._component_counters.clear()
+        cls._component_recycled_indices.clear()
     
     def update_label_color(self):
         """根据当前主题更新标签颜色"""
@@ -493,6 +506,16 @@ class BaseNetworkItem(QGraphicsItem):
     def delete_component(self):
         """删除组件"""
         if self.scene():
+            # 将当前索引添加到回收池中
+            if self.component_type not in self._component_recycled_indices:
+                self._component_recycled_indices[self.component_type] = []
+            
+            # 只有当索引不为None时才回收
+            if self.component_index is not None:
+                self._component_recycled_indices[self.component_type].append(self.component_index)
+                # 按升序排序回收的索引，优先使用较小的索引
+                self._component_recycled_indices[self.component_type].sort()
+            
             # 先断开所有连接
             self.disconnect_all_connections()
             
@@ -507,7 +530,7 @@ class BaseNetworkItem(QGraphicsItem):
             
             # 从场景中移除
             scene.removeItem(self)
-            print(f"删除组件: {self.component_name}")
+            print(f"删除组件: {self.component_name} (索引 {self.component_index} 已回收)")
     
     def contextMenuEvent(self, event):
         """右键菜单事件"""
@@ -611,7 +634,7 @@ class StorageItem(BaseNetworkItem):
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{501 + self.component_index}",
         }
-        self.label.setPlainText("母线")
+        self.label.setPlainText(component_name)
         
         # 连接约束：储能可以连接一个母线和一个电表
         self.max_connections = 2
@@ -696,7 +719,7 @@ class ChargerItem(BaseNetworkItem):
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{701 + self.component_index}",
         }
-        self.label.setPlainText("母线")
+        self.label.setPlainText(component_name)
         
         # 连接约束：充电站可以连接一个母线和一个电表
         self.max_connections = 2
@@ -720,15 +743,18 @@ class BusItem(BaseNetworkItem):
     def __init__(self, pos, parent=None):
         super().__init__(pos, parent)
         self.component_type = "bus"
-        self.component_name = "母线"
+        self.component_name = "Bus"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Bus {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             "vn_kv": 20.0,  # 电网电压等级 [kV]
             "geodata": (0, 0),
+            "name": component_name,  # 名称
         }
-        self.label.setPlainText("母线")
+        self.label.setPlainText(component_name)
         
         # 母线可以连接多个组件，无限制
         self.max_connections = -1
@@ -752,9 +778,11 @@ class LineItem(BaseNetworkItem):
     def __init__(self, pos, parent=None):
         super().__init__(pos, parent)
         self.component_type = "line"
-        self.component_name = "线路"
+        self.component_name = "Line"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Line {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
@@ -777,9 +805,9 @@ class LineItem(BaseNetworkItem):
             # 连接属性
             "from_bus": None,  # 起始母线
             "to_bus": None,  # 终止母线
-            "name": "线路",  # 名称
+            "name": component_name,  # 名称
         }
-        self.label.setPlainText("线路")
+        self.label.setPlainText(component_name)
         
         # 连接约束：线路必须连接两个组件
         self.max_connections = 4
@@ -802,9 +830,11 @@ class TransformerItem(BaseNetworkItem):
     def __init__(self, pos, parent=None):
         super().__init__(pos, parent)
         self.component_type = "transformer"
-        self.component_name = "变压器"
+        self.component_name = "Transformer"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Transformer {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
@@ -833,9 +863,9 @@ class TransformerItem(BaseNetworkItem):
             # 连接属性
             "hv_bus": None,  # 高压侧母线
             "lv_bus": None,  # 低压侧母线
-            "name": "变压器",  # 名称
+            "name": component_name,  # 名称
         }
-        self.label.setPlainText(self.properties["name"])
+        self.label.setPlainText(component_name)
         
         # 连接约束：变压器必须连接两个bus
         self.max_connections = 4
@@ -858,20 +888,22 @@ class GeneratorItem(BaseNetworkItem):
     def __init__(self, pos, parent=None):
         super().__init__(pos, parent)
         self.component_type = "generator"
-        self.component_name = "发电机"
+        self.component_name = "Generator"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Generator {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
             "p_mw": 50.0,  # 有功功率
             "vm_pu": 1.0,  # 电压幅值
-            "name": "Generator 1",  # 名称
+            "name": component_name,  # 名称
             "bus": None,  # 连接的母线
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{8000 + self.component_index}",
         }
-        self.label.setPlainText(self.properties["name"])
+        self.label.setPlainText(component_name)
         
         # 连接约束：发电机可以连接一个母线和一个电表
         self.max_connections = 2
@@ -893,18 +925,20 @@ class LoadItem(BaseNetworkItem):
     def __init__(self, pos, parent=None):
         super().__init__(pos, parent)
         self.component_type = "load"
-        self.component_name = "负荷"
+        self.component_name = "Load"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Load {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
             "p_mw": 1.0,  # 有功功率
             "q_mvar": 0.0,  # 无功功率
-            "name": "Load 1",  # 名称
+            "name": component_name,  # 名称
             "bus": None,  # 连接的母线
         }
-        self.label.setPlainText(self.properties["name"])
+        self.label.setPlainText(component_name)
         
         # 连接约束：负荷可以连接一个bus和一个电表
         self.max_connections = 2
@@ -924,22 +958,24 @@ class ExternalGridItem(BaseNetworkItem):
     def __init__(self, pos, parent=None):
         super().__init__(pos, parent)
         self.component_type = "external_grid"
-        self.component_name = "外部电网"
+        self.component_name = "External Grid"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"External Grid {self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
             "vm_pu": 1.0,  # 电压标幺值
             "va_degree": 0.0,  # 电压角度
-            "name": "External Grid 1",  # 名称
+            "name": component_name,  # 名称
             "s_sc_max_mva": 1000.0,  # 最大短路容量
             "s_sc_min_mva": 800.0,  # 最小短路容量
             "rx_max": 0.1,  # 最大R/X比
             "rx_min": 0.1,  # 最小R/X比
             "bus": None,  # 连接的母线
         }
-        self.label.setPlainText(self.properties["name"])
+        self.label.setPlainText(component_name)
         
         # 连接约束：外部电网可以连接一个母线和一个电表
         self.max_connections = 2
@@ -1023,7 +1059,7 @@ class MeterItem(BaseNetworkItem):
     def __init__(self, pos, parent=None):
         super().__init__(pos, parent)
         self.component_type = "meter"
-        self.component_name = "Meter 1"
+        self.component_name = "Meter"
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
         # 动态生成名称

@@ -32,6 +32,9 @@ class MainWindow(QMainWindow):
         # 创建中央画布
         self.canvas = NetworkCanvas(self)
         self.setCentralWidget(self.canvas)
+        # 确保画布始终接收键盘事件
+        self.canvas.setFocusPolicy(Qt.StrongFocus)
+        self.canvas.setFocus()  # 设置初始焦点到画布
 
         # 创建组件面板
         self.create_component_palette()
@@ -122,9 +125,9 @@ class MainWindow(QMainWindow):
         disconnect_action.triggered.connect(self.disconnect_selected)
         edit_menu.addAction(disconnect_action)
         
-        # 删除动作
+        # 删除动作 - 让画布直接处理DEL键事件
         delete_action = QAction("删除所选", self)
-        delete_action.setShortcut("Delete")
+        # 不设置快捷键，让画布直接处理DEL键
         delete_action.triggered.connect(self.delete_selected)
         edit_menu.addAction(delete_action)
         

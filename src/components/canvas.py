@@ -23,18 +23,6 @@ class NetworkCanvas(QGraphicsView):
         super().__init__(parent)
         # 保存父窗口引用用于更新状态栏
         self.main_window = parent
-        # 初始化组件计数器
-        self.component_counters = {
-            'bus': 0,
-            'line': 0,
-            'transformer': 0,
-            'load': 0,
-            'storage': 0,
-            'charger': 0,
-            'external_grid': 0,
-            'static_generator': 0,
-            'meter': 0
-        }
         # 初始化网络模型
         self.network_model = None
         self.init_ui()
@@ -165,27 +153,6 @@ class NetworkCanvas(QGraphicsView):
             
             event.acceptProposedAction()
 
-    def generate_component_name(self, component_type):
-        """生成组件的自动名称"""
-        # 增加计数器
-        self.component_counters[component_type] += 1
-        count = self.component_counters[component_type]
-        
-        # 根据组件类型生成名称
-        name_mapping = {
-            'bus': f'Bus {count}',
-            'line': f'Line {count}',
-            'transformer': f'Transformer {count}',
-            'load': f'Load {count}',
-            'storage': f'Storage {count}',
-            'charger': f'Charger {count}',
-            'external_grid': f'External Grid {count}',
-            'static_generator': f'Static Generator {count}',
-            'meter': f'Meter {count}'
-        }
-        
-        return name_mapping.get(component_type, f'{component_type.capitalize()} {count}')
-    
     def create_component(self, component_type, pos):
         """创建电网组件"""
         item = None
@@ -212,8 +179,11 @@ class NetworkCanvas(QGraphicsView):
         
         # 添加到场景
         if item:
-            # 生成自动名称
-            auto_name = self.generate_component_name(component_type)
+            # 使用BaseNetworkItem的索引系统获取正确的索引
+            # 组件在初始化时已经通过_get_next_index()获取了正确的索引
+            
+            # 生成与系统索引同步的名称
+            auto_name = f"{item.component_name} {item.component_index}"
             item.component_name = auto_name
             
             # 更新组件属性中的名称
@@ -950,9 +920,12 @@ class NetworkCanvas(QGraphicsView):
         if hasattr(self, 'first_selected_item') and self.first_selected_item in selected_items:
             self.first_selected_item = None
         
-        # 删除选中的项目
+        # 删除选中的项目，调用组件的delete_component方法
         for item in selected_items:
-            self.scene.removeItem(item)
+            if hasattr(item, 'delete_component'):
+                item.delete_component()
+            else:
+                self.scene.removeItem(item)
     
     def _remove_connections(self, connections_to_remove):
         """移除连接的通用方法"""
@@ -1276,6 +1249,11 @@ class NetworkCanvas(QGraphicsView):
                         item.rotate_component(90)
                 event.accept()
                 return
+            elif event.key() == Qt.Key_Delete:
+                # DEL键删除选中的组件
+                self.delete_selected_items()
+                event.accept()
+                return
         
         # 如果没有处理，传递给父类
         super().keyPressEvent(event)
@@ -1301,9 +1279,9 @@ class NetworkCanvas(QGraphicsView):
             # 有组件被选中，显示操作提示
             count = len(selected_items)
             if count == 1:
-                message = "已选中 1 个组件 | 双击修改名称 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
+                message = "已选中 1 个组件 | 双击修改名称 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | DEL键删除 | 右键菜单"
             else:
-                message = f"已选中 {count} 个组件 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
+                message = f"已选中 {count} 个组件 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | DEL键删除 | 右键菜单"
         else:
             # 没有选中组件，显示默认状态和视图操作快捷键提示
             message = "就绪 | 拖拽组件到画布，点击组件进行选择和连接 | 视图: Ctrl++(放大) Ctrl+-(缩小) Ctrl+0(适应视图) 右键拖动画布"
