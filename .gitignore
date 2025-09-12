@@ -3,4 +3,4 @@ dist/
 src/components/__pycache__
 src/utils/__pycache__
 src/models/__pycache__
-nuitka_build/
+src/__pycache__
