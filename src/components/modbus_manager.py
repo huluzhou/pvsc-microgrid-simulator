@@ -37,11 +37,8 @@ class ModbusManager:
         for item in self.scene.items():
             if hasattr(item, 'properties') and 'ip' in item.properties and item.properties['ip']:
                 ip = item.properties['ip']
-                # 使用本地回环地址127.0.0.1作为默认IP，避免网络配置问题
-                if ip and ip != "192.168.1.100":  # 排除无效IP
-                    effective_ip = ip
-                else:
-                    effective_ip = "127.0.0.1"
+                # 使用配置的IP地址，默认为0.0.0.0
+                effective_ip = ip if ip else "0.0.0.0"
                     
                 device_info = {
                     'type': item.component_type,

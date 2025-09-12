@@ -791,6 +791,17 @@ class NetworkCanvas(QGraphicsView):
             self.has_dragged = False
             event.accept()
         else:
+            # 左键点击，检查是否点击在空白区域
+            scene_pos = self.mapToScene(event.pos())
+            item_at_pos = self.scene.itemAt(scene_pos, self.transform())
+            
+            # 如果点击在空白区域（没有组件），重置选中状态
+            if not item_at_pos or not hasattr(item_at_pos, 'component_type'):
+                # 重置连接选中状态
+                if hasattr(self, 'first_selected_item'):
+                    self.first_selected_item = None
+                    print("点击画布空白区域，重置选中状态")
+                
             # 其他按键交给父类处理
             super().mousePressEvent(event)
     
