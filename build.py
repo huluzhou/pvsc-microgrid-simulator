@@ -114,6 +114,7 @@ def build_executable():
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",
+        # "--strip",
         "--windowed", 
         "--name=pandapower_sim",
         "--add-data=src/assets;assets",

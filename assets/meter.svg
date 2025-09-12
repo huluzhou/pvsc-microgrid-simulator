@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- 电表外框 -->
+  <rect x="8" y="12" width="48" height="40" rx="4" ry="4" 
+        fill="none" stroke="black" stroke-width="2"/>
+  
+  <!-- 显示屏 -->
+  <rect x="12" y="16" width="40" height="16" rx="2" ry="2" 
+        fill="#e0e0e0" stroke="black" stroke-width="1"/>
+  
+  <!-- 显示数字 -->
+  <text x="32" y="27" text-anchor="middle" font-family="monospace" 
+        font-size="8" fill="black">123.45</text>
+  
+  <!-- 测量类型标识 -->
+  <circle cx="20" cy="40" r="3" fill="none" stroke="black" stroke-width="1.5"/>
+  <text x="20" y="43" text-anchor="middle" font-family="Arial" 
+        font-size="6" fill="black">V</text>
+  
+  <circle cx="32" cy="40" r="3" fill="none" stroke="black" stroke-width="1.5"/>
+  <text x="32" y="43" text-anchor="middle" font-family="Arial" 
+        font-size="6" fill="black">I</text>
+  
+  <circle cx="44" cy="40" r="3" fill="none" stroke="black" stroke-width="1.5"/>
+  <text x="44" y="43" text-anchor="middle" font-family="Arial" 
+        font-size="6" fill="black">P</text>
+  
+  <!-- 连接端子 -->
+  <rect x="14" y="54" width="4" height="6" fill="black"/>
+  <rect x="22" y="54" width="4" height="6" fill="black"/>
+  <rect x="38" y="54" width="4" height="6" fill="black"/>
+  <rect x="46" y="54" width="4" height="6" fill="black"/>
+  
+  <!-- 标题 -->
+  <text x="32" y="8" text-anchor="middle" font-family="Arial" 
+        font-size="8" fill="black" font-weight="bold">METER</text>
+</svg>

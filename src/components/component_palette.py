@@ -5,7 +5,7 @@
 组件面板，用于显示可拖拽的电网组件
 """
 
-from PySide6.QtWidgets import QListWidget, QListWidgetItem, QLabel, QApplication
+from PySide6.QtWidgets import QListWidget, QListWidgetItem, QApplication
 from PySide6.QtCore import Qt, QMimeData, QSize
 from PySide6.QtGui import QDrag, QPixmap, QIcon, QPalette
 from PySide6.QtSvg import QSvgRenderer
@@ -112,8 +112,9 @@ class ComponentPalette(QListWidget):
             item.setData(Qt.UserRole, component["type"])
             # 设置图标 - 使用主题适配的图标
             try:
-                from components.main_window import MainWindow
-                icon_path = MainWindow.get_resource_path(f"assets/{component['icon']}")
+                # 使用统一的资源路径函数
+                from config import get_resource_path
+                icon_path = get_resource_path(component['icon'])
                 if os.path.exists(icon_path):
                     themed_icon = self.create_themed_icon(icon_path, 64)
                     item.setIcon(themed_icon)
@@ -143,8 +144,9 @@ class ComponentPalette(QListWidget):
         # 设置拖拽时的图像
         component_type = item.data(Qt.UserRole)
         try:
-            from components.main_window import MainWindow
-            icon_path = MainWindow.get_resource_path(f"assets/{component_type}.svg")
+            # 使用统一的资源路径函数
+            from config import get_resource_path
+            icon_path = get_resource_path(f"{component_type}.svg")
             if os.path.exists(icon_path):
                 themed_icon = self.create_themed_icon(icon_path, 64)
                 pixmap = themed_icon.pixmap(64, 64)

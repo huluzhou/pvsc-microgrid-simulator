@@ -5,9 +5,9 @@
 主窗口组件
 """
 
-from PySide6.QtWidgets import QMainWindow, QDockWidget, QToolBar, QFileDialog, QMessageBox
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QIcon, QAction
+from PySide6.QtWidgets import QMainWindow, QDockWidget, QMessageBox
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 
 from components.canvas import NetworkCanvas
 from components.component_palette import ComponentPalette
@@ -348,8 +348,8 @@ class MainWindow(QMainWindow):
                     try:
                         cycles = topology.cycles(network_model.net)
                         if cycles:
-                            diagnostic_results.append(f"检测到环网结构，可能影响潮流计算收敛性")
-                    except:
+                            diagnostic_results.append("检测到环网结构，可能影响潮流计算收敛性")
+                    except Exception:
                         pass  # 忽略环网检查错误
                         
             except ImportError:

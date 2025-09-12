@@ -229,7 +229,7 @@ class PVDataGenerator(BaseDataGenerator):
         pv_data = {}
         
         try:
-            sgen = network_model.net.sgen.loc[index]
+            network_model.net.sgen.loc[index]
             
             # 获取当前时间
             from datetime import datetime
@@ -460,10 +460,20 @@ class DataGeneratorManager:
             # 清理实例属性
             self.load_generator = None
             self.pv_generator = None
+            self.clear_all_members()
             
         except Exception as e:
             print(f"清理数据生成器时发生错误: {e}")
-    
+
+    def clear_all_members(self):
+        """清空类中所有成员变量"""
+        # 保留基本属性，清空其他所有
+        keep_attrs = ['__class__', '__dict__', '__weakref__']
+        
+        for attr in list(self.__dict__.keys()):
+            if attr not in keep_attrs:
+                delattr(self, attr) 
+
     def cleanup(self):
         """完整清理资源"""
         self.stop_all_generators()

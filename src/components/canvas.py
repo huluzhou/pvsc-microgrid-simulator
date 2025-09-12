@@ -5,7 +5,7 @@
 网络画布组件，用于绘制和编辑电网拓扑图
 """
 
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsItem, QMenu, QApplication
+from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QMenu, QApplication
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
@@ -309,7 +309,7 @@ class NetworkCanvas(QGraphicsView):
                     if item.component_type == 'load':
                         if connected_buses:
                             bus_idx = connected_buses[0]
-                            load_idx = self.network_model.create_load(
+                            self.network_model.create_load(
                                 id(item),
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
@@ -319,7 +319,7 @@ class NetworkCanvas(QGraphicsView):
                     elif item.component_type == 'external_grid':
                         if connected_buses:
                             bus_idx = connected_buses[0]
-                            ext_grid_idx = self.network_model.create_external_grid(
+                            self.network_model.create_external_grid(
                                 id(item),
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
@@ -329,7 +329,7 @@ class NetworkCanvas(QGraphicsView):
                     elif item.component_type == 'static_generator':
                         if connected_buses:
                             bus_idx = connected_buses[0]
-                            sgen_idx = self.network_model.create_static_generator(
+                            self.network_model.create_static_generator(
                                 id(item),
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
@@ -339,7 +339,7 @@ class NetworkCanvas(QGraphicsView):
                     elif item.component_type == 'storage':
                         if connected_buses:
                             bus_idx = connected_buses[0]
-                            storage_idx = self.network_model.create_storage(
+                            self.network_model.create_storage(
                                 id(item),
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
@@ -349,7 +349,7 @@ class NetworkCanvas(QGraphicsView):
                     elif item.component_type == 'charger':
                         if connected_buses:
                             bus_idx = connected_buses[0]
-                            charger_idx = self.network_model.create_charger(
+                            self.network_model.create_charger(
                                 id(item),
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
@@ -360,7 +360,7 @@ class NetworkCanvas(QGraphicsView):
                         if len(connected_buses) >= 2:
                             hv_bus = connected_buses[0]
                             lv_bus = connected_buses[1]
-                            trafo_idx = self.network_model.create_transformer(
+                            self.network_model.create_transformer(
                                 id(item),
                                 hv_bus,
                                 lv_bus,
@@ -372,7 +372,7 @@ class NetworkCanvas(QGraphicsView):
                         if len(connected_buses) >= 2:
                             from_bus = connected_buses[0]
                             to_bus = connected_buses[1]
-                            line_idx = self.network_model.create_line(
+                            self.network_model.create_line(
                                 id(item),
                                 from_bus,
                                 to_bus,
@@ -595,7 +595,7 @@ class NetworkCanvas(QGraphicsView):
                         print(f"警告：静态发电机索引 {connected_index} 超出范围，使用索引 0")
                         actual_index = 0
                 else:
-                    print(f"警告：网络中没有静态发电机，无法创建电表关联")
+                    print("警告：网络中没有静态发电机，无法创建电表关联")
                     return
             elif connected_type == 'load':
                 # 检查负载是否存在
@@ -606,7 +606,7 @@ class NetworkCanvas(QGraphicsView):
                         print(f"警告：负载索引 {connected_index} 超出范围，使用索引 0")
                         actual_index = 0
                 else:
-                    print(f"警告：网络中没有负载，无法创建电表关联")
+                    print("警告：网络中没有负载，无法创建电表关联")
                     return
             elif connected_type == 'gen':
                 # 检查发电机是否存在
@@ -617,7 +617,7 @@ class NetworkCanvas(QGraphicsView):
                         print(f"警告：发电机索引 {connected_index} 超出范围，使用索引 0")
                         actual_index = 0
                 else:
-                    print(f"警告：网络中没有发电机，无法创建电表关联")
+                    print("警告：网络中没有发电机，无法创建电表关联")
                     return
             elif connected_type == 'bus':
                 # 检查母线是否存在
@@ -628,7 +628,7 @@ class NetworkCanvas(QGraphicsView):
                         print(f"警告：母线索引 {connected_index} 超出范围，使用索引 0")
                         actual_index = 0
                 else:
-                    print(f"警告：网络中没有母线，无法创建电表关联")
+                    print("警告：网络中没有母线，无法创建电表关联")
                     return
             elif connected_type == 'transformer':
                 # 检查变压器是否存在
@@ -639,7 +639,7 @@ class NetworkCanvas(QGraphicsView):
                         print(f"警告：变压器索引 {connected_index} 超出范围，使用索引 0")
                         actual_index = 0
                 else:
-                    print(f"警告：网络中没有变压器，无法创建电表关联")
+                    print("警告：网络中没有变压器，无法创建电表关联")
                     return
             elif connected_type == 'line':
                 # 检查线路是否存在
@@ -650,7 +650,7 @@ class NetworkCanvas(QGraphicsView):
                         print(f"警告：线路索引 {connected_index} 超出范围，使用索引 0")
                         actual_index = 0
                 else:
-                    print(f"警告：网络中没有线路，无法创建电表关联")
+                    print("警告：网络中没有线路，无法创建电表关联")
                     return
         else:
             actual_index = connected_index
@@ -1290,7 +1290,7 @@ class NetworkCanvas(QGraphicsView):
             # 有组件被选中，显示操作提示
             count = len(selected_items)
             if count == 1:
-                message = f"已选中 1 个组件 | 双击修改名称 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
+                message = "已选中 1 个组件 | 双击修改名称 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
             else:
                 message = f"已选中 {count} 个组件 | 旋转: ←/Q键(逆时针) →/E键(顺时针) | 右键菜单可选择旋转"
         else:

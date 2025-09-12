@@ -2,10 +2,9 @@
 提供设备数据生成的UI控制和管理功能
 """
 
-import time
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox, QLabel,
-    QCheckBox, QDoubleSpinBox, QSpinBox, QSlider, QRadioButton, QPushButton,
+    QCheckBox, QDoubleSpinBox, QSlider, QPushButton,
     QMessageBox, QComboBox
 )
 from PySide6.QtCore import Qt

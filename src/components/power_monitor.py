@@ -359,14 +359,23 @@ class PowerMonitor:
             
             # 清理网络模型引用
             self.network_model = None
-            
+            self.clear_all_members()
             # 强制垃圾回收
             import gc
             gc.collect()
             
         except Exception as e:
             print(f"清理功率监控资源时发生错误: {e}")
+
+    def clear_all_members(self):
+        """清空类中所有成员变量"""
+        # 保留基本属性，清空其他所有
+        keep_attrs = ['__class__', '__dict__', '__weakref__']
         
+        for attr in list(self.__dict__.keys()):
+            if attr not in keep_attrs:
+                delattr(self, attr)  
+
     def _get_meter_power(self, meter_id):
         """
         获取指定电表的功率测量值

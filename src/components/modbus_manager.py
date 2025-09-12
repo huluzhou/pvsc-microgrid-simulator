@@ -7,10 +7,9 @@ Modbus服务器管理模块
 """
 
 import threading
-import pandas as pd
 from pymodbus.server import StartTcpServer
 from pymodbus import ModbusDeviceIdentification
-from pymodbus.datastore import ModbusDeviceContext, ModbusSequentialDataBlock, ModbusServerContext, ModbusSparseDataBlock
+from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock
 
 
 class ModbusManager:
@@ -806,13 +805,22 @@ class ModbusManager:
             
             # 清理所有缓存
             self.clear_device_cache()
-            
+            self.clear_all_members()
             print("已停止所有Modbus服务器")
             return True
         except Exception as e:
             print(f"停止所有Modbus服务器失败: {e}")
             return False
-    
+
+    def clear_all_members(self):
+        """清空类中所有成员变量"""
+        # 保留基本属性，清空其他所有
+        keep_attrs = ['__class__', '__dict__', '__weakref__']
+        
+        for attr in list(self.__dict__.keys()):
+            if attr not in keep_attrs:
+                delattr(self, attr)
+
     def cleanup(self):
         """完整清理Modbus资源"""
         try:

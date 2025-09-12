@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
+    QWidget, QVBoxLayout, QLabel, QLineEdit, 
     QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox,
-    QScrollArea, QFrame, QPushButton, QFormLayout, QApplication
+    QScrollArea, QFrame, QFormLayout, QApplication
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPalette, QColor
+from PySide6.QtGui import QFont, QPalette
 
 
 class PropertiesPanel(QWidget):

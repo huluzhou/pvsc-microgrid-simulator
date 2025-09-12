@@ -5,28 +5,17 @@
 仿真界面窗口
 """
 
-import os
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
-    QScrollArea, QTreeWidget, QTreeWidgetItem, QTextEdit, QLabel,
-    QGroupBox, QPushButton, QMessageBox, QProgressBar, QCheckBox, QSpinBox,
-    QTabWidget, QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QDialog,
-    QSizePolicy, QApplication, QFormLayout, QDoubleSpinBox, QRadioButton, QSlider
+    QMainWindow, QWidget, QHBoxLayout, QSplitter,
+    QTreeWidgetItem, QMessageBox, QTableWidgetItem
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap, QPainter, QFont, QBrush, QColor, QPalette
-from PySide6.QtCore import QRectF
+from PySide6.QtGui import QColor
 import pandapower as pp
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-import numpy as np
-from collections import deque
-import threading
 import time
 from datetime import datetime
+
 from .data_generators import DataGeneratorManager
 
 # Modbus管理器导入
@@ -50,6 +39,8 @@ class SimulationWindow(QMainWindow):
         self.canvas = canvas
         self.parent_window = parent
         self.network_model = canvas.network_model if hasattr(canvas, 'network_model') else None
+        # 从canvas获取scene引用
+        self.scene = canvas.scene if hasattr(canvas, 'scene') else None
         
         # 自动潮流计算相关属性
         self.auto_calc_timer = QTimer()
@@ -66,9 +57,6 @@ class SimulationWindow(QMainWindow):
         # 当前显示的组件信息（用于自动更新组件参数表格）
         self.current_component_type = None
         self.current_component_idx = None
-        
-        # 从canvas获取scene引用
-        self.scene = canvas.scene if hasattr(canvas, 'scene') else None
         
         # 光伏能量统计相关属性
         self.last_pv_update_time = None
@@ -210,7 +198,7 @@ class SimulationWindow(QMainWindow):
             self.storage_current_device_label.setText(f"当前设备: {device_name}")
             
             # 检查当前设备是否启用了数据生成
-            is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+            self.is_device_generation_enabled(component_type, component_idx)
         else:
             self.storage_current_device_label.setText("未选择储能设备")
     
@@ -480,7 +468,6 @@ class SimulationWindow(QMainWindow):
             properties = meter_item.properties
             
             # 获取测量参数
-            meas_type = properties.get('meas_type', 'p')
             element_type = properties.get('element_type', 'bus')
             element_idx = properties.get('element', 0)
             side = properties.get('side', None)
@@ -661,17 +648,25 @@ class SimulationWindow(QMainWindow):
             # 断开信号连接
             self._disconnect_all_signals()
             
+            self.parent_window.statusBar().showMessage("已退出仿真模式")
+            self.clear_all_members()
             # 强制垃圾回收
             import gc
             gc.collect()
             
-            self.parent_window.statusBar().showMessage("已退出仿真模式")
             
         except Exception as e:
             print(f"关闭仿真窗口时发生错误: {e}")
         finally:
             event.accept()
-    
+    def clear_all_members(self):
+        """清空类中所有成员变量"""
+        # 保留基本属性，清空其他所有
+        keep_attrs = ['__class__', '__dict__', '__weakref__']
+        
+        for attr in list(self.__dict__.keys()):
+            if attr not in keep_attrs:
+                delattr(self, attr)
     def _clear_all_caches(self):
         """清理所有缓存"""
         # 清理各种缓存
@@ -698,7 +693,8 @@ class SimulationWindow(QMainWindow):
         try:
             # 断开定时器信号
             self.auto_calc_timer.timeout.disconnect()
-        except:
+        except Exception as e:
+            print(f"断开自动潮流计算定时器信号时发生错误: {e}")
             pass
     
     def update_auto_calc_timer(self):

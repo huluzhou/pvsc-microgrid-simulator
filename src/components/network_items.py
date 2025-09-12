@@ -5,31 +5,16 @@
 电网组件图形项，用于在画布上显示各种电网元件
 """
 
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsTextItem, QMenu, QMessageBox, QInputDialog, QApplication
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsTextItem, QMenu, QInputDialog, QApplication
 from PySide6.QtCore import Qt, QPointF, Signal, QObject, QRectF
-from PySide6.QtGui import QPen, QBrush, QColor, QFont, QPainterPath, QTransform, QPalette
+from PySide6.QtGui import QPen,QColor, QPalette
 from PySide6.QtSvg import QSvgRenderer
 import os
 import math
 import sys
 
 
-def get_resource_path(relative_path):
-    """获取资源文件的绝对路径，支持开发环境和打包后的环境"""
-    try:
-        # PyInstaller创建临时文件夹，并将路径存储在_MEIPASS中
-        base_path = sys._MEIPASS
-    except Exception:
-        # 开发环境中使用当前文件的目录
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        # 从src目录向上找到项目根目录
-        while not os.path.exists(os.path.join(base_path, 'src')):
-            parent = os.path.dirname(base_path)
-            if parent == base_path:  # 已经到达根目录
-                break
-            base_path = parent
-    
-    return os.path.join(base_path, relative_path)
+from config import get_resource_path
 
 
 class ItemSignals(QObject):
@@ -145,11 +130,8 @@ class BaseNetworkItem(QGraphicsItem):
             # 保存文件名以便主题切换时重新加载
             self.svg_filename = svg_filename
             
-            # 使用get_resource_path函数获取正确的资源路径
-            svg_path = get_resource_path(os.path.join("assets", svg_filename))
-            if not os.path.exists(svg_path):
-                # 尝试开发环境路径
-                svg_path = get_resource_path(os.path.join("src", "assets", svg_filename))
+            # 使用统一的资源路径函数获取资源路径
+            svg_path = get_resource_path(svg_filename)
             
             if os.path.exists(svg_path):
                 # 读取SVG内容
@@ -454,7 +436,7 @@ class BaseNetworkItem(QGraphicsItem):
                         if hasattr(main_window, 'properties_panel'):
                             # 延迟刷新以避免递归调用
                             QTimer.singleShot(10, lambda: main_window.properties_panel.update_properties(self))
-            except Exception as e:
+            except Exception :
                 pass  # 忽略错误，避免影响主要功能
     
     def is_connection_point_available(self, point_index, connecting_item=None):

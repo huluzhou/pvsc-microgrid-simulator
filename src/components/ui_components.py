@@ -8,17 +8,13 @@ UI组件管理模块
 
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
-    QTreeWidget, QTreeWidgetItem, QLabel, QGroupBox, QPushButton, 
-    QCheckBox, QSpinBox, QTabWidget, QTableWidget, QTableWidgetItem, 
-    QLineEdit, QComboBox, QFormLayout, QDoubleSpinBox, QSlider,
-    QSizePolicy
+    QTreeWidget, QLabel, QGroupBox, QPushButton, 
+    QCheckBox, QSpinBox, QTabWidget, QTableWidget, QLineEdit, QComboBox, QSizePolicy
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QColor, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QFont
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 import matplotlib.pyplot as plt
 
 
