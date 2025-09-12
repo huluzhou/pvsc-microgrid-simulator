@@ -302,6 +302,10 @@ class TopologyManager:
                     if key != 'index':
                         bus_item.properties[key] = value
                 
+                # 更新标签显示的名称（如果有）
+                if 'name' in bus_data:
+                    bus_item.label.setPlainText(bus_data['name'])
+                
                 scene.addItem(bus_item)
                 index_mapping[old_index] = bus_item.component_index
                 created_items[('Bus', old_index)] = bus_item
@@ -330,6 +334,10 @@ class TopologyManager:
                     for key, value in item_data.items():
                         if key != 'index':
                             item.properties[key] = value
+                    
+                    # 更新标签显示的名称
+                    if 'name' in item_data:
+                        item.label.setPlainText(item_data['name'])
                     
                     scene.addItem(item)
                     created_items[(item_type, item_data['index'])] = item
