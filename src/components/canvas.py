@@ -5,7 +5,7 @@
 网络画布组件，用于绘制和编辑电网拓扑图
 """
 
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QMenu, QApplication
+from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QMenu, QApplication, QMessageBox
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
@@ -155,6 +155,17 @@ class NetworkCanvas(QGraphicsView):
 
     def create_component(self, component_type, pos):
         """创建电网组件"""
+        
+        # 检查是否已存在外部电网，如果尝试创建第二个则阻止
+        if component_type == "external_grid":
+            existing_external_grids = [item for item in self.scene.items() 
+                                       if hasattr(item, 'component_type') and item.component_type == "external_grid"]
+            if existing_external_grids:
+                # 显示警告消息
+                QMessageBox.warning(self, "创建限制", 
+                                  "系统中只能存在一个外部电网设备！")
+                return None
+        
         item = None
         
         # 根据组件类型创建对应的图形项
@@ -621,6 +632,17 @@ class NetworkCanvas(QGraphicsView):
                         actual_index = 0
                 else:
                     print("警告：网络中没有线路，无法创建电表关联")
+                    return
+            elif connected_type == 'external_grid':
+                # 检查外部电网是否存在
+                if hasattr(self.network_model.net, 'ext_grid') and not self.network_model.net.ext_grid.empty:
+                    if connected_index < len(self.network_model.net.ext_grid) + 1:
+                        actual_index = connected_index
+                    else:
+                        print(f"警告：外部电网索引 {connected_index} 超出范围，使用索引 0")
+                        actual_index = 0
+                else:
+                    print("警告：网络中没有外部电网，无法创建电表关联")
                     return
         else:
             actual_index = connected_index

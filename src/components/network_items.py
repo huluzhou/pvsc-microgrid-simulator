@@ -960,7 +960,7 @@ class ExternalGridItem(BaseNetworkItem):
         self.component_type = "external_grid"
         self.component_name = "External Grid"
         # 在设置component_type后分配索引
-        self.component_index = self._get_next_index()
+        self.component_index = 0
         # 动态生成名称
         component_name = f"External Grid {self.component_index}"
         self.properties = {
