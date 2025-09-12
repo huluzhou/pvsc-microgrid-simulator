@@ -152,7 +152,8 @@ class TopologyManager:
             'generator': 'Generator',
             'storage': 'Storage',
             'static_generator': 'Static_Generator',
-            'external_grid': 'External_Grid'
+            'ext_grid': 'External_Grid',
+            'measurement': 'Measurement'   # 添加电表映射
         },
         
         # 负载类型组件（需要连接bus的组件）
@@ -419,24 +420,37 @@ class TopologyManager:
                             pass
                             
                 elif item_type == 'Measurement':
-                    # 电表连接到具体的设备（负载、线路等）
-                    element = item_data.get('element')
-                    element_type = item_data.get('element_type')
-                    
-                    if element is not None and element_type is not None:
+                    # 电表连接逻辑：优先通过bus连接，其次通过element/element_type连接
+                    bus = item_data.get('bus')
+                    if bus is not None:
+                        # 通过bus属性连接
                         try:
-                            element_int = int(element)
+                            bus_int = int(bus)
+                            bus_key = ('Bus', bus_int)
                             
-                            # 根据element_type确定目标组件类型
-                            target_type = self.COMPONENT_MAPPINGS['connection_target_mapping'].get(element_type)
-                            if target_type:
-                                target_key = (target_type, element_int)
-                                
-                                if target_key in created_items:
-                                    # 电表连接到目标设备
-                                    canvas.connect_items(created_items[target_key], item)
+                            if bus_key in created_items:
+                                canvas.connect_items(created_items[bus_key], item)
                         except (ValueError, TypeError):
                             pass
+                    else:
+                        # 通过element/element_type连接
+                        element = item_data.get('element')
+                        element_type = item_data.get('element_type')
+                        
+                        if element is not None and element_type is not None:
+                            try:
+                                element_int = int(element)
+                                
+                                # 根据element_type确定目标组件类型
+                                target_type = self.COMPONENT_MAPPINGS['connection_target_mapping'].get(element_type)
+                                if target_type:
+                                    target_key = (target_type, element_int)
+                                    
+                                    if target_key in created_items:
+                                        # 电表连接到目标设备
+                                        canvas.connect_items(created_items[target_key], item)
+                            except (ValueError, TypeError):
+                                pass
 
     
     def _get_topology_type(self, component_type: str) -> str:
