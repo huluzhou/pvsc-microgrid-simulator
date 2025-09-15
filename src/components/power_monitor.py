@@ -110,12 +110,12 @@ class PowerMonitor:
             elif device_type == "储能":
                 # 从储能潮流计算结果中获取实际功率
                 if hasattr(self.network_model.net, 'res_storage') and device_id in self.network_model.net.res_storage.index:
-                    return abs(self.network_model.net.res_storage.loc[device_id, 'p_mw'])
+                    return self.network_model.net.res_storage.loc[device_id, 'p_mw']
                 else:
                     # 使用设定值
                     storage = self.network_model.net.storage
                     if device_id in storage.index:
-                        return abs(storage.loc[device_id, 'p_mw'])
+                        return storage.loc[device_id, 'p_mw']
                     return 0.0
                     
             elif device_type == "外部电网":
@@ -236,9 +236,11 @@ class PowerMonitor:
                 min_power = min(all_powers)
                 max_power = max(all_powers)
                 padding = max((max_power - min_power) * 0.1, 0.1)
-                self.ax.set_ylim(max(0, min_power - padding), max_power + padding)
+                # 允许负值显示，不再使用max(0, ...)
+                self.ax.set_ylim(min_power - padding, max_power + padding)
             else:
-                self.ax.set_ylim(0, 1)
+                # 默认范围改为对称，方便显示负值
+                self.ax.set_ylim(-1, 1)
             
             # 显示图例
             if len(self.monitored_devices) > 0:
