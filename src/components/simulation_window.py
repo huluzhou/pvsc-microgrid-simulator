@@ -508,6 +508,10 @@ class SimulationWindow(QMainWindow):
                         elif side == "lv":
                             measurement_value = self.network_model.net.res_trafo.loc[element_idx, 'p_lv_mw']
                             para = "p_lv_mw"
+                elif element_type == 'ext_grid' and hasattr(self.network_model.net, 'res_ext_grid'):
+                    if element_idx in self.network_model.net.res_ext_grid.index:
+                        measurement_value = self.network_model.net.res_ext_grid.loc[element_idx, 'p_mw']
+                        para = "p_mw"
             except Exception as e:
                 return {"error": f"获取测量值时出错: {str(e)}"}
             

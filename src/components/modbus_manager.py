@@ -475,6 +475,8 @@ class ModbusManager:
                         power_value = self.network_model.net.res_trafo.loc[element, 'p_lv_mw']
                     else:
                         power_value = self.network_model.net.res_trafo.loc[element, 'p_hv_mw']
+                elif element_type == 'ext_grid' and element in self.network_model.net.ext_grid.index:
+                    power_value = self.network_model.net.res_ext_grid.loc[element, 'p_mw']
                         
             except (KeyError, AttributeError):
                 power_value = 0.0
