@@ -449,9 +449,6 @@ class ModbusManager:
             element = meter_item.properties.get('element', None)
             side = meter_item.properties.get('side', None)
             
-            if not element_type or not element:
-                print(f"电表 {index} 缺少必要参数")
-                return
             
             # 实时获取功率数据（不缓存）
             power_value = 0.0
@@ -802,7 +799,7 @@ class ModbusManager:
             
             # 清理所有缓存
             self.clear_device_cache()
-            self.clear_all_members()
+            # self.clear_all_members()
             print("已停止所有Modbus服务器")
             return True
         except Exception as e:
