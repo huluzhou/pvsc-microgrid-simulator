@@ -16,22 +16,43 @@ class PowerMonitor:
     """功率曲线监控管理器"""
     
     def __init__(self, parent_window):
+        """初始化功率监控器"""
         self.parent_window = parent_window
         self.network_model = parent_window.network_model
-        
-        # 功率监控相关属性
-        self.power_history = {}  # 存储多个设备的功率历史数据 {device_key: deque}
-        self.monitored_devices = set()  # 存储要监控的设备集合
+        self.power_history = {}  # 存储功率历史数据
+        self.monitored_devices = set()  # 存储需要监控的设备
         self.device_colors = {}  # 存储设备对应的颜色
-        self.color_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
-                             '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-        
-        # 获取UI组件引用 - 延迟初始化，避免在parent_window完全初始化前访问
         self.ax = None
         self.canvas = None
-        # UI组件将在parent_window初始化后设置
-        self.current_device_monitor = None
-        self.monitored_devices_list = None
+        
+        # 性能优化：添加更新计时器
+        self._update_timer = None
+        self._batch_update_pending = False
+        
+        # 颜色配置
+        self.color_palette = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
+            '#FECA57', '#FF9FF3', '#54A0FF', '#5F27CD'
+        ]
+    
+    def schedule_curve_update(self):
+        """延迟更新图表，避免频繁重绘"""
+        if self._update_timer is None:
+            from PySide6.QtCore import QTimer
+            self._update_timer = QTimer()
+            self._update_timer.setSingleShot(True)
+            self._update_timer.timeout.connect(self._perform_batch_update)
+        
+        # 重置计时器，延迟100ms后更新
+        self._update_timer.stop()
+        self._update_timer.start(100)
+        self._batch_update_pending = True
+    
+    def _perform_batch_update(self):
+        """执行批量更新"""
+        if self._batch_update_pending:
+            self.display_power_curve()
+            self._batch_update_pending = False
     
     def initialize_ui_components(self):
         """初始化UI组件引用，在parent_window完全初始化后调用"""
@@ -160,7 +181,7 @@ class PowerMonitor:
             print(f"更新功率曲线失败: {str(e)}")
     
     def display_power_curve(self):
-        """显示多条功率曲线 - 支持同时监控多个设备"""
+        """显示多条功率曲线 - 确保时间基准和窗口完全一致"""
         try:
             # 确保ax已初始化
             if self.ax is None:
@@ -168,103 +189,168 @@ class PowerMonitor:
             if self.ax is None:
                 return
                 
+            # 快速检查：如果没有监控的设备，直接显示提示
+            if not self.monitored_devices:
+                self._show_empty_message()
+                return
+            
             # 清空当前图表
             self.ax.clear()
             
-            # 如果没有监控的设备，显示提示信息
-            if not self.monitored_devices or not self.power_history:
-                self.ax.text(0.5, 0.5, "等待数据收集...\n\n1. 在设备树中选择设备\n2. 勾选\"监控当前设备\"\n3. 启用自动计算功能\n4. 数据将实时显示", 
-                             transform=self.ax.transAxes, ha='center', va='center', 
-                             bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7),
-                             fontsize=12)
-                self.ax.set_xlabel('时间 (秒)', fontsize=12)
-                self.ax.set_ylabel('功率 (MW)', fontsize=12)
-                self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
-                if hasattr(self, 'canvas') and self.canvas:
-                     self.canvas.draw()
-                elif hasattr(self.parent_window, 'canvas_mpl'):
-                     self.parent_window.canvas_mpl.draw()
-                return
-            
+            # 收集所有有效数据
+            all_data = []
             all_powers = []
+            all_times = []
             
-            # 获取所有设备的时间戳，找到最早的时间
-            all_timestamps = []
-            for device_key, history in self.power_history.items():
-                if device_key in self.monitored_devices and history:
-                    all_timestamps.extend([item[0] for item in history])
-            
-            if not all_timestamps:
-                return
-                
-            start_time = min(all_timestamps)
-            
-            # 为每个监控的设备绘制曲线
-            for device_key in self.monitored_devices:
+            for device_key in list(self.monitored_devices):
                 if device_key in self.power_history and self.power_history[device_key]:
-                    history = self.power_history[device_key]
-                    timestamps = [item[0] for item in history]
-                    powers = [item[1] for item in history]
+                    history = list(self.power_history[device_key])  # 转换为列表以便操作
                     
-                    # 转换为相对时间（秒）
-                    relative_times = [t - start_time for t in timestamps]
-                    
-                    # 获取设备类型和ID
-                    device_type, device_id = device_key.split('_', 1)
-                    
-                    # 使用预定义的颜色或生成新颜色
-                    if device_key not in self.device_colors:
-                        color_index = len(self.device_colors) % len(self.color_palette)
-                        self.device_colors[device_key] = self.color_palette[color_index]
-                    
-                    color = self.device_colors[device_key]
-                    
-                    # 绘制功率曲线
-                    self.ax.plot(relative_times, powers, color=color, linewidth=2,
-                                label=f'{device_type} {device_id}')
-                    
-                    all_powers.extend(powers)
+                    if history:
+                        # 数据采样：限制数据点数量
+                        max_points = 1000
+                        if len(history) > max_points:
+                            step = max(1, len(history) // max_points)
+                            sampled_history = history[::step]
+                            # 确保包含最新数据
+                            if history and history[-1] not in sampled_history:
+                                sampled_history.append(history[-1])
+                            history = sampled_history
+                        
+                        if history:
+                            timestamps = [item[0] for item in history]
+                            powers = [item[1] for item in history]
+                            
+                            all_data.append({
+                                'device_key': device_key,
+                                'timestamps': timestamps,
+                                'powers': powers
+                            })
+                            all_powers.extend(powers)
+                            all_times.extend(timestamps)
             
-            # 设置图表属性
-            self.ax.set_xlabel('时间 (秒)', fontsize=12)
-            self.ax.set_ylabel('功率 (MW)', fontsize=12)
-            self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
-            self.ax.grid(True, alpha=0.3)
+            if not all_data:
+                self._show_empty_message()
+                return
             
-            # 自动调整Y轴范围
-            if all_powers:
-                min_power = min(all_powers)
-                max_power = max(all_powers)
-                padding = max((max_power - min_power) * 0.1, 0.1)
-                # 允许负值显示，不再使用max(0, ...)
-                self.ax.set_ylim(min_power - padding, max_power + padding)
-            else:
-                # 默认范围改为对称，方便显示负值
-                self.ax.set_ylim(-1, 1)
+            # 使用全局统一的时间基准和窗口
+            global_start_time = min(all_times)
+            current_time = max(all_times) if all_times else time.time()
+            max_display_time = max(300, current_time - global_start_time)  # 至少显示5分钟
             
-            # 显示图例
-            if len(self.monitored_devices) > 0:
-                self.ax.legend()
+            # 绘制所有曲线
+            for data in all_data:
+                device_key = data['device_key']
+                timestamps = data['timestamps']
+                powers = data['powers']
+                
+                # 使用统一的相对时间
+                relative_times = [t - global_start_time for t in timestamps]
+                
+                # 缓存颜色
+                if device_key not in self.device_colors:
+                    color_index = len(self.device_colors) % len(self.color_palette)
+                    self.device_colors[device_key] = self.color_palette[color_index]
+                
+                device_type, device_id = device_key.split('_', 1)
+                self.ax.plot(relative_times, powers, 
+                           color=self.device_colors[device_key], linewidth=1.5,
+                           label=f'{device_type} {device_id}')
             
-            # 刷新图表
-            if hasattr(self, 'canvas') and self.canvas:
-                 self.canvas.draw()
-            elif hasattr(self.parent_window, 'canvas_mpl'):
-                 self.parent_window.canvas_mpl.draw()
+            # 设置统一的时间轴范围
+            self._setup_time_axis(global_start_time, current_time)
+            self._setup_chart_layout(all_powers)
+            
+            # 高效刷新图表
+            self._refresh_canvas()
             
         except Exception as e:
-            self.ax.clear()
-            self.ax.text(0.5, 0.5, f"显示功率曲线失败: {str(e)}", 
-                         transform=self.ax.transAxes, ha='center', va='center', 
-                         bbox=dict(boxstyle='round', facecolor='red', alpha=0.5))
+            self._handle_display_error(str(e))
+    
+    def _setup_time_axis(self, global_start_time, current_time):
+        """设置统一的时间轴，确保最新数据点位置一致"""
+        time_range = current_time - global_start_time
+        
+        # 设置合理的显示窗口
+        if time_range <= 60:  # 1分钟内
+            display_range = 60  # 显示1分钟
+            self.ax.set_xlim(0, display_range)
+        elif time_range <= 300:  # 5分钟内
+            display_range = 300  # 显示5分钟
+            self.ax.set_xlim(0, display_range)
+        elif time_range <= 600:  # 10分钟内
+            display_range = 600  # 显示10分钟
+            self.ax.set_xlim(0, display_range)
+        else:  # 超过10分钟，显示最近10分钟
+            display_range = 600
+            self.ax.set_xlim(time_range - display_range, time_range)
+        
+        # 设置时间轴标签
+        self.ax.set_xlabel('时间 (秒)', fontsize=12)
+        
+        # 添加网格线，便于观察时间点
+        self.ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+    
+    def _show_empty_message(self):
+        """显示空数据提示"""
+        self.ax.clear()
+        self.ax.text(0.5, 0.5, "等待数据收集...\n\n1. 在设备树中选择设备\n2. 勾选\"监控当前设备\"\n3. 启用自动计算功能\n4. 数据将实时显示", 
+                     transform=self.ax.transAxes, ha='center', va='center', 
+                     bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7),
+                     fontsize=12)
+        self.ax.set_xlabel('时间 (秒)', fontsize=12)
+        self.ax.set_ylabel('功率 (MW)', fontsize=12)
+        self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
+        self._refresh_canvas()
+    
+    def _setup_chart_layout(self, all_powers):
+        """设置图表布局"""
+        self.ax.set_xlabel('时间 (秒)', fontsize=12)
+        self.ax.set_ylabel('功率 (MW)', fontsize=12)
+        self.ax.set_title('功率曲线监控', fontsize=14, fontweight='bold')
+        self.ax.grid(True, alpha=0.3)
+        
+        # 智能调整Y轴范围
+        if all_powers:
+            min_power = min(all_powers)
+            max_power = max(all_powers)
+            
+            # 添加合理的边距
+            range_size = max_power - min_power
+            if range_size < 0.1:  # 数据范围太小
+                padding = 0.1
+            else:
+                padding = range_size * 0.1
+            
+            self.ax.set_ylim(min_power - padding, max_power + padding)
+        else:
+            self.ax.set_ylim(-1, 1)
+        
+        # 显示图例（如果有数据）
+        if self.ax.get_legend_handles_labels()[0]:
+            self.ax.legend()
+    
+    def _refresh_canvas(self):
+        """高效刷新画布"""
+        try:
             if hasattr(self, 'canvas') and self.canvas:
-                 self.canvas.draw()
+                self.canvas.draw_idle()  # 使用draw_idle代替draw，提高性能
             elif hasattr(self.parent_window, 'canvas_mpl'):
-                 self.parent_window.canvas_mpl.draw()
-            print(f"显示功率曲线失败: {str(e)}")
+                self.parent_window.canvas_mpl.draw_idle()
+        except Exception as e:
+            print(f"刷新画布失败: {str(e)}")
+    
+    def _handle_display_error(self, error_msg):
+        """处理显示错误"""
+        self.ax.clear()
+        self.ax.text(0.5, 0.5, f"显示功率曲线失败: {error_msg}", 
+                     transform=self.ax.transAxes, ha='center', va='center', 
+                     bbox=dict(boxstyle='round', facecolor='red', alpha=0.5))
+        self._refresh_canvas()
+        print(f"显示功率曲线失败: {error_msg}")
     
     def toggle_current_device_monitor(self, state):
-        """切换当前设备监控状态"""
+        """切换当前设备监控状态 - 优化延迟更新"""
         if not self.parent_window.selected_device_id or not self.parent_window.selected_device_type:
             return
             
@@ -279,11 +365,11 @@ class PowerMonitor:
                 self.monitored_devices.remove(device_key)
                 self.update_monitored_devices_list()
                 
-        # 更新图表显示
-        self.display_power_curve()
+        # 使用延迟更新机制，避免频繁重绘
+        self.schedule_curve_update()
     
     def on_monitored_device_toggled(self, item, column):
-        """监控设备列表中的复选框状态改变"""
+        """监控设备列表中的复选框状态改变 - 优化延迟更新"""
         if column == 0:  # 第一列是复选框
             device_key = item.data(0, Qt.UserRole)
             if item.checkState(0) == Qt.Checked:
@@ -298,8 +384,21 @@ class PowerMonitor:
             if current_device_key and hasattr(self.parent_window, 'current_device_monitor'):
                 self.parent_window.current_device_monitor.setChecked(current_device_key in self.monitored_devices)
             
-            # 更新图表显示
-            self.display_power_curve()
+            # 使用延迟更新机制
+            self.schedule_curve_update()
+    
+    def schedule_curve_update(self):
+        """延迟更新图表，避免频繁重绘"""
+        if self._update_timer is None:
+            from PySide6.QtCore import QTimer
+            self._update_timer = QTimer()
+            self._update_timer.setSingleShot(True)
+            self._update_timer.timeout.connect(self._perform_batch_update)
+        
+        # 重置计时器，延迟100ms后更新
+        self._update_timer.stop()
+        self._update_timer.start(100)
+        self._batch_update_pending = True
     
     def update_monitored_devices_list(self):
         """更新监控设备列表"""
@@ -323,7 +422,7 @@ class PowerMonitor:
                 print(f"更新监控设备列表失败: {str(e)}")
     
     def clear_all_monitors(self):
-        """清除所有监控设备"""
+        """清除所有监控设备 - 优化性能"""
         self.monitored_devices.clear()
         self.device_colors.clear()
         self.update_monitored_devices_list()
@@ -332,8 +431,8 @@ class PowerMonitor:
         if hasattr(self.parent_window, 'current_device_monitor'):
             self.parent_window.current_device_monitor.setChecked(False)
         
-        # 更新图表显示
-        self.display_power_curve()
+        # 使用延迟更新机制
+        self.schedule_curve_update()
     
     def cleanup(self):
         """完整清理功率监控资源 - 防止内存泄漏"""
