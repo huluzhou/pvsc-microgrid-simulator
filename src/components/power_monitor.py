@@ -470,6 +470,10 @@ class PowerMonitor:
                     'hv': 'p_hv_mw',
                     'lv': 'p_lv_mw',
                 }
+            },
+            'ext_grid': {
+                'result_attr': 'res_ext_grid',
+                'value_key': 'p_mw'
             }
         }
         
