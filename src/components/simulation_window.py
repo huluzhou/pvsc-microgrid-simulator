@@ -649,7 +649,7 @@ class SimulationWindow(QMainWindow):
             self._disconnect_all_signals()
             
             self.parent_window.statusBar().showMessage("已退出仿真模式")
-            self.clear_all_members()
+            # self.clear_all_members()
             # 强制垃圾回收
             import gc
             gc.collect()

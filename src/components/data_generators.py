@@ -460,7 +460,7 @@ class DataGeneratorManager:
             # 清理实例属性
             self.load_generator = None
             self.pv_generator = None
-            self.clear_all_members()
+            # self.clear_all_members()
             
         except Exception as e:
             print(f"清理数据生成器时发生错误: {e}")

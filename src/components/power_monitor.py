@@ -361,7 +361,7 @@ class PowerMonitor:
             
             # 清理网络模型引用
             self.network_model = None
-            self.clear_all_members()
+            # self.clear_all_members()
             # 强制垃圾回收
             import gc
             gc.collect()
