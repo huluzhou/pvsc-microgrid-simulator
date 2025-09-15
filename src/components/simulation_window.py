@@ -26,7 +26,7 @@ from .ui_components import UIComponentManager
 from .power_monitor import PowerMonitor
 
 
-
+# TODO:将仿真界面改为独立窗口
 class SimulationWindow(QMainWindow):
     """仿真界面窗口"""
     

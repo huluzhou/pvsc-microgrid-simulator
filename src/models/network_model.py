@@ -259,13 +259,6 @@ class NetworkModel:
         
         # 为充电桩分配独立的索引，避免与负载冲突
         charger_index = properties.get("index", None)
-        if charger_index is None:
-            # 如果没有指定索引，使用当前负载数量+1000作为充电桩的起始索引
-            charger_index = len(self.net.load) + 1000
-        else:
-            # 如果指定了索引，确保不与现有负载冲突
-            # 为充电桩索引添加1000偏移量，避免与负载索引重叠
-            charger_index = charger_index + 1000
         
         if use_power_factor:
             # 使用功率因数模式 - 调用create_load_from_cosphi

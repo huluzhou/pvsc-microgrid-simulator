@@ -707,7 +707,7 @@ class ChargerItem(BaseNetworkItem):
         # 动态生成名称
         component_name = f"Charger {self.component_index}"
         self.properties = {
-            "index": self.component_index,  # 组件索引
+            "index": self.component_index + 1000,  # 组件索引
             "geodata": (0, 0),
             "sn_mva": 1.0,
             "p_mw": 1.0,  # 充电功率

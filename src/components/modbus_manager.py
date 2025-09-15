@@ -253,8 +253,11 @@ class ModbusManager:
         # 枪4状态: 103 (保持寄存器)
         charger_input_registers = {
             0: 0,  # 有功功率
+            1: 0,
             2: 0,  # 需求功率
+            3: 0,
             4: 0,  # 额定功率
+            5: 0,
             100: 1,  # gun1 - 初始状态1
             101: 2,  # gun2 - 初始状态2
             102: 3,  # gun3 - 初始状态3
@@ -289,9 +292,13 @@ class ModbusManager:
         try:
             slave_context = context[1]
             
-            # 写入额定功率 (单位: kW)
+            # 写入额定功率 (单位: kW，32位无符号整数)
             rated_power = int(device_info.get('sn_mva', 1.0) * 1000)  # 转换为kW
-            slave_context.setValues(4, 4, [rated_power])
+            
+            # 分高低位写入（地址4:低16位 + 地址5:高16位）
+            rated_power_low = rated_power & 0xFFFF
+            rated_power_high = (rated_power >> 16) & 0xFFFF
+            slave_context.setValues(4, 4, [rated_power_low, rated_power_high])
             
             # 写入枪状态信息 (1, 2, 3, 4)
             slave_context.setValues(4, 100, [1])  # 枪1状态: 1
@@ -480,11 +487,14 @@ class ModbusManager:
                         
             except (KeyError, AttributeError):
                 power_value = 0.0
-            # 转换为kw
+            # 转换为kw（32位无符号整数）
             power_kw = int(power_value *1000 / 50 * 100)
             
-            # 写入输出寄存器（功能码4，地址0）
-            slave_context.setValues(4, 0, [power_kw])
+            # 分高低位写入输出寄存器（32位数据拆分为两个16位寄存器）
+            # 功率值：地址0(低16位) + 地址1(高16位)
+            power_low = power_kw & 0xFFFF
+            power_high = (power_kw >> 16) & 0xFFFF
+            slave_context.setValues(4, 0, [power_low, power_high])
             
         except Exception as e:
             print(f"更新电表上下文失败: {e}")
@@ -721,15 +731,22 @@ class ModbusManager:
             
             # 数据转换和验证
             active_power_kw = int(round(abs(power_mw) * 1000*10))  # MW -> kW
-            required_power_kw = int(round(charger_item.properties.get('max_p_mw', 50) * 1000*10))  # 最大需求功率
+            required_power_kw = int(round(charger_item.properties.get('max_p_mw', 0) * 1000*10))  # 最大需求功率
             
             # 数据范围检查
             active_power_kw = max(0, min(active_power_kw, MAX_32BIT_UINT))
             required_power_kw = max(0, min(required_power_kw, MAX_32BIT_UINT))
             
-            # 写入寄存器数据（输入寄存器）
-            slave_context.setValues(INPUT_REG, REG_ACTIVE_POWER, [active_power_kw])
-            slave_context.setValues(INPUT_REG, REG_REQUIRED_POWER, [required_power_kw])
+            # 分高低位写入寄存器数据（32位数据拆分为两个16位寄存器）
+            # 有功功率：地址0(低16位) + 地址1(高16位)
+            active_power_low = active_power_kw & 0xFFFF
+            active_power_high = (active_power_kw >> 16) & 0xFFFF
+            slave_context.setValues(INPUT_REG, REG_ACTIVE_POWER, [active_power_low, active_power_high])
+            
+            # 需求功率：地址2(低16位) + 地址3(高16位)
+            required_power_low = required_power_kw & 0xFFFF
+            required_power_high = (required_power_kw >> 16) & 0xFFFF
+            slave_context.setValues(INPUT_REG, REG_REQUIRED_POWER, [required_power_low, required_power_high])
             
         except KeyError as e:
             raise RuntimeError(f"充电桩设备数据缺失: {e}")
