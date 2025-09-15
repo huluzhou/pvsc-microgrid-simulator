@@ -129,6 +129,7 @@ class SimulationWindow(QMainWindow):
         self.data_control_manager.create_sgen_data_generation_tab()
         self.data_control_manager.create_load_data_generation_tab()
         self.data_control_manager.create_storage_data_generation_tab()
+        self.data_control_manager.create_charger_data_generation_tab()
         
         # 设置分割器比例，让中央区域有更大的权重
         splitter.setSizes([250, 800, 300])
@@ -160,6 +161,11 @@ class SimulationWindow(QMainWindow):
         storage_tab_index = self.results_tabs.indexOf(self.storage_data_tab)
         if storage_tab_index != -1:
             self.results_tabs.removeTab(storage_tab_index)
+            
+        # 移除充电桩选项卡
+        charger_tab_index = self.results_tabs.indexOf(self.charger_data_tab)
+        if charger_tab_index != -1:
+            self.results_tabs.removeTab(charger_tab_index)
     
     def update_sgen_device_info(self, component_type, component_idx):
         """更新光伏设备信息"""
@@ -201,6 +207,21 @@ class SimulationWindow(QMainWindow):
             self.is_device_generation_enabled(component_type, component_idx)
         else:
             self.storage_current_device_label.setText("未选择储能设备")
+
+    def update_charger_device_info(self, component_type, component_idx):
+        """更新充电桩设备信息"""
+        if component_type and component_idx is not None:
+            device_name = f"充电桩_{component_idx}"
+            self.charger_current_device_label.setText(f"当前设备: {device_name}")
+            # 更新充电桩需求功率显示
+            if self.network_model and hasattr(self.network_model, 'net') and component_idx in self.network_model.net.load.index:
+                current_power = self.network_model.net.load.loc[component_idx, 'p_mw']
+                current_power_kw = current_power * 1000  # 转换为kW
+                self.charger_required_power_spinbox.setValue(current_power_kw)
+        else:
+            self.charger_current_device_label.setText("未选择充电桩设备")
+            self.charger_enable_generation_checkbox.setChecked(False)
+            self.charger_enable_generation_checkbox.setEnabled(False)
     
     def is_device_generation_enabled(self, component_type, component_idx):
         """检查指定设备是否启用了数据生成"""
@@ -350,7 +371,15 @@ class SimulationWindow(QMainWindow):
             if component_type == 'sgen':
                 self.results_tabs.addTab(self.sgen_data_tab, "光伏控制")
             elif component_type == 'load':
-                self.results_tabs.addTab(self.load_data_tab, "负载控制")
+                # 判断是否为充电桩设备
+                if hasattr(self.network_model.net.load, 'name') and component_idx in self.network_model.net.load.index:
+                    load_name = self.network_model.net.load.loc[component_idx, 'name']
+                    if '充电桩' in str(load_name) or 'charger' in str(load_name).lower():
+                        self.results_tabs.addTab(self.charger_data_tab, "充电桩控制")
+                    else:
+                        self.results_tabs.addTab(self.load_data_tab, "负载控制")
+                else:
+                    self.results_tabs.addTab(self.load_data_tab, "负载控制")
             elif component_type == 'storage':
                 self.results_tabs.addTab(self.storage_data_tab, "储能控制")
         
@@ -358,7 +387,16 @@ class SimulationWindow(QMainWindow):
         if component_type == 'sgen':
             self.update_sgen_device_info(component_type, component_idx)
         elif component_type == 'load':
-            self.update_load_device_info(component_type, component_idx)
+            # 判断是否为充电桩设备
+            is_charger = False
+            if hasattr(self.network_model.net.load, 'name') and component_idx in self.network_model.net.load.index:
+                load_name = self.network_model.net.load.loc[component_idx, 'name']
+                if '充电桩' in str(load_name) or 'charger' in str(load_name).lower():
+                    is_charger = True
+                    self.update_charger_device_info(component_type, component_idx)
+            
+            if not is_charger:
+                self.update_load_device_info(component_type, component_idx)
         elif component_type == 'storage':
             self.update_storage_device_info(component_type, component_idx)
             

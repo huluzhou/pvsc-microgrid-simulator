@@ -198,7 +198,7 @@ class DataControlManager:
         # 手动控制面板
         self.parent_window.storage_manual_panel = QWidget()
         storage_manual_panel_layout = QFormLayout(self.parent_window.storage_manual_panel)
-        
+
         # 有功功率控制（正值为放电，负值为充电）
         self.parent_window.storage_power_slider = QSlider(Qt.Horizontal)
         self.parent_window.storage_power_slider.setRange(-100, 100)  # 滑块范围：-100.0到100.0MW（乘以10）
@@ -232,6 +232,64 @@ class DataControlManager:
         layout.addWidget(storage_manual_group)
         
         layout.addStretch()
+
+    def create_charger_data_generation_tab(self):
+        """创建充电桩设备专用的数据生成控制选项卡"""
+        layout = QVBoxLayout(self.parent_window.charger_data_tab)
+        
+        # 当前选择设备信息
+        current_device_group = QGroupBox("当前选择充电桩设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+        
+        self.parent_window.charger_current_device_label = QLabel("未选择充电桩设备")
+        self.parent_window.charger_current_device_label.setStyleSheet("font-weight: bold; color: #9C27B0;")
+        current_device_layout.addWidget(self.parent_window.charger_current_device_label)
+        
+
+        
+        layout.addWidget(current_device_group)
+        
+        # 充电桩需求功率手动控制
+        charger_manual_group = QGroupBox("充电桩需求功率控制")
+        charger_manual_layout = QVBoxLayout(charger_manual_group)
+        
+        # 手动控制面板
+        self.parent_window.charger_manual_panel = QWidget()
+        charger_manual_panel_layout = QFormLayout(self.parent_window.charger_manual_panel)
+        
+        # 需求功率控制
+        self.parent_window.charger_required_power_slider = QSlider(Qt.Horizontal)
+        self.parent_window.charger_required_power_slider.setRange(0, 100)  # 0-100kW
+        self.parent_window.charger_required_power_slider.setValue(0)
+        self.parent_window.charger_required_power_slider.setMinimumWidth(100)
+        self.parent_window.charger_required_power_slider.valueChanged.connect(self.on_charger_required_power_changed)
+        
+        self.parent_window.charger_required_power_spinbox = QDoubleSpinBox()
+        self.parent_window.charger_required_power_spinbox.setRange(0.0, 100.0)
+        self.parent_window.charger_required_power_spinbox.setValue(0.0)
+        self.parent_window.charger_required_power_spinbox.setSuffix(" kW")
+        self.parent_window.charger_required_power_spinbox.valueChanged.connect(self.on_charger_required_power_spinbox_changed)
+        
+        charger_required_power_layout = QHBoxLayout()
+        charger_required_power_layout.addWidget(self.parent_window.charger_required_power_slider)
+        charger_required_power_layout.addWidget(self.parent_window.charger_required_power_spinbox)
+        charger_manual_panel_layout.addRow("需求功率:", charger_required_power_layout)
+        
+        # 功率说明标签
+        power_info_label = QLabel("提示：设置充电桩的需求功率，用于模拟充电需求")
+        power_info_label.setStyleSheet("color: #666; font-size: 12px;")
+        charger_manual_panel_layout.addRow("", power_info_label)
+        
+        # 应用按钮
+        charger_apply_button = QPushButton("应用充电桩设置")
+        charger_apply_button.clicked.connect(self.apply_charger_settings)
+        charger_manual_panel_layout.addRow("", charger_apply_button)
+        
+        self.parent_window.charger_manual_panel.setVisible(True)  # 默认显示手动控制面板
+        charger_manual_layout.addWidget(self.parent_window.charger_manual_panel)
+        layout.addWidget(charger_manual_group)
+        
+        layout.addStretch()
         
     # 数据生成状态管理方法
     def is_device_generation_enabled(self, component_type, component_idx):
@@ -250,6 +308,8 @@ class DataControlManager:
     def toggle_storage_data_generation(self, state):
         """切换储能设备的数据生成状态"""
         self._toggle_device_data_generation(state, 'storage')
+
+
     
     def _toggle_device_data_generation(self, state, device_type):
         """切换指定类型设备的数据生成状态"""
@@ -490,6 +550,30 @@ class DataControlManager:
                 self.parent_window.storage_power_spinbox.setValue(current_power)
         except Exception as e:
             print(f"更新储能设备手动控制值时出错: {e}")
+
+    def update_charger_manual_controls_from_device(self):
+        """从当前充电桩设备更新手动控制组件的值"""
+        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+            return
+            
+        if not self.parent_window.network_model or not hasattr(self.parent_window.network_model, 'net'):
+            return
+            
+        if self.parent_window.current_component_type != 'charger':
+            return
+            
+        try:
+            # 获取充电桩设备的当前需求功率值
+            current_power = self.parent_window.network_model.net.load.at[self.parent_window.current_component_idx, 'p_mw']
+            current_power_kw = current_power * 1000  # 转换为kW
+            
+            # 更新滑块和输入框的值
+            if hasattr(self.parent_window, 'charger_required_power_slider'):
+                self.parent_window.charger_required_power_slider.setValue(int(current_power_kw))  # 转换为滑块值
+            if hasattr(self.parent_window, 'charger_required_power_spinbox'):
+                self.parent_window.charger_required_power_spinbox.setValue(current_power_kw)
+        except Exception as e:
+            print(f"更新充电桩设备手动控制值时出错: {e}")
     
     def update_manual_controls_from_device(self):
         """从当前设备更新手动控制组件的值（保留兼容性）"""
@@ -702,6 +786,26 @@ class DataControlManager:
             self.parent_window.storage_power_slider.blockSignals(True)
             self.parent_window.storage_power_slider.setValue(slider_value)
             self.parent_window.storage_power_slider.blockSignals(False)
+
+    def on_charger_required_power_changed(self, value):
+        """充电桩需求功率滑块改变时的回调"""
+        if hasattr(self.parent_window, 'charger_required_power_spinbox'):
+            # 滑块值直接对应功率值（精确到1kW）
+            power_value = float(value)
+            self.parent_window.charger_required_power_spinbox.blockSignals(True)
+            self.parent_window.charger_required_power_spinbox.setValue(power_value)
+            self.parent_window.charger_required_power_spinbox.blockSignals(False)
+
+    def on_charger_required_power_spinbox_changed(self, value):
+        """充电桩需求功率输入框改变时的回调"""
+        if hasattr(self.parent_window, 'charger_required_power_slider'):
+            # 功率值转换为滑块值（精确到1kW）
+            slider_value = int(value)
+            slider_value = max(0, min(100, slider_value))  # 限制在0-100范围内
+            
+            self.parent_window.charger_required_power_slider.blockSignals(True)
+            self.parent_window.charger_required_power_slider.setValue(slider_value)
+            self.parent_window.charger_required_power_slider.blockSignals(False)
     
     # 功率设置应用方法
     def apply_manual_power_settings(self):
@@ -856,6 +960,61 @@ class DataControlManager:
         except Exception as e:
             QMessageBox.critical(self.parent_window, "错误", f"应用储能设置时出错: {str(e)}")
             print(f"应用储能设置时出错: {e}")
+
+    def apply_charger_settings(self):
+        """应用充电桩设备设置"""
+        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+            QMessageBox.warning(self.parent_window, "警告", "请先选择一个充电桩设备")
+            return
+            
+        if self.parent_window.current_component_type != 'load':
+            QMessageBox.warning(self.parent_window, "警告", "当前选择的不是充电桩设备")
+            return
+            
+        if not self.parent_window.network_model or not hasattr(self.parent_window.network_model, 'net'):
+            QMessageBox.warning(self.parent_window, "警告", "网络模型未加载")
+            return
+            
+        component_idx = self.parent_window.current_component_idx
+        
+        try:
+            if component_idx in self.parent_window.network_model.net.load.index:
+                # 获取需求功率（从UI控件）
+                demand_power_kw = self.parent_window.charger_required_power_spinbox.value()
+                
+                # 获取功率限制（从充电桩设备的额定功率sn_mva）
+                # 需要从图形项中获取充电桩的额定功率
+                from .network_items import ChargerItem
+                charger_item = None
+                for item in self.parent_window.canvas.scene.items():
+                    if isinstance(item, ChargerItem) and item.component_index == component_idx:
+                        charger_item = item
+                        break
+                
+                power_limit_kw = 0
+                if charger_item:
+                    # 获取充电桩的额定功率（sn_mva）并转换为kW
+                    power_limit_kw = charger_item.properties.get('sn_mva', 1.0) * 1000.0
+                else:
+                    # 如果找不到图形项，使用默认值
+                    power_limit_kw = 1000.0  # 默认1MW
+                
+                # 使用需求功率和功率限制的较大值
+                final_power_kw = max(demand_power_kw, power_limit_kw)
+                final_power_mw = final_power_kw / 1000.0  # 转换为MW
+                
+                # 设置充电桩的有功功率
+                self.parent_window.network_model.net.load.loc[component_idx, 'p_mw'] = final_power_mw
+                
+                self.parent_window.statusBar().showMessage(f"已更新充电桩设备 {component_idx} 的功率设置: {final_power_kw:.1f}kW (需求功率: {demand_power_kw:.1f}kW, 功率限制: {power_limit_kw:.1f}kW)")
+                print(f"应用充电桩设备 {component_idx} 功率设置: {final_power_kw:.1f}kW (max({demand_power_kw:.1f}kW, {power_limit_kw:.1f}kW))")
+
+            else:
+                QMessageBox.warning(self.parent_window, "错误", f"充电桩设备 {component_idx} 不存在")
+                
+        except Exception as e:
+            QMessageBox.critical(self.parent_window, "错误", f"应用充电桩设置时出错: {str(e)}")
+            print(f"应用充电桩设置时出错: {e}")
     
     def remove_all_device_tabs(self):
         """移除所有设备相关的选项卡"""

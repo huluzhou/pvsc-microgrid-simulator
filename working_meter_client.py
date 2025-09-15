@@ -2,100 +2,124 @@
 # -*- coding: utf-8 -*-
 
 """
-工作版电表客户端
-连接本地Modbus服务器 (127.0.0.1:8002)
-读取实时功率数据
+工作版电表客户端 - 四电表真实测试版
+同时连接四个Modbus服务器端口 (403-406)
+读取四个电表设备的有功功率值，结果除以2
 """
 
 import time
-import random
 from pymodbus.client import ModbusTcpClient
 
-def simulate_power_monitor():
-    """模拟功率监控 - 无需真实服务器"""
-    print("🔋 电表功率监控 (模拟模式)")
-    print("=" * 50)
-    print("服务器: 127.0.0.1:8002")
-    print("设备ID: 1")
-    print("寄存器0: 功率数据 (0.01 kW单位)")
-    print("-" * 50)
+class MultiMeterClient:
+    """多电表客户端"""
+    
+    def __init__(self, base_port=403, meter_count=4):
+        self.base_port = base_port
+        self.meter_count = meter_count
+        self.meter_ports = list(range(base_port, base_port + meter_count))
+        self.clients = {}
+        self.meter_data = {}
+        
+    def connect_all_meters(self):
+        """连接所有电表"""
+        print("🔌 连接电表设备...")
+        for i, port in enumerate(self.meter_ports):
+            try:
+                client = ModbusTcpClient(host='127.0.0.1', port=port, timeout=3)
+                if client.connect():
+                    self.clients[f"meter_{i+1}"] = client
+                    self.meter_data[f"meter_{i+1}"] = {
+                        'port': port,
+                        'power': 0.0,
+                        'status': 'connected'
+                    }
+                    print(f"✅ 电表{i+1} (端口{port}) - 连接成功")
+                else:
+                    print(f"❌ 电表{i+1} (端口{port}) - 连接失败")
+                    return False
+            except Exception as e:
+                print(f"❌ 电表{i+1} (端口{port}) - 错误: {e}")
+                return False
+        return True
+    
+    def read_all_powers(self):
+        """读取所有电表的有功功率，结果除以2"""
+        for meter_name, client in self.clients.items():
+            try:
+                result = client.read_input_registers(address=0, count=1, device_id=1)
+                if not result.isError():
+                    raw_value = result.registers[0]
+                    # 功率值除以2，单位kW
+                    power_kw = raw_value / 2.0
+                    self.meter_data[meter_name]['power'] = power_kw
+                    self.meter_data[meter_name]['status'] = 'ok'
+                else:
+                    self.meter_data[meter_name]['status'] = 'read_error'
+                    self.meter_data[meter_name]['power'] = 0.0
+            except Exception as e:
+                self.meter_data[meter_name]['status'] = 'exception'
+                self.meter_data[meter_name]['power'] = 0.0
+                print(f"⚠️ 电表{meter_name}读取异常: {e}")
+    
+    def display_powers(self):
+        """显示所有电表功率"""
+        timestamp = time.strftime('%H:%M:%S')
+        print(f"[{timestamp}] ", end="")
+        
+        total_power = 0.0
+        active_meters = 0
+        
+        for i in range(1, self.meter_count + 1):
+            meter_name = f"meter_{i}"
+            data = self.meter_data[meter_name]
+            power = data['power']
+            status = data['status']
+            
+            if status == 'ok':
+                print(f"电表{i}:{power:6.2f}kW ", end="")
+                total_power += power
+                active_meters += 1
+            else:
+                print(f"电表{i}: 离线   ", end="")
+        
+        print(f"| 总功率:{total_power:7.2f}kW | 在线:{active_meters}/{self.meter_count}")
+    
+    def close_all(self):
+        """关闭所有连接"""
+        for client in self.clients.values():
+            client.close()
+        print("🔌 所有电表连接已关闭")
+
+def main():
+    """主函数 - 四电表功率监控"""
+    print("🔋 四电表功率监控系统")
+    print("=" * 60)
+    print("服务器: 127.0.0.1")
+    print("端口: 403-406 (四个电表)")
+    print("寄存器: 地址0 (有功功率, 结果除以2)")
+    print("-" * 60)
     print("📊 开始监控... 按 Ctrl+C 停止")
     print()
     
-    base_power = 25.0  # 基础功率 25kW
+    multi_client = MultiMeterClient(base_port=403, meter_count=4)
     
     try:
+        if not multi_client.connect_all_meters():
+            print("❌ 电表连接失败，请检查服务器是否启动")
+            return
+            
         count = 0
         while True:
             count += 1
-            
-            # 模拟功率波动
-            power_var = random.uniform(-2.5, 2.5)
-            current_power = base_power + power_var
-            
-            # 模拟其他数据
-            voltage = 220.0 + random.uniform(-5.0, 5.0)
-            current = current_power * 1000 / voltage  # 计算电流
-            
-            timestamp = time.strftime('%H:%M:%S')
-            
-            print(f"[{timestamp}] #{count:4d} | "
-                  f"功率: {current_power:6.2f} kW | "
-                  f"电压: {voltage:5.1f} V | "
-                  f"电流: {current:5.2f} A")
-            
+            multi_client.read_all_powers()
+            multi_client.display_powers()
             time.sleep(2)
             
     except KeyboardInterrupt:
         print(f"\n\n🛑 用户停止监控")
         print(f"📊 总计读取: {count} 次")
-
-def test_modbus_connection():
-    """测试Modbus连接"""
-    print("🔍 测试Modbus连接")
-    print("-" * 30)
-    
-    client = ModbusTcpClient(host='127.0.0.1', port=8001, timeout=3)
-    
-    try:
-        if client.connect():
-            print("✅ 连接成功")
-            
-            while True:
-                # 测试读取
-                result = client.read_input_registers(address=0, count=1,device_id=1)
-                if result.isError():
-                    print("❌ 读取失败 - 服务器未配置数据")
-                    time.sleep(1)
-                    continue
-                regs = result.registers
-                print(f"📊 读取数据:")
-                print(f"  功率: {regs[0]/2} kW")
-                # print(f"  电压: {regs[1] * 0.1:.1f} V")
-                # print(f"  电流: {regs[2] * 0.01:.2f} A")
-                time.sleep(2)
-        else:
-            print("❌ 连接失败 - 服务器未启动")
-            print("💡 使用模拟模式运行")
-            
-    except Exception as e:
-        print(f"❌ 错误: {e}")
-        print("💡 使用模拟模式运行")
     finally:
-        client.close()
+        multi_client.close_all()
 
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='电表客户端')
-    parser.add_argument('--mode', choices=['test', 'simulate'], default='test',
-                       help='运行模式')
-    
-    args = parser.parse_args()
-    
-    if args.mode == 'simulate':
-        simulate_power_monitor()
-    else:
-        test_modbus_connection()
-        print("\n" + "=" * 50)
-        # simulate_power_monitor()
+    main()
