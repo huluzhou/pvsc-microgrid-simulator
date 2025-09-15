@@ -55,12 +55,14 @@ class NetworkModel:
         """
         is_std = properties.get("use_standard_type", True)
         if is_std:
+            # 使用用户选择的标准类型，而不是硬编码的默认值
+            std_type = properties.get("std_type", "NAYY 4x50 SE")
             line_idx = pp.create_line(
                 self.net,
                 from_bus=from_bus,
                 to_bus=to_bus,
                 length_km=properties.get("length_km", 10.0),
-                std_type="NAYY 4x50 SE",  # 默认线路类型
+                std_type=std_type,
                 name=properties.get("name", "Line"),
                 index=properties.get("index", None),
             )
@@ -97,11 +99,13 @@ class NetworkModel:
         """
         is_std = properties.get("use_standard_type", True)
         if is_std:
+            # 使用用户选择的标准类型，而不是硬编码的默认值
+            std_type = properties.get("std_type", "25 MVA 110/20 kV")
             trafo_idx = pp.create_transformer(
                 self.net,
                 hv_bus=hv_bus,
                 lv_bus=lv_bus,
-                std_type="160 MVA 380/110 kV",  # 默认变压器类型
+                std_type=std_type,
                 name=properties.get("name", "Transformer"),
                 index=properties.get("index", None),
             )
