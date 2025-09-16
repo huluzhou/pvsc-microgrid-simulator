@@ -731,7 +731,7 @@ class ModbusManager:
             
             # 数据转换和验证
             active_power_kw = int(round(abs(power_mw) * 1000*10))  # MW -> kW
-            required_power_kw = int(round(charger_item.get('required_power', 0) * 1000*10))  # 最大需求功率
+            required_power_kw = int(round(charger_item.required_power * 1000 *10))  # 最大需求功率
             
             # 数据范围检查
             active_power_kw = max(0, min(active_power_kw, MAX_32BIT_UINT))

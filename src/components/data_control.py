@@ -597,8 +597,10 @@ class DataControlManager:
                 self.parent_window.charger_required_power_spinbox.setValue(safe_value)
             
             # 更新功率限制显示
-            if hasattr(self.parent_window, 'charger_power_limit_label'):
-                self.parent_window.charger_power_limit_label.setText(f"{charger_item.power_limit:.1f} kW")
+            if hasattr(self.parent_window, "charger_power_limit_label"):
+                self.parent_window.charger_power_limit_label.setText(
+                    f"{charger_item.power_limit * 1000:.1f} kW"
+                )
                 
         except Exception as e:
             print(f"更新充电桩设备手动控制值时出错: {e}")
@@ -1025,9 +1027,9 @@ class DataControlManager:
                 power_limit_kw = 0
                 if charger_item:
                     # 使用item中的power_limit成员值
-                    power_limit_kw = charger_item.power_limit
+                    power_limit_kw = charger_item.power_limit * 1000
                     # 存储需求功率到充电桩对象的required_power属性
-                    charger_item.required_power = demand_power_kw
+                    charger_item.required_power = demand_power_kw / 1000
                 else:
                     # 如果找不到图形项，使用默认值
                     power_limit_kw = 1000.0  # 默认1MW
