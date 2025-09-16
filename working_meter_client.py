@@ -4,7 +4,7 @@
 """
 工作版电表客户端 - 四电表真实测试版
 同时连接四个Modbus服务器端口 (403-406)
-读取四个电表设备的有功功率值，结果除以2
+读取四个电表设备的有功功率值（32位数据，高低位组合）
 """
 
 import time
@@ -43,14 +43,19 @@ class MultiMeterClient:
         return True
     
     def read_all_powers(self):
-        """读取所有电表的有功功率，结果除以2"""
+        """读取所有电表的有功功率（32位数据，高低位组合）"""
         for meter_name, client in self.clients.items():
             try:
-                result = client.read_input_registers(address=0, count=1, device_id=1)
-                if not result.isError():
-                    raw_value = result.registers[0]
-                    # 功率值除以2，单位kW
-                    power_kw = raw_value / 2.0
+                # 读取两个连续的16位寄存器（地址0和地址1）
+                result = client.read_input_registers(address=0, count=2, device_id=1)
+                if not result.isError() and len(result.registers) >= 2:
+                    # 组合高低位得到32位无符号整数
+                    low_word = result.registers[0]
+                    high_word = result.registers[1]
+                    raw_value = (high_word << 16) | low_word
+                    
+                    # 转换为kW（服务器端已提供kW单位）
+                    power_kw = raw_value * 0.5 # 转换为MW再转kW，或直接按kW处理
                     self.meter_data[meter_name]['power'] = power_kw
                     self.meter_data[meter_name]['status'] = 'ok'
                 else:
@@ -96,7 +101,7 @@ def main():
     print("=" * 60)
     print("服务器: 127.0.0.1")
     print("端口: 403-406 (四个电表)")
-    print("寄存器: 地址0 (有功功率, 结果除以2)")
+    print("寄存器: 地址0-1 (32位有功功率, 高低位组合)")
     print("-" * 60)
     print("📊 开始监控... 按 Ctrl+C 停止")
     print()

@@ -225,6 +225,7 @@ class UIComponentManager:
         self.parent_window.sgen_data_tab = QWidget()  # 光伏设备选项卡
         self.parent_window.load_data_tab = QWidget()  # 负载设备选项卡
         self.parent_window.storage_data_tab = QWidget()  # 储能设备选项卡
+        self.parent_window.charger_data_tab = QWidget()  # 充电桩设备选项卡
         
         results_layout.addWidget(self.parent_window.results_tabs)
         

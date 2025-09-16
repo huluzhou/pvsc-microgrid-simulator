@@ -279,10 +279,11 @@ class NetworkModel:
         else:
             # 直接使用有功功率模式 - 调用create_load
             p_mw = properties.get("p_mw", 1.0)
-            
+            sn_mva = properties.get("sn_mva", 1.0)  # 默认为1MVA
             charger_idx = pp.create_load(
                 self.net,
                 bus=bus,
+                sn_mva=sn_mva,
                 p_mw=p_mw,
                 name=properties.get("name", f"Charger_{charger_index-1000}"),
                 index=charger_index,

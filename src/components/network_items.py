@@ -719,6 +719,8 @@ class ChargerItem(BaseNetworkItem):
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{701 + self.component_index}",
         }
+        self.power_limit = 1.0 * 1000
+        self.required_power = 1.0 * 1000  # 实际需求功率
         self.label.setPlainText(component_name)
         
         # 连接约束：充电站可以连接一个母线和一个电表

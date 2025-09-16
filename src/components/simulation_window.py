@@ -213,11 +213,6 @@ class SimulationWindow(QMainWindow):
         if component_type and component_idx is not None:
             device_name = f"充电桩_{component_idx}"
             self.charger_current_device_label.setText(f"当前设备: {device_name}")
-            # 更新充电桩需求功率显示
-            if self.network_model and hasattr(self.network_model, 'net') and component_idx in self.network_model.net.load.index:
-                current_power = self.network_model.net.load.loc[component_idx, 'p_mw']
-                current_power_kw = current_power * 1000  # 转换为kW
-                self.charger_required_power_spinbox.setValue(current_power_kw)
         else:
             self.charger_current_device_label.setText("未选择充电桩设备")
             self.charger_enable_generation_checkbox.setChecked(False)
@@ -275,10 +270,15 @@ class SimulationWindow(QMainWindow):
         if not self.network_model.net.load.empty:
             load_root = QTreeWidgetItem(self.device_tree, ["负载", "分类", "-"])
             for idx, load in self.network_model.net.load.iterrows():
-                load_name = load.get('name', f'Load_{idx}')
                 status = "正常" if hasattr(self.network_model.net, 'res_load') and not self.network_model.net.res_load.empty and idx in self.network_model.net.res_load.index else "未计算"
-                load_item = QTreeWidgetItem(load_root, [f"Load {idx}: {load_name}", "负载", status])
-                load_item.setData(0, Qt.UserRole, ('load', idx))
+                if idx >=1000:
+                    load_name = load.get('name', f'Charger_{idx}')
+                    load_item = QTreeWidgetItem(load_root, [f"Charger {idx}: {load_name}", "充电桩", status])
+                    load_item.setData(0, Qt.UserRole, ('charger', idx))
+                else:
+                    load_name = load.get('name', f'Load_{idx}')
+                    load_item = QTreeWidgetItem(load_root, [f"Load {idx}: {load_name}", "负载", status])
+                    load_item.setData(0, Qt.UserRole, ('load', idx))
                 
         # 添加发电机
         if not self.network_model.net.gen.empty:
@@ -356,132 +356,131 @@ class SimulationWindow(QMainWindow):
             return
             
         # 检查是否需要更新选项卡（只有在设备类型改变时才重新组织选项卡）
-        need_update_tabs = not hasattr(self, 'current_component_type') or self.current_component_type != component_type
+        # need_update_tabs = not hasattr(self, 'current_component_type') or self.current_component_type != component_type
         
         # 记录当前显示的组件信息，用于自动更新
         self.current_component_type = component_type
         self.current_component_idx = component_idx
         
         # 只有在设备类型改变时才重新组织选项卡
-        if need_update_tabs:
+        # if need_update_tabs:
             # 首先移除所有设备专用选项卡
-            self.remove_all_device_tabs()
+        self.remove_all_device_tabs()
+        
+        # 根据设备类型添加对应的专用选项卡
+        if component_type == 'sgen':
+            self.results_tabs.addTab(self.sgen_data_tab, "光伏控制")
+        elif component_type == 'load':
+            self.results_tabs.addTab(self.load_data_tab, "负载控制")
+        elif component_type == 'charger':
+            self.results_tabs.addTab(self.charger_data_tab, "充电桩控制")
+            #根据额定功率设置spinbox的范围
+            self.data_control_manager.update_charger_manual_controls_from_device()
             
-            # 根据设备类型添加对应的专用选项卡
-            if component_type == 'sgen':
-                self.results_tabs.addTab(self.sgen_data_tab, "光伏控制")
-            elif component_type == 'load':
-                # 判断是否为充电桩设备
-                if hasattr(self.network_model.net.load, 'name') and component_idx in self.network_model.net.load.index:
-                    load_name = self.network_model.net.load.loc[component_idx, 'name']
-                    if '充电桩' in str(load_name) or 'charger' in str(load_name).lower():
-                        self.results_tabs.addTab(self.charger_data_tab, "充电桩控制")
-                    else:
-                        self.results_tabs.addTab(self.load_data_tab, "负载控制")
-                else:
-                    self.results_tabs.addTab(self.load_data_tab, "负载控制")
-            elif component_type == 'storage':
-                self.results_tabs.addTab(self.storage_data_tab, "储能控制")
+        elif component_type == 'storage':
+            self.results_tabs.addTab(self.storage_data_tab, "储能控制")
         
         # 更新设备信息（每次都需要更新，因为可能是同类型的不同设备）
         if component_type == 'sgen':
             self.update_sgen_device_info(component_type, component_idx)
         elif component_type == 'load':
-            # 判断是否为充电桩设备
-            is_charger = False
-            if hasattr(self.network_model.net.load, 'name') and component_idx in self.network_model.net.load.index:
-                load_name = self.network_model.net.load.loc[component_idx, 'name']
-                if '充电桩' in str(load_name) or 'charger' in str(load_name).lower():
-                    is_charger = True
-                    self.update_charger_device_info(component_type, component_idx)
-            
-            if not is_charger:
-                self.update_load_device_info(component_type, component_idx)
+            self.update_load_device_info(component_type, component_idx)
+        elif component_type == 'charger':
+            self.update_charger_device_info(component_type, component_idx)
         elif component_type == 'storage':
             self.update_storage_device_info(component_type, component_idx)
             
         try:
-            # 获取组件数据
-            component_data = None
-            result_data = None
-            
-            if component_type == 'bus':
-                component_data = self.network_model.net.bus.loc[component_idx]
-                if hasattr(self.network_model.net, 'res_bus') and not self.network_model.net.res_bus.empty:
-                    if component_idx in self.network_model.net.res_bus.index:
-                        result_data = self.network_model.net.res_bus.loc[component_idx]
-            elif component_type == 'line':
-                component_data = self.network_model.net.line.loc[component_idx]
-                if hasattr(self.network_model.net, 'res_line') and not self.network_model.net.res_line.empty:
-                    if component_idx in self.network_model.net.res_line.index:
-                        result_data = self.network_model.net.res_line.loc[component_idx]
-            elif component_type == 'trafo':
-                component_data = self.network_model.net.trafo.loc[component_idx]
-                if hasattr(self.network_model.net, 'res_trafo') and not self.network_model.net.res_trafo.empty:
-                    if component_idx in self.network_model.net.res_trafo.index:
-                        result_data = self.network_model.net.res_trafo.loc[component_idx]
-            elif component_type == 'load':
-                component_data = self.network_model.net.load.loc[component_idx]
-                if hasattr(self.network_model.net, 'res_load') and not self.network_model.net.res_load.empty:
-                    if component_idx in self.network_model.net.res_load.index:
-                        result_data = self.network_model.net.res_load.loc[component_idx]
-            elif component_type == 'gen':
-                component_data = self.network_model.net.gen.loc[component_idx]
-                if hasattr(self.network_model.net, 'res_gen') and not self.network_model.net.res_gen.empty:
-                    if component_idx in self.network_model.net.res_gen.index:
-                        result_data = self.network_model.net.res_gen.loc[component_idx]
-            elif component_type == 'sgen':
-                component_data = self.network_model.net.sgen.loc[component_idx]
-                if hasattr(self.network_model.net, 'res_sgen') and not self.network_model.net.res_sgen.empty:
-                    if component_idx in self.network_model.net.res_sgen.index:
-                        result_data = self.network_model.net.res_sgen.loc[component_idx]
-            elif component_type == 'ext_grid':
-                component_data = self.network_model.net.ext_grid.loc[component_idx]
-                if hasattr(self.network_model.net, 'res_ext_grid') and not self.network_model.net.res_ext_grid.empty:
-                    if component_idx in self.network_model.net.res_ext_grid.index:
-                        result_data = self.network_model.net.res_ext_grid.loc[component_idx]
-            elif component_type == 'storage':
-                component_data = self.network_model.net.storage.loc[component_idx]
-                if hasattr(self.network_model.net, 'res_storage') and not self.network_model.net.res_storage.empty:
-                    if component_idx in self.network_model.net.res_storage.index:
-                        result_data = self.network_model.net.res_storage.loc[component_idx]
-            elif component_type == 'meter':
-                # 电表设备特殊处理 - 显示测量结果
-                component_data = None
-                result_data = self.show_meter_measurement_details(component_idx)
-            else:
-                return
-                
-            # 填充参数表格（组合组件参数和仿真结果）
-            all_params = {}
-            
-            # 先添加仿真结果（显示在最上方）
-            if result_data is not None:
-                for param, value in result_data.items():
-                    all_params[f"结果_{param}"] = value
-                    
-            # 再添加组件参数
-            if component_data is not None:
-                for param, value in component_data.items():
-                    all_params[f"参数_{param}"] = value
-            
-            self.component_params_table.setRowCount(len(all_params))
-            for i, (param, value) in enumerate(all_params.items()):
-                param_item = QTableWidgetItem(str(param))
-                value_item = QTableWidgetItem(f"{value:.4f}" if isinstance(value, float) else str(value))
-                
-                # 为仿真结果设置不同的背景色
-                if param.startswith("结果_"):
-                    from PySide6.QtGui import QColor
-                    param_item.setBackground(QColor(211, 211, 211))  # 浅灰色
-                    value_item.setBackground(QColor(211, 211, 211))  # 浅灰色
-                    
-                self.component_params_table.setItem(i, 0, param_item)
-                self.component_params_table.setItem(i, 1, value_item)
-                
+            # 调用通用方法更新参数表格
+            self._get_component_data_and_fill_table(component_type, component_idx)
         except Exception as e:
             # 显示错误信息在状态栏
             self.parent_window.statusBar().showMessage(f"显示组件详情时出错: {str(e)}")
+            
+    def _get_component_data_and_fill_table(self, component_type, component_idx):
+        """获取组件数据并填充参数表格的通用方法"""
+        # 获取组件数据
+        component_data = None
+        result_data = None
+        
+        if component_type == 'bus':
+            component_data = self.network_model.net.bus.loc[component_idx]
+            if hasattr(self.network_model.net, 'res_bus') and not self.network_model.net.res_bus.empty:
+                if component_idx in self.network_model.net.res_bus.index:
+                    result_data = self.network_model.net.res_bus.loc[component_idx]
+        elif component_type == 'line':
+            component_data = self.network_model.net.line.loc[component_idx]
+            if hasattr(self.network_model.net, 'res_line') and not self.network_model.net.res_line.empty:
+                if component_idx in self.network_model.net.res_line.index:
+                    result_data = self.network_model.net.res_line.loc[component_idx]
+        elif component_type == 'trafo':
+            component_data = self.network_model.net.trafo.loc[component_idx]
+            if hasattr(self.network_model.net, 'res_trafo') and not self.network_model.net.res_trafo.empty:
+                if component_idx in self.network_model.net.res_trafo.index:
+                    result_data = self.network_model.net.res_trafo.loc[component_idx]
+        elif component_type == 'load':
+            component_data = self.network_model.net.load.loc[component_idx]
+            if hasattr(self.network_model.net, 'res_load') and not self.network_model.net.res_load.empty:
+                if component_idx in self.network_model.net.res_load.index:
+                    result_data = self.network_model.net.res_load.loc[component_idx]
+        elif component_type == 'charger':
+            component_data = self.network_model.net.load.loc[component_idx]
+            if hasattr(self.network_model.net, 'res_load') and not self.network_model.net.res_load.empty:
+                if component_idx in self.network_model.net.res_load.index:
+                    result_data = self.network_model.net.res_load.loc[component_idx]
+        elif component_type == 'gen':
+            component_data = self.network_model.net.gen.loc[component_idx]
+            if hasattr(self.network_model.net, 'res_gen') and not self.network_model.net.res_gen.empty:
+                if component_idx in self.network_model.net.res_gen.index:
+                    result_data = self.network_model.net.res_gen.loc[component_idx]
+        elif component_type == 'sgen':
+            component_data = self.network_model.net.sgen.loc[component_idx]
+            if hasattr(self.network_model.net, 'res_sgen') and not self.network_model.net.res_sgen.empty:
+                if component_idx in self.network_model.net.res_sgen.index:
+                    result_data = self.network_model.net.res_sgen.loc[component_idx]
+        elif component_type == 'ext_grid':
+            component_data = self.network_model.net.ext_grid.loc[component_idx]
+            if hasattr(self.network_model.net, 'res_ext_grid') and not self.network_model.net.res_ext_grid.empty:
+                if component_idx in self.network_model.net.res_ext_grid.index:
+                    result_data = self.network_model.net.res_ext_grid.loc[component_idx]
+        elif component_type == 'storage':
+            component_data = self.network_model.net.storage.loc[component_idx]
+            if hasattr(self.network_model.net, 'res_storage') and not self.network_model.net.res_storage.empty:
+                if component_idx in self.network_model.net.res_storage.index:
+                    result_data = self.network_model.net.res_storage.loc[component_idx]
+        elif component_type == 'meter':
+            # 电表设备特殊处理 - 显示测量结果
+            component_data = None
+            result_data = self.show_meter_measurement_details(component_idx)
+        else:
+            return
+            
+        # 填充参数表格（组合组件参数和仿真结果）
+        all_params = {}
+        
+        # 先添加仿真结果（显示在最上方）
+        if result_data is not None:
+            for param, value in result_data.items():
+                all_params[f"结果_{param}"] = value
+                
+        # 再添加组件参数
+        if component_data is not None:
+            for param, value in component_data.items():
+                all_params[f"参数_{param}"] = value
+        
+        self.component_params_table.setRowCount(len(all_params))
+        for i, (param, value) in enumerate(all_params.items()):
+            param_item = QTableWidgetItem(str(param))
+            value_item = QTableWidgetItem(f"{value:.4f}" if isinstance(value, float) else str(value))
+            
+            # 为仿真结果设置不同的背景色
+            if param.startswith("结果_"):
+                from PySide6.QtGui import QColor
+                param_item.setBackground(QColor(211, 211, 211))  # 浅灰色
+                value_item.setBackground(QColor(211, 211, 211))  # 浅灰色
+                
+            self.component_params_table.setItem(i, 0, param_item)
+            self.component_params_table.setItem(i, 1, value_item)
 
     def update_component_params_table(self):
         """更新组件参数表格 - 在自动计算时刷新当前显示的组件详情"""
@@ -489,10 +488,22 @@ class SimulationWindow(QMainWindow):
             # 检查是否有当前选中的组件
             if hasattr(self, 'current_component_type') and hasattr(self, 'current_component_idx'):
                 if self.current_component_type and self.current_component_idx is not None:
-                    # 重新显示当前组件的详情，这会自动更新表格内容
-                    self.show_component_details(self.current_component_type, self.current_component_idx)
+                    # 只更新组件详情数据表格，不重新组织选项卡
+                    self._update_component_table_only(self.current_component_type, self.current_component_idx)
         except Exception as e:
             print(f"更新组件参数表格时出错: {str(e)}")
+            
+    def _update_component_table_only(self, component_type, component_idx):
+        """仅更新组件详情数据表格，不重新组织选项卡和更新设备控制"""
+        if not self.network_model:
+            return
+            
+        try:
+            # 调用通用方法更新参数表格
+            self._get_component_data_and_fill_table(component_type, component_idx)
+        except Exception as e:
+            # 显示错误信息在状态栏
+            self.parent_window.statusBar().showMessage(f"更新组件参数表格时出错: {str(e)}")
 
     def show_meter_measurement_details(self, meter_idx):
         """显示电表设备的测量结果详情"""
@@ -570,6 +581,7 @@ class SimulationWindow(QMainWindow):
             'line': '线路', 
             'trafo': '变压器',
             'load': '负载',
+            'charger': '充电桩',
             'gen': '发电机',
             'sgen': '光伏',
             'ext_grid': '外部电网',
@@ -1410,6 +1422,7 @@ class SimulationWindow(QMainWindow):
                 'line': set(net.res_line.index) if net.res_line is not None else set(),
                 'trafo': set(net.res_trafo.index) if net.res_trafo is not None else set(),
                 'load': set(net.res_load.index) if net.res_load is not None else set(),
+                'charger': set(net.res_load.index) if net.res_load is not None else set(),
                 'gen': set(net.res_gen.index) if net.res_gen is not None else set(),
                 'sgen': set(net.res_sgen.index) if net.res_sgen is not None else set(),
                 'ext_grid': set(net.res_ext_grid.index) if net.res_ext_grid is not None else set(),

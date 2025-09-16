@@ -127,7 +127,16 @@ class PowerMonitor:
                     if device_id in loads.index:
                         return abs(loads.loc[device_id, 'p_mw'])
                     return 0.0
-                    
+            elif device_type == "充电桩":
+                # 从充电桩潮流计算结果中获取实际功率
+                if hasattr(self.network_model.net, 'res_charger') and device_id in self.network_model.net.res_load.index:
+                    return self.network_model.net.res_load.loc[device_id, 'p_mw']
+                else:
+                    # 使用设定值
+                    chargers = self.network_model.net.load
+                    if device_id in chargers.index:
+                        return chargers.loc[device_id, 'p_mw']
+                    return 0.0
             elif device_type == "储能":
                 # 从储能潮流计算结果中获取实际功率
                 if hasattr(self.network_model.net, 'res_storage') and device_id in self.network_model.net.res_storage.index:
