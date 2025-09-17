@@ -62,7 +62,7 @@ class ModbusManager:
         device_type = device_info.get('type')
         
         # 根据设备类型创建定制化的稀疏数据块
-        if device_type == 'sgen':
+        if device_type == 'static_generator':
             # 光伏设备专用寄存器映射
             context = self._create_sgen_context(device_info)
         elif device_type == 'meter':
@@ -89,6 +89,10 @@ class ModbusManager:
         # 总发电量: 5003
         # 当前功率: 5030
         sgen_input_registers = {
+            0+1:11,
+            0+2:22,
+            0+3:33,
+            0+4:44,
             4989 + 1: 0,  # sn
             4989 + 2: 0,
             4989 + 3: 0,
@@ -124,6 +128,7 @@ class ModbusManager:
         if not self._write_pv_device_sn(context, device_info):
             return None
             
+        print(f"创建光伏设备上下文，SN: {device_info.get('sn', 'N/A')}")
         return context
     
     def _create_meter_context(self, device_info):
