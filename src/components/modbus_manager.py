@@ -350,6 +350,7 @@ class ModbusManager:
             slave_context = context[1]
             
             # 按照给定的字符配对逻辑写入寄存器
+            # FIXME:只支持16个字符
             slave_context.setValues(4, 4989, [(ord(device_sn[0])) << 8 | ord(device_sn[1])])
             slave_context.setValues(4, 4990, [(ord(device_sn[2])) << 8 | ord(device_sn[3])])
             slave_context.setValues(4, 4991, [(ord(device_sn[4])) << 8 | ord(device_sn[5])])
@@ -527,7 +528,7 @@ class ModbusManager:
             power_mw = self.network_model.net.res_sgen.loc[index, "p_mw"]
             
             # 使用缓存机制提高性能
-            from .network_items import PVItem
+            from .network_items import StaticGeneratorItem
             if not hasattr(self, '_pv_cache'):
                 self._pv_cache = {}
             
@@ -536,7 +537,7 @@ class ModbusManager:
             if pv_item is None or pv_item.component_index != index:
                 # 仅在缓存未命中时遍历场景
                 for item in self.scene.items():
-                    if isinstance(item, PVItem) and item.component_index == index:
+                    if isinstance(item, StaticGeneratorItem) and item.component_index == index:
                         pv_item = item
                         self._pv_cache[index] = pv_item
                         break
@@ -782,7 +783,7 @@ class ModbusManager:
                             item.state = 'power_off'
                             print(f"储能设备 {device_idx} 已设置为poweroff状态")
                             break
-                
+                #TODO:没有真正停止
                 # 由于StartTcpServer内部管理资源，只需清理引用
                 self.modbus_servers[device_key]
                 
@@ -889,9 +890,9 @@ class ModbusManager:
                     if device_idx in self.network_model.net.measurement.index:
                         self.update_meter_context(device_idx, slave_context)
                         
-                elif device_type == 'sgen' and hasattr(self.network_model.net, 'sgen'):
+                elif device_type == 'static_generator' and hasattr(self.network_model.net, 'sgen'):
                     if device_idx in self.network_model.net.sgen.index:
-                        self.update_sgen_context(device_idx, device_info, slave_context)
+                        self.update_sgen_context(device_idx, slave_context)
 
                 elif device_type == 'storage' and hasattr(self.network_model.net, 'storage'):
                     if device_idx in self.network_model.net.storage.index:
