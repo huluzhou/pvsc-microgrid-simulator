@@ -57,6 +57,7 @@ class MultiChargerClient:
                 # 读取枪状态 (地址100-103)
                 gun_result = client.read_input_registers(address=100, count=4, device_id=1)
                 
+                result = client.write_registers(address=0, values=[888], device_id=1)
                 if not power_result.isError() and not gun_result.isError():
                 # if not power_result.isError():
                     data = self.charger_data[charger_name]

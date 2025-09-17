@@ -1062,7 +1062,7 @@ class SimulationWindow(QMainWindow):
                         if update_data:
                             storage_updates.append((device_idx, update_data))
                     
-                    elif device_type == 'load':
+                    elif device_type == 'charger':
                         # 充电桩设备数据收集（负荷类型中的充电桩）
                         update_data = self._collect_charger_modbus_data(device_idx, slave_context)
                         if update_data:
@@ -1123,21 +1123,30 @@ class SimulationWindow(QMainWindow):
             
     def _collect_charger_modbus_data(self, device_idx, slave_context):
         """Collect power limit information from the holding register at address 0 for a single charging pile device"""
+        power_limit = None
+        
         try:
-            # Read power limit value (register 0)
+            # 尝试获取设备上下文的两种方式
+            device_context = None
             try:
-                power_limit = slave_context.getValues(4, 0, 1)[0]
-                power_limit = power_limit / 1000.0  # Convert kW to MW
-            except (IndexError, ValueError, AttributeError):
-                power_limit = None
-                
-            return {
-                'power_limit': power_limit
-            }
+                # 直接通过索引1获取设备上下文
+                device_context = slave_context[1]
+            except (KeyError, IndexError, TypeError):
+                # 如果索引访问失败，保持device_context为None
+                pass
             
-        except Exception as e:
-            print(f"Failed to collect power limit data for charging pile device {device_idx}: {e}")
-            return None
+            # 如果成功获取设备上下文，则读取功率限制
+            if device_context:
+                try:
+                    result = device_context.getValues(3, 0, 1)
+                    if isinstance(result, list) and len(result) > 0:
+                        power_limit = result[0] / 1000.0  # Convert kW to MW
+                except (TypeError, IndexError):
+                    pass
+        except Exception:
+            pass
+        
+        return {'power_limit': power_limit}
             
     def _collect_sgen_modbus_data(self, device_idx, slave_context):
         """收集单个光伏系统的Modbus数据
@@ -1230,7 +1239,7 @@ class SimulationWindow(QMainWindow):
             if not self._charger_items_cache or self._charger_items_cache.get('_last_update', 0) < time.time() - 5:
                 self._charger_items_cache.clear()
                 for item in self.canvas.scene.items():
-                    if hasattr(item, 'component_type') and item.component_type == 'load':
+                    if hasattr(item, 'component_type') and item.component_type == 'charger':
                         # 假设负荷类型中的充电桩有特殊标识
                         self._charger_items_cache[item.component_index] = item
                 self._charger_items_cache['_last_update'] = time.time()
@@ -1242,13 +1251,26 @@ class SimulationWindow(QMainWindow):
                     continue
                 
                 power_limit = update_data['power_limit']
-                
+
                 # 更新充电桩功率限制
                 if power_limit is not None:
                     try:
-                        self.network_model.net.load.loc[device_idx, 'p_mw'] = power_limit
-                    except (KeyError, IndexError):
-                        pass
+                        charger_item.power_limit = power_limit
+                        # 检查并更新功率限制标签
+                        if hasattr(self, "charger_power_limit_label"):
+                            try:
+                                # 确保标签已经被添加到UI中
+                                if self.charger_power_limit_label.parentWidget():
+                                    self.charger_power_limit_label.setText(
+                                        f"{charger_item.power_limit * 1000:.1f} kW"
+                                    )
+                            except Exception as label_error:
+                                print(f"更新功率限制标签时出错: {label_error}")
+
+                    except Exception as e:
+                        print(
+                            f"更新充电桩{charger_item.component_index}功率限制时出错: {e}"
+                        )
                         
         except Exception as e:
             print(f"批量应用充电桩功率限制更新失败: {e}")

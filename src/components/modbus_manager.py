@@ -264,7 +264,7 @@ class ModbusManager:
             103 + 1: 4,  # gun4 - 初始状态4
         }
         charger_hold_registers = {
-            0 + 1:0x7FFF, #功率限制
+            0 :0x7FFF, #功率限制
         }
         
         device_context = {
