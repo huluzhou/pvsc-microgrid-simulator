@@ -1068,7 +1068,7 @@ class SimulationWindow(QMainWindow):
                         if update_data:
                             charger_updates.append((device_idx, update_data))
                     
-                    elif device_type == 'sgen':
+                    elif device_type == 'static_generator':
                         # 光伏系统数据收集
                         update_data = self._collect_sgen_modbus_data(device_idx, slave_context)
                         if update_data:
@@ -1157,23 +1157,32 @@ class SimulationWindow(QMainWindow):
         - 寄存器5007：有功功率百分比限制 (0-100%)
         """
         try:
+            device_context = None
+            try:
+                # 直接通过索引1获取设备上下文
+                device_context = slave_context[1]
+            except (KeyError, IndexError, TypeError):
+                # 如果索引访问失败，保持device_context为None
+                pass
+            if not device_context:
+                return None  # 如果无法获取设备上下文，直接返回None
             # 读取开关机状态（寄存器5005）
             try:
-                power_on = slave_context.getValues(4, 5005, 1)[0]
+                power_on = device_context.getValues(3, 5005, 1)[0]
                 power_on = bool(power_on)
             except (IndexError, ValueError, AttributeError):
                 power_on = True  # 默认启用
                 
             # 读取有功功率限制（寄存器5038）
             try:
-                power_limit_kw = slave_context.getValues(4, 5038, 1)[0]
+                power_limit_kw = device_context.getValues(3, 5038, 1)[0]
                 power_limit_mw = power_limit_kw / 1000.0  # kW -> MW
             except (IndexError, ValueError, AttributeError):
                 power_limit_mw = None
                 
             # 读取有功功率百分比限制（寄存器5007）
             try:
-                power_percent_limit = slave_context.getValues(4, 5007, 1)[0]
+                power_percent_limit = device_context.getValues(3, 5007, 1)[0]
                 power_percent_limit = min(100, max(0, power_percent_limit))  # 限制在0-100%
             except (IndexError, ValueError, AttributeError):
                 power_percent_limit = None

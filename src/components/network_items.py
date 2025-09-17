@@ -1032,7 +1032,10 @@ class StaticGeneratorItem(BaseNetworkItem):
         }
         self.today_discharge_energy = 0.0
         self.total_discharge_energy = 0.0
-        self.update_power_limits()
+        sn_mva = self.properties.get("sn_mva", 1.0)
+        self.active_power_limit_per = 110# kw (100% 额定功率)
+        self.active_power_limit = sn_mva * 1000 * self.active_power_limit_per / 100  # kw (110% 额定功率)
+        self.power_state = True
         self.label.setPlainText(self.properties["name"])
         
         # 连接约束：光伏可以连接一个母线和一个电表
@@ -1048,11 +1051,7 @@ class StaticGeneratorItem(BaseNetworkItem):
         ]
         self.original_connection_points = self.connection_points.copy()
         
-    def update_power_limits(self):
-        """更新功率限制值"""
-        sn_mva = self.properties.get("sn_mva", 1.0)
-        self.active_power_limit = sn_mva * 1000 * 1.1  # kw (110% 额定功率)
-        self.active_power_limit_per = sn_mva * 1000    # kw (100% 额定功率)
+     
 
 
 class MeterItem(BaseNetworkItem):

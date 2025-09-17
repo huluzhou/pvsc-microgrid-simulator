@@ -90,9 +90,6 @@ class ModbusManager:
         # 当前功率: 5030
         sgen_input_registers = {
             0+1:11,
-            0+2:22,
-            0+3:33,
-            0+4:44,
             4989 + 1: 0,  # sn
             4989 + 2: 0,
             4989 + 3: 0,
@@ -739,6 +736,7 @@ class ModbusManager:
             active_power_kw = int(round(abs(power_mw) * 1000*10))  # MW -> kW
             required_power_kw = int(round(charger_item.required_power * 1000 *10))  # 最大需求功率
             
+
             # 数据范围检查
             active_power_kw = max(0, min(active_power_kw, MAX_32BIT_UINT))
             required_power_kw = max(0, min(required_power_kw, MAX_32BIT_UINT))

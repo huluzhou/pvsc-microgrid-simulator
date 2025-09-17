@@ -51,25 +51,30 @@ class MultiPVClient:
         """读取所有光伏设备的输入寄存器数据"""
         for pv_name, client in self.clients.items():
             try:
-                test = client.read_input_registers(address=2, count=1, device_id=1)
-                # sn = client.read_input_registers(address=4989, count=1, device_id=1)
-                # rated_power = client.read_input_registers(address=5000, count=1, device_id=1)
-                # #电量
-                # energy_result = client.read_input_registers(address=5002, count=3, device_id=1)
-                # power_result = client.read_input_registers(address=5030, count=2, device_id=1)
+                test = client.read_input_registers(address=0, count=1, device_id=1)
+                # SN号存储在8个寄存器中(4989-4996)，需要读取所有8个寄存器
+                sn = client.read_input_registers(address=4989, count=8, device_id=1)
+                rated_power = client.read_input_registers(address=5000, count=1, device_id=1)
+                #电量
+                energy_result = client.read_input_registers(address=5002, count=3, device_id=1)
+                power_result = client.read_input_registers(address=5030, count=2, device_id=1)
                 
+                client.write_registers(address=5005, values=[1], device_id=1)
+                client.write_registers(address=5038, values=[600], device_id=1)
+                client.write_registers(address=5007, values=[90], device_id=1)
+
                 # 分别检查每个寄存器的读取结果
                 error_registers = []
-                # if test.isError():
-                #     error_registers.append("测试寄存器(地址0)")
-                # if sn.isError():
-                #     error_registers.append("SN号(地址4989-4996)")
-                # if rated_power.isError():
-                #     error_registers.append("额定功率(地址5000)")
-                # if energy_result.isError():
-                #     error_registers.append("电量(地址5002-5004)")
-                # if power_result.isError():
-                #     error_registers.append("有功功率(地址5030-5031)")
+                if test.isError():
+                    error_registers.append("测试寄存器(地址0)")
+                if sn.isError():
+                    error_registers.append("SN号(地址4989-4996)")
+                if rated_power.isError():
+                    error_registers.append("额定功率(地址5000)")
+                if energy_result.isError():
+                    error_registers.append("电量(地址5002-5004)")
+                if power_result.isError():
+                    error_registers.append("有功功率(地址5030-5031)")
                 if test.isError():
                     error_registers.append("测试寄存器(地址0)")
                 if not error_registers:
@@ -77,12 +82,19 @@ class MultiPVClient:
                     
                     # 拼接32位数据并进行单位转换
                     # 有功功率：地址0(低16位) + 地址1(高16位)
-                    # active_power_raw = (power_result.registers[1] << 16) | power_result.registers[0]
-                    # data['active_power'] = active_power_raw  # 除以10还原实际值 (kW)
-                    # data['sn'] = ''.join([f"{reg:04X}" for reg in sn.registers])  # 拼接SN号
-                    # data['rated_power'] = rated_power.registers[0] / 10.0  # 除以10还原实际值 (kW)
-                    # data['today_energy'] = energy_result.registers[0]
-                    # data['total_energy'] = (energy_result.registers[2]<<16) | energy_result.registers[1]
+                    active_power_raw = (power_result.registers[1] << 16) | power_result.registers[0]
+                    data['active_power'] = active_power_raw  # 除以10还原实际值 (kW)
+                    # 正确解析SN号：每个寄存器包含两个ASCII字符，需要拆分
+                    sn_str = ''
+                    for reg in sn.registers:
+                        # 高8位是第一个字符，低8位是第二个字符
+                        char1 = chr((reg >> 8) & 0xFF)
+                        char2 = chr(reg & 0xFF)
+                        sn_str += char1 + char2
+                    data['sn'] = sn_str  # 拼接SN号
+                    data['rated_power'] = rated_power.registers[0] / 10.0  # 除以10还原实际值 (kW)
+                    data['today_energy'] = energy_result.registers[0] / 10.0  # 除以10还原实际值 (kWh)
+                    data['total_energy'] = (energy_result.registers[2]<<16) | energy_result.registers[1]
                     data['status'] = 'ok'
                 else:
                     self.pv_data[pv_name]['status'] = 'read_error'
@@ -105,7 +117,7 @@ class MultiPVClient:
                 print(f"  光伏{i} (端口{data['port']}):")
                 print(f"    SN号: {data['sn']}")
                 print(f"    额定功率: {data['rated_power']:6.1f}kW")
-                print(f"    有功功率: {data['active_power']:6.1f}W")
+                print(f"    有功功率: {data['active_power']:6.1f}KW")
                 print(f"    今日发电量: {data['today_energy']:6.1f}kWh")
                 print(f"    总发电量: {data['total_energy']:6.1f}kWh")
             else:
