@@ -685,8 +685,8 @@ class ModbusManager:
             slave_context.setValues(4, 412, [current_value])  # A相
             slave_context.setValues(4, 413, [current_value])  # B相
             slave_context.setValues(4, 414, [current_value])  # C相
-            slave_context.setValues(4, 419, [active_power])  #视在功率
-            slave_context.setValues(4, 420, [active_power])  #有功功率
+            slave_context.setValues(4, 419, [active_power&0xFFFF])  #视在功率
+            slave_context.setValues(4, 420, [active_power&0xFFFF])  #有功功率
             slave_context.setValues(4, 426, [daily_charge])
             slave_context.setValues(4, 427, [daily_discharge])
             slave_context.setValues(4, 428, [total_charge_low])
