@@ -160,9 +160,14 @@ class MultiESSClient:
                     data['today_charge'] = today_charge.registers[0] / 10.0 if today_charge.registers else 0.0  # 日充电量 (kWh)
                     data['today_discharge'] = today_discharge.registers[0] / 10.0 if today_discharge.registers else 0.0  # 日放电量 (kWh)
                     
-                    # 解析SN号
+                    # 解析SN号（与PV客户端保持一致的解析逻辑）
                     if sn.registers:
-                        sn_str = ''.join([chr(sn.registers[i]) for i in range(16) if i < len(sn.registers)])
+                        sn_str = ''
+                        for reg in sn.registers:
+                            # 高8位是第一个字符，低8位是第二个字符
+                            char1 = chr((reg >> 8) & 0xFF)
+                            char2 = chr(reg & 0xFF)
+                            sn_str += char1 + char2
                         data['sn'] = sn_str.strip()  # 移除可能的空格
                     else:
                         data['sn'] = ''  # 如果读取失败，设为空字符串
