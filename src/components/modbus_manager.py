@@ -225,7 +225,7 @@ class ModbusManager:
             
             # 从设备信息中获取配置参数，使用合理的默认值
             rated_power = int(device_info.get('sn_mva', 1.0) * 1000)*10  # 额定功率 (kW)
-            rated_capacity = int(device_info.get('max_e_mwh', 1.0) * 1000)*10  # 额定容量 (kWh)
+            rated_capacity = int(device_info.get('max_e_mwh', 1.0) * 1000)# 额定容量 (kWh)
             pcs_num = int(device_info.get('pcs_num', 1))  # PCS数量
             battery_cluster_num = int(device_info.get('battery_cluster_num', 2))  # 电池簇数量
             battery_cluster_capacity = int(device_info.get('battery_cluster_capacity', 1000))  # 电池簇容量 (kWh)
@@ -630,13 +630,15 @@ class ModbusManager:
             remaining_kwh = rated_capacity * storage_item.soc_percent *1000
             remaining_capacity = max(0, min(65535, int(remaining_kwh * 10)))
             #
-            active_power = float(self.network_model.net.res_storage.loc[index, "p_mw"]) * 1000 * 10  # MW转换为kW
-            active_power = int (active_power)
+            active_power_raw = float(
+                self.network_model.net.res_storage.loc[index, "p_mw"]
+            )
+            active_power = int(active_power_raw * 1000 * 10)
             # 计算电流 - 修正单相220V计算逻辑
             # 电流(A) = 功率(kW) * 1000 / 电压(V)
             # 转换为0.1A单位：* 10
-            if abs(active_power) > 0.001:  # 避免浮点误差
-                current_a = abs(active_power) * 1000 / 220.0  # A
+            if abs(active_power_raw) > 0.001:  # 避免浮点误差
+                current_a = abs(active_power_raw) * 1000 / 220.0  # A
                 current_value = max(0, min(65535, int(current_a * 10)))  # 0.1A单位
             else:
                 current_value = 0

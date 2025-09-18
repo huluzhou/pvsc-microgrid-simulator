@@ -1,346 +1,43 @@
 {
-  "Charger": [
-    {
-      "index": 1004,
-      "geodata": [
-        2800.0,
-        2500.0
-      ],
-      "sn_mva": 1.0,
-      "p_mw": 1.0,
-      "efficiency": 0.95,
-      "name": "充电站 4",
-      "bus": "5",
-      "sn": "Charger 4",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "705"
-    },
-    {
-      "index": 1003,
-      "geodata": [
-        2500.0,
-        2500.0
-      ],
-      "sn_mva": 1.0,
-      "p_mw": 1.0,
-      "efficiency": 0.95,
-      "name": "充电站 3",
-      "bus": "4",
-      "sn": "Charger 3",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "704"
-    },
-    {
-      "index": 1002,
-      "geodata": [
-        2100.0,
-        2500.0
-      ],
-      "sn_mva": 1.0,
-      "p_mw": 1.0,
-      "efficiency": 0.95,
-      "name": "充电站 2",
-      "bus": "3",
-      "sn": "Charger 2",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "703"
-    },
-    {
-      "index": 1001,
-      "geodata": [
-        2000.0,
-        2500.0
-      ],
-      "sn_mva": 1.0,
-      "p_mw": 1.0,
-      "efficiency": 0.95,
-      "name": "充电站 1",
-      "bus": "3",
-      "sn": "Charger 1",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "702"
-    }
-  ],
-  "Static_Generator": [
-    {
-      "index": 4,
-      "geodata": [
-        2700.0,
-        2500.0
-      ],
-      "use_power_factor": false,
-      "p_mw": 1.0,
-      "q_mvar": 0.0,
-      "sn_mva": 1.0,
-      "cos_phi": 0.9,
-      "mode": "overexcited",
-      "scaling": 1.0,
-      "type": "wye",
-      "in_service": true,
-      "name": "Static Generator 4",
-      "bus": "5",
-      "sn": "Static Generator 4",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "605"
-    },
-    {
-      "index": 3,
-      "geodata": [
-        2400.0,
-        2500.0
-      ],
-      "use_power_factor": false,
-      "p_mw": 1.0,
-      "q_mvar": 0.0,
-      "sn_mva": 1.0,
-      "cos_phi": 0.9,
-      "mode": "overexcited",
-      "scaling": 1.0,
-      "type": "wye",
-      "in_service": true,
-      "name": "Static Generator 3",
-      "bus": "4",
-      "sn": "Static Generator 3",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "604"
-    },
-    {
-      "index": 2,
-      "geodata": [
-        2300.0,
-        2500.0
-      ],
-      "use_power_factor": false,
-      "p_mw": 1.0,
-      "q_mvar": 0.0,
-      "sn_mva": 1.0,
-      "cos_phi": 0.9,
-      "mode": "overexcited",
-      "scaling": 1.0,
-      "type": "wye",
-      "in_service": true,
-      "name": "Static Generator 2",
-      "bus": "4",
-      "sn": "Static Generator 2",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "603"
-    },
+  "Load": [
     {
       "index": 1,
       "geodata": [
-        1900.0,
-        2500.0
+        2888.0351116071424,
+        2307.151958705357
       ],
-      "use_power_factor": false,
       "p_mw": 1.0,
       "q_mvar": 0.0,
-      "sn_mva": 1.0,
-      "cos_phi": 0.9,
-      "mode": "overexcited",
-      "scaling": 1.0,
-      "type": "wye",
-      "in_service": true,
-      "name": "Static Generator 1",
-      "bus": "3",
-      "sn": "Static Generator 1",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "602"
+      "name": "Load 1",
+      "bus": "2"
     }
   ],
-  "Storage": [
+  "External_Grid": [
     {
-      "name": "Storage 4",
-      "index": 4,
-      "sn_mva": 1.0,
+      "index": 0,
       "geodata": [
-        2600.0,
-        2500.0
-      ],
-      "p_mw": 1.0,
-      "max_e_mwh": 50.0,
-      "soc_percent": 50.01944444444451,
-      "bus": "5",
-      "sn": "Storage 4",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "505"
-    },
-    {
-      "name": "Storage 3",
-      "index": 3,
-      "sn_mva": 1.0,
-      "geodata": [
-        2200.0,
-        2500.0
-      ],
-      "p_mw": 1.0,
-      "max_e_mwh": 50.0,
-      "soc_percent": 50.01944444444451,
-      "bus": "4",
-      "sn": "Storage 3",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "504"
-    },
-    {
-      "name": "Storage 2",
-      "index": 2,
-      "sn_mva": 1.0,
-      "geodata": [
-        1800.0,
-        2500.0
-      ],
-      "p_mw": 1.0,
-      "max_e_mwh": 50.0,
-      "soc_percent": 50.01944444444451,
-      "bus": "3",
-      "sn": "Storage 2",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "503"
-    },
-    {
-      "name": "Storage 1",
-      "index": 1,
-      "sn_mva": 1.0,
-      "geodata": [
-        1700.0,
-        2500.0
-      ],
-      "p_mw": 1.0,
-      "max_e_mwh": 50.0,
-      "soc_percent": 50.01944444444451,
-      "bus": "3",
-      "sn": "Storage 1",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "502"
-    }
-  ],
-  "Measurement": [
-    {
-      "index": 4,
-      "geodata": [
-        2550.0,
-        2300.0
-      ],
-      "meas_type": "p",
-      "element_type": "bus",
-      "value": 0.0,
-      "std_dev": 0.01,
-      "element": 5,
-      "side": null,
-      "in_service": true,
-      "name": "Meter 4",
-      "bus": "5",
-      "sn": "Meter 4",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "406"
-    },
-    {
-      "index": 3,
-      "geodata": [
-        2200.0,
-        2300.0
-      ],
-      "meas_type": "p",
-      "element_type": "bus",
-      "value": 0.0,
-      "std_dev": 0.01,
-      "element": 4,
-      "side": null,
-      "in_service": true,
-      "name": "Meter 3",
-      "bus": "4",
-      "sn": "Meter 3",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "405"
-    },
-    {
-      "index": 2,
-      "geodata": [
-        1750.0,
-        2300.0
-      ],
-      "meas_type": "p",
-      "element_type": "bus",
-      "value": 0.0,
-      "std_dev": 0.01,
-      "element": 3,
-      "side": null,
-      "in_service": true,
-      "name": "Meter 2",
-      "bus": "3",
-      "sn": "Meter 2",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "404"
-    },
-    {
-      "index": 1,
-      "geodata": [
-        2200.0,
+        2350.0,
         1900.0
       ],
-      "meas_type": "p",
-      "element_type": "ext_grid",
-      "value": 0.0,
-      "std_dev": 0.01,
-      "element": 0,
-      "side": null,
-      "in_service": true,
-      "name": "Meter 1",
-      "bus": null,
-      "sn": "Meter 1",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "403"
+      "vm_pu": 1.0,
+      "va_degree": 0.0,
+      "name": "External Grid 0",
+      "s_sc_max_mva": 1000.0,
+      "s_sc_min_mva": 800.0,
+      "rx_max": 0.1,
+      "rx_min": 0.1,
+      "bus": "1"
     }
   ],
   "Transformer": [
     {
-      "index": 4,
-      "geodata": [
-        2700.0,
-        2300.0
-      ],
-      "use_standard_type": true,
-      "std_type": "25 MVA 110/20 kV",
-      "sn_mva": 25.0,
-      "vn_hv_kv": 110.0,
-      "vn_lv_kv": 20.0,
-      "vkr_percent": 0.3,
-      "vk_percent": 12.0,
-      "pfe_kw": 14.0,
-      "i0_percent": 0.07,
-      "vector_group": "Dyn",
-      "vk0_percent": 0.0,
-      "vkr0_percent": 0.0,
-      "mag0_percent": 0.0,
-      "mag0_rx": 0.0,
-      "si0_hv_partial": 0.0,
-      "hv_bus": "2",
-      "lv_bus": "5",
-      "name": "Transformer 4"
-    },
-    {
-      "index": 3,
+      "index": 1,
       "geodata": [
         2350.0,
-        2300.0
+        2100.0
       ],
       "use_standard_type": true,
-      "std_type": "25 MVA 110/20 kV",
+      "std_type": "100 MVA 220/110 kV",
       "sn_mva": 25.0,
       "vn_hv_kv": 110.0,
       "vn_lv_kv": 20.0,
@@ -354,9 +51,9 @@
       "mag0_percent": 0.0,
       "mag0_rx": 0.0,
       "si0_hv_partial": 0.0,
-      "hv_bus": "2",
-      "lv_bus": "4",
-      "name": "Transformer 3"
+      "hv_bus": "1",
+      "lv_bus": "2",
+      "name": "Transformer 1"
     },
     {
       "index": 2,
@@ -384,13 +81,13 @@
       "name": "Transformer 2"
     },
     {
-      "index": 1,
+      "index": 3,
       "geodata": [
         2350.0,
-        2100.0
+        2300.0
       ],
       "use_standard_type": true,
-      "std_type": "100 MVA 220/110 kV",
+      "std_type": "25 MVA 110/20 kV",
       "sn_mva": 25.0,
       "vn_hv_kv": 110.0,
       "vn_lv_kv": 20.0,
@@ -404,68 +101,353 @@
       "mag0_percent": 0.0,
       "mag0_rx": 0.0,
       "si0_hv_partial": 0.0,
-      "hv_bus": "1",
-      "lv_bus": "2",
-      "name": "Transformer 1"
-    }
-  ],
-  "External_Grid": [
+      "hv_bus": "2",
+      "lv_bus": "4",
+      "name": "Transformer 3"
+    },
     {
-      "index": 0,
+      "index": 4,
       "geodata": [
-        2350.0,
-        1900.0
+        2700.0,
+        2300.0
       ],
-      "vm_pu": 1.0,
-      "va_degree": 0.0,
-      "name": "External Grid 0",
-      "s_sc_max_mva": 1000.0,
-      "s_sc_min_mva": 800.0,
-      "rx_max": 0.1,
-      "rx_min": 0.1,
-      "bus": "1"
+      "use_standard_type": true,
+      "std_type": "25 MVA 110/20 kV",
+      "sn_mva": 25.0,
+      "vn_hv_kv": 110.0,
+      "vn_lv_kv": 20.0,
+      "vkr_percent": 0.3,
+      "vk_percent": 12.0,
+      "pfe_kw": 14.0,
+      "i0_percent": 0.07,
+      "vector_group": "Dyn",
+      "vk0_percent": 0.0,
+      "vkr0_percent": 0.0,
+      "mag0_percent": 0.0,
+      "mag0_rx": 0.0,
+      "si0_hv_partial": 0.0,
+      "hv_bus": "2",
+      "lv_bus": "5",
+      "name": "Transformer 4"
     }
   ],
-  "Load": [
+  "Measurement": [
     {
       "index": 1,
       "geodata": [
-        2888.0351116071424,
-        2307.151958705357
+        2200.0,
+        1900.0
+      ],
+      "meas_type": "p",
+      "element_type": "ext_grid",
+      "value": 0.0,
+      "std_dev": 0.01,
+      "element": 0,
+      "side": null,
+      "in_service": true,
+      "name": "Meter 1",
+      "bus": null,
+      "sn": "Meter 1",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "403"
+    },
+    {
+      "index": 2,
+      "geodata": [
+        1750.0,
+        2300.0
+      ],
+      "meas_type": "p",
+      "element_type": "bus",
+      "value": 0.0,
+      "std_dev": 0.01,
+      "element": 3,
+      "side": null,
+      "in_service": true,
+      "name": "Meter 2",
+      "bus": "3",
+      "sn": "Meter 2",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "404"
+    },
+    {
+      "index": 3,
+      "geodata": [
+        2200.0,
+        2300.0
+      ],
+      "meas_type": "p",
+      "element_type": "bus",
+      "value": 0.0,
+      "std_dev": 0.01,
+      "element": 4,
+      "side": null,
+      "in_service": true,
+      "name": "Meter 3",
+      "bus": "4",
+      "sn": "Meter 3",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "405"
+    },
+    {
+      "index": 4,
+      "geodata": [
+        2550.0,
+        2300.0
+      ],
+      "meas_type": "p",
+      "element_type": "bus",
+      "value": 0.0,
+      "std_dev": 0.01,
+      "element": 5,
+      "side": null,
+      "in_service": true,
+      "name": "Meter 4",
+      "bus": "5",
+      "sn": "Meter 4",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "406"
+    }
+  ],
+  "Storage": [
+    {
+      "name": "Storage 1",
+      "index": 1,
+      "sn_mva": 1.0,
+      "geodata": [
+        1700.0,
+        2500.0
       ],
       "p_mw": 1.0,
+      "max_e_mwh": 1.0,
+      "soc_percent": 0.501933333333346,
+      "bus": "3",
+      "sn": "Storage 1",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "502"
+    },
+    {
+      "name": "Storage 2",
+      "index": 2,
+      "sn_mva": 1.0,
+      "geodata": [
+        1800.0,
+        2500.0
+      ],
+      "p_mw": 1.0,
+      "max_e_mwh": 1.0,
+      "soc_percent": 0.5018055555555674,
+      "bus": "3",
+      "sn": "Storage 2",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "503"
+    },
+    {
+      "name": "Storage 3",
+      "index": 3,
+      "sn_mva": 1.0,
+      "geodata": [
+        2200.0,
+        2500.0
+      ],
+      "p_mw": 1.0,
+      "max_e_mwh": 1.0,
+      "soc_percent": 0.5088444444444828,
+      "bus": "4",
+      "sn": "Storage 3",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "504"
+    },
+    {
+      "name": "Storage 4",
+      "index": 4,
+      "sn_mva": 1.0,
+      "geodata": [
+        2600.0,
+        2500.0
+      ],
+      "p_mw": 1.0,
+      "max_e_mwh": 1.0,
+      "soc_percent": 0.493041666666667,
+      "bus": "5",
+      "sn": "Storage 4",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "505"
+    }
+  ],
+  "Static_Generator": [
+    {
+      "index": 1,
+      "geodata": [
+        1900.0,
+        2500.0
+      ],
+      "use_power_factor": false,
+      "p_mw": 1.0,
       "q_mvar": 0.0,
-      "name": "Load 1",
-      "bus": "2"
+      "sn_mva": 1.0,
+      "cos_phi": 0.9,
+      "mode": "overexcited",
+      "scaling": 1.0,
+      "type": "wye",
+      "in_service": true,
+      "name": "Static Generator 1",
+      "bus": "3",
+      "sn": "Static Generator 1",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "602"
+    },
+    {
+      "index": 2,
+      "geodata": [
+        2300.0,
+        2500.0
+      ],
+      "use_power_factor": false,
+      "p_mw": 1.0,
+      "q_mvar": 0.0,
+      "sn_mva": 1.0,
+      "cos_phi": 0.9,
+      "mode": "overexcited",
+      "scaling": 1.0,
+      "type": "wye",
+      "in_service": true,
+      "name": "Static Generator 2",
+      "bus": "4",
+      "sn": "Static Generator 2",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "603"
+    },
+    {
+      "index": 3,
+      "geodata": [
+        2400.0,
+        2500.0
+      ],
+      "use_power_factor": false,
+      "p_mw": 1.0,
+      "q_mvar": 0.0,
+      "sn_mva": 1.0,
+      "cos_phi": 0.9,
+      "mode": "overexcited",
+      "scaling": 1.0,
+      "type": "wye",
+      "in_service": true,
+      "name": "Static Generator 3",
+      "bus": "4",
+      "sn": "Static Generator 3",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "604"
+    },
+    {
+      "index": 4,
+      "geodata": [
+        2700.0,
+        2500.0
+      ],
+      "use_power_factor": false,
+      "p_mw": 1.0,
+      "q_mvar": 0.0,
+      "sn_mva": 1.0,
+      "cos_phi": 0.9,
+      "mode": "overexcited",
+      "scaling": 1.0,
+      "type": "wye",
+      "in_service": true,
+      "name": "Static Generator 4",
+      "bus": "5",
+      "sn": "Static Generator 4",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "605"
+    }
+  ],
+  "Charger": [
+    {
+      "index": 1001,
+      "geodata": [
+        2000.0,
+        2500.0
+      ],
+      "sn_mva": 1.0,
+      "p_mw": 1.0,
+      "efficiency": 0.95,
+      "name": "充电站 1",
+      "bus": "3",
+      "sn": "Charger 1",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "702"
+    },
+    {
+      "index": 1002,
+      "geodata": [
+        2100.0,
+        2500.0
+      ],
+      "sn_mva": 1.0,
+      "p_mw": 1.0,
+      "efficiency": 0.95,
+      "name": "充电站 2",
+      "bus": "3",
+      "sn": "Charger 2",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "703"
+    },
+    {
+      "index": 1003,
+      "geodata": [
+        2500.0,
+        2500.0
+      ],
+      "sn_mva": 1.0,
+      "p_mw": 1.0,
+      "efficiency": 0.95,
+      "name": "充电站 3",
+      "bus": "4",
+      "sn": "Charger 3",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "704"
+    },
+    {
+      "index": 1004,
+      "geodata": [
+        2800.0,
+        2500.0
+      ],
+      "sn_mva": 1.0,
+      "p_mw": 1.0,
+      "efficiency": 0.95,
+      "name": "充电站 4",
+      "bus": "5",
+      "sn": "Charger 4",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "705"
     }
   ],
   "Bus": [
     {
-      "index": 5,
-      "vn_kv": 20.0,
-      "geodata": [
-        2700.0,
-        2400.0
-      ],
-      "name": "Bus 1"
-    },
-    {
-      "index": 4,
-      "vn_kv": 20.0,
+      "index": 1,
+      "vn_kv": 220.0,
       "geodata": [
         2350.0,
-        2400.0
+        2000.0
       ],
-      "name": "Bus 2"
-    },
-    {
-      "index": 3,
-      "vn_kv": 20.0,
-      "geodata": [
-        1900.0,
-        2400.0
-      ],
-      "name": "Bus 3"
+      "name": "Bus 5"
     },
     {
       "index": 2,
@@ -477,13 +459,31 @@
       "name": "Bus 4"
     },
     {
-      "index": 1,
-      "vn_kv": 220.0,
+      "index": 3,
+      "vn_kv": 20.0,
+      "geodata": [
+        1900.0,
+        2400.0
+      ],
+      "name": "Bus 3"
+    },
+    {
+      "index": 4,
+      "vn_kv": 20.0,
       "geodata": [
         2350.0,
-        2000.0
+        2400.0
       ],
-      "name": "Bus 5"
+      "name": "Bus 2"
+    },
+    {
+      "index": 5,
+      "vn_kv": 20.0,
+      "geodata": [
+        2700.0,
+        2400.0
+      ],
+      "name": "Bus 1"
     }
   ]
 }

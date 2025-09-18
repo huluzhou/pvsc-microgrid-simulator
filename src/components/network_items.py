@@ -672,7 +672,7 @@ class StorageItem(BaseNetworkItem):
         energy_delta = abs(current_power_kw) * time_delta_hours
         
         # 更新SOC
-        max_energy_kwh = self.properties.get("max_e_mwh", 50.0) * 1000
+        max_energy_kwh = self.properties.get("max_e_mwh", 1.0) * 1000
         if current_power_kw > 0:  # 充电
             self.soc_percent = min(1.0, self.soc_percent + (energy_delta / max_energy_kwh))
             self.today_charge_energy += energy_delta
