@@ -9,7 +9,7 @@ Modbus服务器管理模块
 import threading
 from pymodbus.server import StartTcpServer
 from pymodbus import ModbusDeviceIdentification
-from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock
+from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock, ModbusSequentialDataBlock
 
 
 class ModbusManager:
@@ -148,43 +148,57 @@ class ModbusManager:
     def _create_storage_context(self, device_info):
         """创建储能设备专用上下文"""
         # 储能设备寄存器映射
-        storage_input_registers = {
-            0 + 1: 0,  # state1
-            2 + 1: 0,  # SOC
-            8 + 1: 0,  # 额定功率
-            9 + 1: 0,
-            12 + 1: 0,  # 剩余可放电容量
-            39 + 1: 0,  # 额定容量
-            40 + 1: 0,  # pcs_num
-            41 + 1: 0,  # battery_cluster_num
-            42 + 1: 0,  # battery_cluster_capacity
-            43 + 1: 0,  # battery_cluster_power
-            399 + 1: 0,  # state4
-            408 + 1: 0,  # state2
-            412 + 1: 0,  # A相电流
-            413 + 1: 0,  # B相电流
-            414 + 1: 0,  # C相电流
-            419 + 1: 0,  # 有功功率
-            420 + 1: 0,
-            426 + 1: 0,  # 日充电量
-            427 + 1: 0,  # 日放电量
-            428 + 1: 0,  # 累计充电总量
-            429 + 1: 0,
-            430 + 1: 0,  # 累计放电总量
-            431 + 1: 0,
-            839 + 1: 0.0,  # state3
-        }
-        storage_hold_registers = {
-            4 + 1: 0,  # 设置功率
-            55 + 1: 0,  # 开关机
-        }
-        
+        storage_hold_registers = [0] * 200
+        storage_hold_registers[4+1] = 0  # 设置功率
+        storage_hold_registers[55+1] = 0  # 开关机
+
+        # 将storage_input_registers字典转换为长度为1000的列表，用于ModbusSequentialDataBlock
+        storage_input_registers = [0] * 1000
+        storage_input_registers[0+1] = 3  # state1
+        storage_input_registers[2+1] = 288  # SOC
+        storage_input_registers[8+1] = 10000  # 最大充电功率
+        storage_input_registers[9+1] = 10000  # 最大放电功率
+        storage_input_registers[12+1] = 862  # 剩余可放电容量
+        storage_input_registers[39+1] = 100  # 额定容量
+        storage_input_registers[40+1] = 0  # pcs_num
+        storage_input_registers[41+1] = 0  # battery_cluster_num
+        storage_input_registers[42+1] = 0  # battery_cluster_capacity
+        storage_input_registers[43+1] = 0  # battery_cluster_power
+        storage_input_registers[400+1] = 0  # state4
+        storage_input_registers[408+1] = 1  # state2
+        storage_input_registers[412+1] = 0  # A相电流
+        storage_input_registers[413+1] = 0  # B相电流
+        storage_input_registers[414+1] = 0  # C相电流
+        storage_input_registers[420+1] = 0  # 有功功率
+        storage_input_registers[421+1] = 0
+        storage_input_registers[426+1] = 0  # 日充电量
+        storage_input_registers[427+1] = 0  # 日放电量
+        storage_input_registers[428+1] = 0  # 累计充电总量
+        storage_input_registers[429+1] = 0
+        storage_input_registers[430+1] = 0  # 累计放电总量
+        storage_input_registers[431+1] = 0
+        storage_input_registers[839+1] = 1  # state3
+
+        storage_input_registers[900+1] = 21573 #sn
+        storage_input_registers[901+1] = 21313   # SN_902 SN号
+        storage_input_registers[902+1] = 21041   # SN_903 SN号
+        storage_input_registers[903+1] = 12336   # SN_904 SN号
+        storage_input_registers[904+1] = 12851   # SN_905 SN号
+        storage_input_registers[905+1] = 12360   # SN_906 SN号
+        storage_input_registers[906+1] = 21552   # SN_907 SN号
+        storage_input_registers[907+1] = 12355   # SN_908 SN号
+        storage_input_registers[908+1] = 20018   # SN_909 SN号
+        storage_input_registers[909+1] = 13104   # SN_910 SN号
+        storage_input_registers[910+1] = 14641   # SN_911 SN号
+        storage_input_registers[911+1] = 13104   # SN_912 SN号
+        storage_input_registers[912+1] = 12337   # SN_913 SN号
+
+        holding_regs = ModbusSequentialDataBlock(0, storage_hold_registers)   
+        input_regs = ModbusSequentialDataBlock(0, storage_input_registers)
         device_context = {
             1: ModbusDeviceContext(
-                di=ModbusSparseDataBlock({}),
-                co=ModbusSparseDataBlock({}),
-                hr=ModbusSparseDataBlock(storage_hold_registers),
-                ir=ModbusSparseDataBlock(storage_input_registers)
+                hr=holding_regs,
+                ir=input_regs
             )
         }
         
@@ -193,7 +207,7 @@ class ModbusManager:
         # 写入储能配置参数
         if not self._write_storage_device_init(context, device_info):
             return None
-        self.state = 'halt'   
+        # self.state = 'halt'   
         return context
         
     def _write_storage_device_init(self, context, device_info):
@@ -210,23 +224,25 @@ class ModbusManager:
             slave_context = context[1]
             
             # 从设备信息中获取配置参数，使用合理的默认值
-            rated_power = int(device_info.get('p_mw', 1.0) * 1000)  # 额定功率 (kW)
-            rated_capacity = int(device_info.get('max_e_mwh', 1.0) * 1000)  # 额定容量 (kWh)
+            rated_power = int(device_info.get('sn_mva', 1.0) * 1000)*10  # 额定功率 (kW)
+            rated_capacity = int(device_info.get('max_e_mwh', 1.0) * 1000)*10  # 额定容量 (kWh)
             pcs_num = int(device_info.get('pcs_num', 1))  # PCS数量
             battery_cluster_num = int(device_info.get('battery_cluster_num', 2))  # 电池簇数量
             battery_cluster_capacity = int(device_info.get('battery_cluster_capacity', 1000))  # 电池簇容量 (kWh)
             battery_cluster_power = int(device_info.get('battery_cluster_power', 500))  # 电池簇功率 (kW)
             
+            # 确保值在16位寄存器范围内 (0-65535)
+            rated_power = max(0, min(65535, rated_power))
+            rated_capacity = max(0, min(65535, rated_capacity))
+            pcs_num = max(0, min(65535, pcs_num))
+            battery_cluster_num = max(0, min(65535, battery_cluster_num))
+            battery_cluster_capacity = max(0, min(65535, battery_cluster_capacity))
+            battery_cluster_power = max(0, min(65535, battery_cluster_power))
+            
             # 写入对应的寄存器
-            # 额定功率占用两个寄存器 (7-8)，正确的高低16位拆分
-            rated_power_value = int(device_info.get('p_mw', 1.0) * 1000 * 10)  # 转换为0.1kW单位
             
-            # 将32位值拆分为高低16位
-            low_word = rated_power_value & 0xFFFF  # 低16位
-            high_word = (rated_power_value >> 16) & 0xFFFF  # 高16位
-            
-            slave_context.setValues(4, 8, [low_word])   # 额定功率低位
-            slave_context.setValues(4, 9, [high_word])  # 额定功率高位
+            slave_context.setValues(4, 8, [rated_power])   # 额定功率
+            slave_context.setValues(4, 9, [rated_power])   # 额定功率
             
             slave_context.setValues(4, 39, [rated_capacity])  # 额定容量
             slave_context.setValues(4, 40, [pcs_num])  # PCS数量
@@ -234,6 +250,19 @@ class ModbusManager:
             slave_context.setValues(4, 42, [battery_cluster_capacity])  # 电池簇容量
             slave_context.setValues(4, 43, [battery_cluster_power])  # 电池簇功率
             
+            # 写入设备SN信息
+            device_sn = device_info.get('sn', '')
+            if device_sn and str(device_sn).strip() != '':
+                for i in range(0, len(device_sn), 2):  # 填入SN
+                    if i + 1 < len(device_sn):
+                        # 获取当前字符和后一个字符的ASCII码
+                        ascii_first = ord(device_sn[i])
+                        ascii_second = ord(device_sn[i + 1])
+                        combined = (ascii_first << 8) | ascii_second
+                        # 写入保持寄存器900开始的地址
+                        slave_context.setValues(4, 900 + int(i/2), [combined])
+                print(f"已写入储能设备SN到寄存器900开始的地址: {device_sn[:16]}")
+
             print(f"已写入储能设备配置参数: 额定功率={rated_power}kW, 额定容量={rated_capacity}kWh, "
                   f"PCS数量={pcs_num}, 电池簇数量={battery_cluster_num}, "
                   f"电池簇容量={battery_cluster_capacity}kWh, 电池簇功率={battery_cluster_power}kW")
@@ -591,54 +620,18 @@ class ModbusManager:
             
             if storage_item is None:
                 raise RuntimeError(f"未找到储能设备 {index} 的图形项")
-            
+
             # 从network_item获取实时计算的数据，确保数据范围有效
-            soc_percent = max(0.0, min(100.0, storage_item.soc_percent))  # 限制在0-100%
-            rated_capacity = max(0.0, device_info.get("max_e_mwh", 1.0))  # 额定容量MWh，确保非负
-            active_power = float(self.network_model.net.res_storage.loc[index, "p_mw"])
-            
-            # 从network_item获取能量统计数据，确保非负
-            today_charge_energy = max(0.0, storage_item.today_charge_energy)
-            today_discharge_energy = max(0.0, storage_item.today_discharge_energy)
-            total_charge_energy = max(0.0, storage_item.total_charge_energy)
-            total_discharge_energy = max(0.0, storage_item.total_discharge_energy)
-            
-            # 更新基础状态寄存器 - 使用合理的16位范围
-            soc = max(0, min(100, int(soc_percent)))  # SOC百分比，限制在0-100
-            max_e = max(0, min(65535, int(rated_capacity * 1000)))  # 最大容量kWh，限制16位
-            
-            slave_context.setValues(3, 4, [soc])  # 输入寄存器4: SOC
-            slave_context.setValues(3, 5, [max_e])  # 输入寄存器5: 最大容量
-            slave_context.setValues(4, 4, [soc])  # 保持寄存器4: SOC
-            slave_context.setValues(4, 5, [max_e])  # 保持寄存器5: 最大容量
-            
-            # 剩余可放电容量 (kWh * 10，保留1位小数)
-            remaining_kwh = rated_capacity * (soc_percent / 100.0)
+            soc = max(0, min(1000, int(storage_item.soc_percent * 1000)))  # SOC百分比，限制在0-100
+            # 
+            rated_capacity = max(
+                0.0, storage_item.properties.get("max_e_mwh", 1.0)
+            )  # 额定容量MWh，确保非负
+            remaining_kwh = rated_capacity * storage_item.soc_percent *1000
             remaining_capacity = max(0, min(65535, int(remaining_kwh * 10)))
-            slave_context.setValues(4, 12, [remaining_capacity])
-            
-            # 日充电量 (kWh * 10，保留1位小数)
-            daily_charge = max(0, min(65535, int(today_charge_energy * 10)))
-            slave_context.setValues(4, 426, [daily_charge])
-            
-            # 日放电量 (kWh * 10，保留1位小数)
-            daily_discharge = max(0, min(65535, int(today_discharge_energy * 10)))
-            slave_context.setValues(4, 427, [daily_discharge])
-            
-            # 累计充电量 - 32位无符号整数 (kWh * 10)
-            total_charge_wh = int(total_charge_energy * 10)
-            total_charge_low = total_charge_wh & 0xFFFF
-            total_charge_high = (total_charge_wh >> 16) & 0xFFFF
-            slave_context.setValues(4, 428, [total_charge_low])
-            slave_context.setValues(4, 429, [total_charge_high])
-            
-            # 累计放电量 - 32位无符号整数 (kWh * 10)
-            total_discharge_wh = int(total_discharge_energy * 10)
-            total_discharge_low = total_discharge_wh & 0xFFFF
-            total_discharge_high = (total_discharge_wh >> 16) & 0xFFFF
-            slave_context.setValues(4, 430, [total_discharge_low])
-            slave_context.setValues(4, 431, [total_discharge_high])
-            
+            #
+            active_power = float(self.network_model.net.res_storage.loc[index, "p_mw"]) * 1000 * 10  # MW转换为kW
+            active_power = int (active_power)
             # 计算电流 - 修正单相220V计算逻辑
             # 电流(A) = 功率(kW) * 1000 / 电压(V)
             # 转换为0.1A单位：* 10
@@ -647,44 +640,69 @@ class ModbusManager:
                 current_value = max(0, min(65535, int(current_a * 10)))  # 0.1A单位
             else:
                 current_value = 0
-                
+            # 从network_item获取能量统计数据，确保非负
+            today_charge_energy = max(0.0, storage_item.today_charge_energy)
+            today_discharge_energy = max(0.0, storage_item.today_discharge_energy)
+            total_charge_energy = max(0.0, storage_item.total_charge_energy)
+            total_discharge_energy = max(0.0, storage_item.total_discharge_energy)
+
+            # 剩余可放电容量 (kWh * 10，保留1位小数)
+            # 日充电量 (kWh * 10，保留1位小数)
+            daily_charge = max(0, min(65535, int(today_charge_energy * 10)))
+            # 日放电量 (kWh * 10，保留1位小数)
+            daily_discharge = max(0, min(65535, int(today_discharge_energy * 10)))
+            # 累计充电量 - 32位无符号整数 (kWh * 10)
+            total_charge_wh = int(total_charge_energy * 10)
+            total_charge_low = total_charge_wh & 0xFFFF
+            total_charge_high = (total_charge_wh >> 16) & 0xFFFF
+            # 累计放电量 - 32位无符号整数 (kWh * 10)
+            total_discharge_wh = int(total_discharge_energy * 10)
+            total_discharge_low = total_discharge_wh & 0xFFFF
+            total_discharge_high = (total_discharge_wh >> 16) & 0xFFFF
+            # 根据功率值自动判断储能设备状态
+            if abs(active_power) < 0.001:
+                current_state = "ready"  # 功率接近0，处于就绪状态
+            elif active_power > 0:  # 正值为充电
+                current_state = "charge"
+            elif active_power < 0:  # 负值为放电
+                current_state = "discharge"
+            else:
+                current_state = storage_item.state  # 保持原有状态
+
+            # 状态映射表
+            state_map = {
+                "halt": {"reg840": 0, "reg409": 0, "reg1": 1},  # 停机
+                "ready": {"reg840": 1, "reg409": 1, "reg1": 1},  # 就绪
+                "charge": {"reg840": 1, "reg409": 3, "reg1": 2},  # 充电
+                "discharge": {"reg840": 1, "reg409": 4, "reg1": 3},  # 放电
+                "fault": {"reg840": 1, "reg409": 2, "reg1": 4},  # 故障
+            }
+
+            state_values = state_map.get(current_state, state_map['ready'])
+            slave_context.setValues(4, 2, [soc])  # 输入寄存器4: SOC
+            slave_context.setValues(4, 12, [remaining_capacity])
             # 三相电流值相同（简化处理）
             slave_context.setValues(4, 412, [current_value])  # A相
             slave_context.setValues(4, 413, [current_value])  # B相
             slave_context.setValues(4, 414, [current_value])  # C相
-            
-            # 根据功率值自动判断储能设备状态
-            if abs(active_power) < 0.001:
-                current_state = 'ready'  # 功率接近0，处于就绪状态
-            elif active_power > 0:  # 正值为充电
-                current_state = 'charge'
-            elif active_power < 0:  # 负值为放电
-                current_state = 'discharge'
-            else:
-                current_state = storage_item.state  # 保持原有状态
-            
-            # 状态映射表
-            state_map = {
-                'halt': {'reg840': 0, 'reg409': 0, 'reg1': 1},      # 停机
-                'ready': {'reg840': 1, 'reg409': 1, 'reg1': 1},     # 就绪
-                'charge': {'reg840': 1, 'reg409': 3, 'reg1': 2},    # 充电
-                'discharge': {'reg840': 1, 'reg409': 4, 'reg1': 3}, # 放电
-                'fault': {'reg840': 1, 'reg409': 2, 'reg1': 4}      # 故障
-            }
-            
-            state_values = state_map.get(current_state, state_map['ready'])
-            
+            slave_context.setValues(4, 419, [active_power])  #视在功率
+            slave_context.setValues(4, 420, [active_power])  #有功功率
+            slave_context.setValues(4, 426, [daily_charge])
+            slave_context.setValues(4, 427, [daily_discharge])
+            slave_context.setValues(4, 428, [total_charge_low])
+            slave_context.setValues(4, 429, [total_charge_high])
+            slave_context.setValues(4, 430, [total_discharge_low])
+            slave_context.setValues(4, 431, [total_discharge_high])
             # 设置状态相关寄存器
-            slave_context.setValues(4, 840 - 1, [state_values['reg840']])  # 状态寄存器840
-            slave_context.setValues(4, 409 - 1, [state_values['reg409']])  # 状态寄存器409
-            slave_context.setValues(4, 1 - 1, [state_values['reg1']])      # 状态寄存器1
-            
+            slave_context.setValues(4, 839, [state_values['reg840']])  # 状态寄存器840
+            slave_context.setValues(4, 408, [state_values['reg409']])  # 状态寄存器409
+            slave_context.setValues(4, 0, [state_values['reg1']])      # 状态寄存器1
             # 设置可用状态寄存器400
             # 判断设备是否可用：只有在就绪、充电、放电状态时为可用
             if current_state in ['ready', 'charge', 'discharge']:
-                slave_context.setValues(4, 400 - 1, [1])  # 可用
+                slave_context.setValues(4, 400, [1])  # 可用
             else:
-                slave_context.setValues(4, 400 - 1, [0])  # 不可用（停机或故障）
+                slave_context.setValues(4, 400, [0])  # 不可用（停机或故障）
             
             # 调试信息（可选，生产环境可注释掉）
             # if abs(active_power) > 0.001:
