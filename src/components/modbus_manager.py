@@ -106,9 +106,9 @@ class ModbusManager:
             5031 + 1: 0,
         }
         sgen_hold_registers = {
-            5005 + 1: 0,  # 开关机
-            5038 + 1: 0,  # 有功功率限制
-            5007 + 1: 0,  # 有功功率百分比限制
+            5005 + 1: 1,  # 开关机
+            5038 + 1: 0x7FFF,  # 有功功率限制
+            5007 + 1: 100,  # 有功功率百分比限制
         }
         device_context = {
             1: ModbusDeviceContext(

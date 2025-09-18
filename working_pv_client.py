@@ -60,8 +60,8 @@ class MultiPVClient:
                 power_result = client.read_input_registers(address=5030, count=2, device_id=1)
                 
                 client.write_registers(address=5005, values=[1], device_id=1)
-                client.write_registers(address=5038, values=[600], device_id=1)
-                client.write_registers(address=5007, values=[90], device_id=1)
+                # client.write_registers(address=5038, values=[400], device_id=1)
+                client.write_registers(address=5007, values=[10], device_id=1)
 
                 # 分别检查每个寄存器的读取结果
                 error_registers = []

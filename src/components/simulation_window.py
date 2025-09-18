@@ -1308,27 +1308,26 @@ class SimulationWindow(QMainWindow):
                 power_on = update_data['power_on']
                 power_limit_mw = update_data['power_limit_mw']
                 power_percent_limit = update_data['power_percent_limit']
-                
-                # 获取光伏设备的额定功率
+                rated_power = sgen_item.properties.get('sn_mva', 0.0)  # 从属性中获取额定功率，默认0.0
+                # 获取光伏设备的实际功率
                 try:
-                    rated_power_mw = self.network_model.net.sgen.loc[device_idx, 'p_mw']
+                    active_power_mw = self.network_model.net.sgen.loc[device_idx, 'p_mw']
                 except (KeyError, IndexError):
-                    rated_power_mw = 0.0
+                    active_power_mw = 0.0
                 
                 # 计算最终功率值
                 final_power = 0.0
                 
                 if power_on:
                     # 根据功率限制模式计算最终功率
-                    if power_limit_mw is not None:
-                        # 使用绝对功率限制
-                        final_power = power_limit_mw
-                    elif power_percent_limit is not None:
-                        # 使用百分比功率限制
-                        final_power = rated_power_mw * (power_percent_limit / 100.0)
+                    if power_limit_mw is not None and power_percent_limit is not None:
+                        # 同时存在绝对功率限制和百分比功率限制，取较小值
+                        final_power = min(active_power_mw,power_limit_mw)
+                        percent_limit_mw = rated_power * (power_percent_limit / 100.0)
+                        final_power = min(final_power, percent_limit_mw)
                     else:
-                        # 无限制，使用额定功率
-                        final_power = rated_power_mw
+                        # 无限制，使用实际功率
+                        final_power = active_power_mw
                 
                 # 更新光伏功率到网络模型
                 try:
