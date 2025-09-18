@@ -541,14 +541,41 @@ class DataControlManager:
             return
             
         try:
+            
             # 获取储能设备的当前功率值
             current_power = self.parent_window.network_model.net.storage.at[self.parent_window.current_component_idx, 'p_mw']
             
-            # 更新滑块和输入框的值
+            # 获取储能设备的额定功率
+            from .network_items import StorageItem
+            storage_item = None
+            for item in self.parent_window.canvas.scene.items():
+                if isinstance(item, StorageItem) and item.component_index == self.parent_window.current_component_idx:
+                    storage_item = item
+                    break
+            
+            # 获取额定功率，默认为1.0 MW
+            rated_power_mw = 1.0
+            if storage_item and hasattr(storage_item, 'properties') and 'sn_mva' in storage_item.properties:
+                # 从properties中获取sn_mva值
+                rated_power_mw = storage_item.properties['sn_mva']
+            
+            # 根据额定功率动态设置滑块和输入框的范围（-150%~150%额定功率，负值表示放电）
+            max_power = rated_power_mw * 1.5
+            min_power = -max_power
+            
+            # 更新滑块范围
             if hasattr(self.parent_window, 'storage_power_slider'):
-                self.parent_window.storage_power_slider.setValue(int(current_power * 10))  # 转换为滑块值
+                self.parent_window.storage_power_slider.setRange(int(min_power * 100), int(max_power * 100))  # 精确到0.01MW
+                # 确保当前值不超过新范围
+                safe_value = max(int(min_power * 100), min(int(max_power * 100), int(current_power * 100)))
+                self.parent_window.storage_power_slider.setValue(safe_value)
+            
+            # 更新输入框范围
             if hasattr(self.parent_window, 'storage_power_spinbox'):
-                self.parent_window.storage_power_spinbox.setValue(current_power)
+                self.parent_window.storage_power_spinbox.setRange(min_power, max_power)
+                # 确保当前值不超过新范围
+                safe_value = max(min_power, min(max_power, current_power))
+                self.parent_window.storage_power_spinbox.setValue(safe_value)
         except Exception as e:
             print(f"更新储能设备手动控制值时出错: {e}")
 

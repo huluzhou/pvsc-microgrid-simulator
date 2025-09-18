@@ -379,6 +379,7 @@ class SimulationWindow(QMainWindow):
             
         elif component_type == 'storage':
             self.results_tabs.addTab(self.storage_data_tab, "储能控制")
+            self.data_control_manager.update_storage_manual_controls_from_device()
         
         # 更新设备信息（每次都需要更新，因为可能是同类型的不同设备）
         if component_type == 'sgen':
