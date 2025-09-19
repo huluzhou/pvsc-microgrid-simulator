@@ -88,34 +88,43 @@ class ModbusManager:
         # 今日发电量: 5002
         # 总发电量: 5003
         # 当前功率: 5030
-        sgen_input_registers = {
-            0+1:11,
-            4989 + 1: 0,  # sn
-            4989 + 2: 0,
-            4989 + 3: 0,
-            4989 + 4: 0,
-            4989 + 5: 0,
-            4989 + 6: 0,
-            4989 + 7: 0,
-            4989 + 8: 0,
-            5000 + 1: 0,  # 额定功率
-            5002 + 1: 0,  # 今日发电量
-            5003 + 1: 0,  # 总发电量
-            5004 + 1: 0,
-            5030 + 1: 0,  # 当前功率
-            5031 + 1: 0,
-        }
-        sgen_hold_registers = {
-            5005 + 1: 1,  # 开关机
-            5038 + 1: 0x7FFF,  # 有功功率限制
-            5007 + 1: 100,  # 有功功率百分比限制
-        }
+        
+        # 将寄存器字典转换为列表，用于ModbusSequentialDataBlock
+        sgen_input_registers = [0] * 6000
+        sgen_input_registers[0+1] = 11
+        
+        # SN相关寄存器
+        sgen_input_registers[4989 + 1] = 0
+        sgen_input_registers[4989 + 2] = 0
+        sgen_input_registers[4989 + 3] = 0
+        sgen_input_registers[4989 + 4] = 0
+        sgen_input_registers[4989 + 5] = 0
+        sgen_input_registers[4989 + 6] = 0
+        sgen_input_registers[4989 + 7] = 0
+        sgen_input_registers[4989 + 8] = 0
+        
+        # 其他重要寄存器
+        sgen_input_registers[5000 + 1] = 0  # 额定功率
+        sgen_input_registers[5002 + 1] = 0  # 今日发电量
+        sgen_input_registers[5003 + 1] = 0  # 总发电量
+        sgen_input_registers[5004 + 1] = 0
+        sgen_input_registers[5030 + 1] = 0  # 当前功率
+        sgen_input_registers[5031 + 1] = 0
+        
+        # 保持寄存器
+        sgen_hold_registers = [0] * 6000
+        sgen_hold_registers[5005 + 1] = 1  # 开关机
+        sgen_hold_registers[5038 + 1] = 0x7FFF  # 有功功率限制
+        sgen_hold_registers[5007 + 1] = 100  # 有功功率百分比限制
+        
+        # 创建ModbusSequentialDataBlock实例
+        holding_regs = ModbusSequentialDataBlock(0, sgen_hold_registers)
+        input_regs = ModbusSequentialDataBlock(0, sgen_input_registers)
+        
         device_context = {
             1: ModbusDeviceContext(
-                di=ModbusSparseDataBlock({}),
-                co=ModbusSparseDataBlock({}),
-                hr=ModbusSparseDataBlock(sgen_hold_registers),
-                ir=ModbusSparseDataBlock(sgen_input_registers)
+                hr=holding_regs,
+                ir=input_regs
             )
         }
         
@@ -132,14 +141,15 @@ class ModbusManager:
         """创建电表设备专用上下文"""
         # 电表设备寄存器映射
         # 当前功率: 0 (保持寄存器)
-        meter_registers = {0: 0}
+        meter_registers = [0] * 100
+        meter_registers[0] = 0
+        
+        # 创建ModbusSequentialDataBlock实例
+        input_regs = ModbusSequentialDataBlock(0, meter_registers)
         
         device_context = {
             1: ModbusDeviceContext(
-                di=ModbusSparseDataBlock({}),
-                co=ModbusSparseDataBlock({}),
-                hr=ModbusSparseDataBlock({}),
-                ir=ModbusSparseDataBlock(meter_registers),
+                ir=input_regs
             )
         }
         
@@ -282,28 +292,32 @@ class ModbusManager:
         # 枪2状态: 101 (保持寄存器)
         # 枪3状态: 102 (保持寄存器)
         # 枪4状态: 103 (保持寄存器)
-        charger_input_registers = {
-            0 + 1: 0,  # 有功功率
-            1 + 1: 0,
-            2 + 1: 0,  # 需求功率
-            3 + 1: 0,
-            4 + 1: 0,  # 额定功率
-            5 + 1: 0,
-            100 + 1: 1,  # gun1 - 初始状态1
-            101 + 1: 2,  # gun2 - 初始状态2
-            102 + 1: 3,  # gun3 - 初始状态3
-            103 + 1: 4,  # gun4 - 初始状态4
-        }
-        charger_hold_registers = {
-            0 :0x7FFF, #功率限制
-        }
+        
+        # 将寄存器字典转换为列表，用于ModbusSequentialDataBlock
+        charger_input_registers = [0] * 200
+        charger_input_registers[0 + 1] = 0  # 有功功率
+        charger_input_registers[1 + 1] = 0
+        charger_input_registers[2 + 1] = 0  # 需求功率
+        charger_input_registers[3 + 1] = 0
+        charger_input_registers[4 + 1] = 0  # 额定功率
+        charger_input_registers[5 + 1] = 0
+        charger_input_registers[100 + 1] = 1  # gun1 - 初始状态1
+        charger_input_registers[101 + 1] = 2  # gun2 - 初始状态2
+        charger_input_registers[102 + 1] = 3  # gun3 - 初始状态3
+        charger_input_registers[103 + 1] = 4  # gun4 - 初始状态4
+        
+        # 保持寄存器
+        charger_hold_registers = [0] * 200
+        charger_hold_registers[0] = 0x7FFF  # 功率限制
+        
+        # 创建ModbusSequentialDataBlock实例
+        holding_regs = ModbusSequentialDataBlock(0, charger_hold_registers)
+        input_regs = ModbusSequentialDataBlock(0, charger_input_registers)
         
         device_context = {
             1: ModbusDeviceContext(
-                di=ModbusSparseDataBlock({}),
-                co=ModbusSparseDataBlock({}),
-                hr=ModbusSparseDataBlock(charger_hold_registers),
-                ir=ModbusSparseDataBlock(charger_input_registers)
+                hr=holding_regs,
+                ir=input_regs
             )
         }
         context = ModbusServerContext(devices=device_context, single=False)
