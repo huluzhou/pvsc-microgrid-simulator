@@ -381,6 +381,13 @@ class NetworkCanvas(QGraphicsView):
                     # 继续处理其他组件，不中断整个过程
             
             print(f"网络模型创建完成，包含 {len(self.network_model.net.bus)} 个母线")
+            import os
+            from pandapower.file_io import to_json
+            file_path = "network.json"
+            to_json(self.network_model.net, file_path)
+            # 获取完整保存路径
+            full_path = os.path.abspath(file_path)
+            print(f"网络模型已保存到: {full_path}")
             return True
             
         except Exception as e:

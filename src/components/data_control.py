@@ -18,7 +18,40 @@ class DataControlManager:
         self.parent_window = parent_window
         self.data_generator_manager = DataGeneratorManager()
         
+        # 连接储能功率变化信号
+        if hasattr(parent_window, 'storage_power_changed'):
+            parent_window.storage_power_changed.connect(self.on_storage_power_updated)
         
+        
+    def on_storage_power_updated(self, device_idx, new_power):
+        """响应储能功率变化信号，更新滑块和输入框的值"""
+        # 检查是否当前选中的是该储能设备
+        if (hasattr(self.parent_window, 'current_component_type') and 
+            hasattr(self.parent_window, 'current_component_idx') and 
+            self.parent_window.current_component_type == 'storage' and 
+            self.parent_window.current_component_idx == device_idx):
+            
+            # 更新储能专用控制组件
+            if hasattr(self.parent_window, 'storage_power_slider'):
+                self.parent_window.storage_power_slider.blockSignals(True)
+                # 将功率值转换为滑块值（精确到0.01MW）
+                slider_value = int(new_power * 100)
+                # 获取当前滑块范围
+                min_slider = self.parent_window.storage_power_slider.minimum()
+                max_slider = self.parent_window.storage_power_slider.maximum()
+                slider_value = max(min_slider, min(max_slider, slider_value))
+                self.parent_window.storage_power_slider.setValue(slider_value)
+                self.parent_window.storage_power_slider.blockSignals(False)
+            
+            if hasattr(self.parent_window, 'storage_power_spinbox'):
+                self.parent_window.storage_power_spinbox.blockSignals(True)
+                # 获取当前输入框范围
+                min_spin = self.parent_window.storage_power_spinbox.minimum()
+                max_spin = self.parent_window.storage_power_spinbox.maximum()
+                safe_value = max(min_spin, min(max_spin, new_power))
+                self.parent_window.storage_power_spinbox.setValue(safe_value)
+                self.parent_window.storage_power_spinbox.blockSignals(False)
+    
     def create_sgen_data_generation_tab(self):
         """创建光伏设备专用的数据生成控制选项卡"""
         layout = QVBoxLayout(self.parent_window.sgen_data_tab)
@@ -192,8 +225,22 @@ class DataControlManager:
         layout.addWidget(current_device_group)
         
         # 储能手动控制
-        storage_manual_group = QGroupBox("储能手动功率控制")
+        storage_manual_group = QGroupBox("储能功率控制")
         storage_manual_layout = QVBoxLayout(storage_manual_group)
+        
+        # 控制模式切换（手动控制/远程控制）
+        control_mode_layout = QHBoxLayout()
+        control_mode_label = QLabel("控制模式：")
+        
+        # 使用复选框代替单选按钮，选中表示启用远程控制
+        self.parent_window.storage_enable_remote = QCheckBox("启用远程控制")
+        self.parent_window.storage_enable_remote.setChecked(False)  # 默认禁用远程控制（使用手动控制）
+        self.parent_window.storage_enable_remote.stateChanged.connect(self.on_storage_control_mode_changed)
+        
+        control_mode_layout.addWidget(control_mode_label)
+        control_mode_layout.addWidget(self.parent_window.storage_enable_remote)
+        control_mode_layout.addStretch()
+        storage_manual_layout.addLayout(control_mode_layout)
         
         # 手动控制面板
         self.parent_window.storage_manual_panel = QWidget()
@@ -563,21 +610,77 @@ class DataControlManager:
             max_power = rated_power_mw * 1.5
             min_power = -max_power
             
-            # 更新滑块范围
+            # 更新滑块范围和值
             if hasattr(self.parent_window, 'storage_power_slider'):
                 self.parent_window.storage_power_slider.setRange(int(min_power * 100), int(max_power * 100))  # 精确到0.01MW
                 # 确保当前值不超过新范围
                 safe_value = max(int(min_power * 100), min(int(max_power * 100), int(current_power * 100)))
                 self.parent_window.storage_power_slider.setValue(safe_value)
             
-            # 更新输入框范围
+            # 更新输入框范围和值
             if hasattr(self.parent_window, 'storage_power_spinbox'):
                 self.parent_window.storage_power_spinbox.setRange(min_power, max_power)
                 # 确保当前值不超过新范围
                 safe_value = max(min_power, min(max_power, current_power))
                 self.parent_window.storage_power_spinbox.setValue(safe_value)
+            
+            # 根据设备的手动控制模式设置UI控件的启用/禁用状态
+            is_manual_mode = True
+            if storage_item and hasattr(storage_item, 'is_manual_control'):
+                is_manual_mode = storage_item.is_manual_control
+            
+            # 更新复选框状态
+            if hasattr(self.parent_window, 'storage_enable_remote'):
+                self.parent_window.storage_enable_remote.blockSignals(True)
+                self.parent_window.storage_enable_remote.setChecked(not is_manual_mode)
+                self.parent_window.storage_enable_remote.blockSignals(False)
+            
+            # 更新手动控制面板和控件的启用/禁用状态
+            if hasattr(self.parent_window, 'storage_manual_panel'):
+                self.parent_window.storage_manual_panel.setEnabled(is_manual_mode)
+            if hasattr(self.parent_window, 'storage_power_slider'):
+                self.parent_window.storage_power_slider.setEnabled(is_manual_mode)
+            if hasattr(self.parent_window, 'storage_power_spinbox'):
+                self.parent_window.storage_power_spinbox.setEnabled(is_manual_mode)
         except Exception as e:
             print(f"更新储能设备手动控制值时出错: {e}")
+            
+    def on_storage_control_mode_changed(self, state):
+        """处理储能设备控制模式切换（手动控制/远程控制）"""
+        # 确保对象和属性存在
+        if not hasattr(self.parent_window, 'storage_manual_panel'):
+            return
+            
+        # 检查是否启用了远程控制
+        is_remote_enabled = False
+        if hasattr(self.parent_window, 'storage_enable_remote'):
+            is_remote_enabled = self.parent_window.storage_enable_remote.isChecked()
+            
+        # 根据选择的模式启用或禁用手动控制面板
+        # 如果启用了远程控制，则禁用手动控制面板；否则启用手动控制面板
+        self.parent_window.storage_manual_panel.setEnabled(not is_remote_enabled)
+        
+        # 在远程模式下特别禁用功率控制滑块和输入框
+        if hasattr(self.parent_window, 'storage_power_slider'):
+            self.parent_window.storage_power_slider.setEnabled(not is_remote_enabled)
+        if hasattr(self.parent_window, 'storage_power_spinbox'):
+            self.parent_window.storage_power_spinbox.setEnabled(not is_remote_enabled)
+        
+        # 如果切换到远程控制模式，可以在这里添加远程控制的初始化逻辑
+        if is_remote_enabled:
+            pass  # 远程控制模式的初始化逻辑可以在这里添加
+        
+        # 更新StorageItem的手动控制模式状态
+        if hasattr(self.parent_window, 'current_component_type') and hasattr(self.parent_window, 'current_component_idx'):
+            if self.parent_window.current_component_type == 'storage' and hasattr(self.parent_window, 'canvas'):
+                component_idx = self.parent_window.current_component_idx
+                # 查找对应的StorageItem
+                from .network_items import StorageItem
+                for item in self.parent_window.canvas.scene.items():
+                    if isinstance(item, StorageItem) and item.component_index == component_idx:
+                        # 更新手动控制模式状态
+                        item.is_manual_control = not is_remote_enabled
+                        break
 
     def update_charger_manual_controls_from_device(self):
         """从当前充电桩设备更新手动控制组件的值"""

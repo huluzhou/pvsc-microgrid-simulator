@@ -150,7 +150,7 @@ class ModbusManager:
         # 储能设备寄存器映射
         storage_hold_registers = [0] * 200
         storage_hold_registers[4+1] = 0  # 设置功率
-        storage_hold_registers[55+1] = 0  # 开关机
+        storage_hold_registers[55+1] = 1  # 开关机
 
         # 将storage_input_registers字典转换为长度为1000的列表，用于ModbusSequentialDataBlock
         storage_input_registers = [0] * 1000

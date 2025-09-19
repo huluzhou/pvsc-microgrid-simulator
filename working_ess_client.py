@@ -81,8 +81,8 @@ class MultiESSClient:
                 total_discharge = client.read_input_registers(address=430, count=2, device_id=1)
                 sn = client.read_input_registers(address=900, count=16, device_id=1)  # 读取SN号 (地址900-915)
                 # 写入控制命令 (目前注释掉)
-                # client.write_registers(address=4, values=[500], device_id=1)
-                # client.write_registers(address=55, values=[1], device_id=1)
+                client.write_registers(address=4, values=[(-100*10)&0xFFFF], device_id=1)
+                client.write_registers(address=55, values=[1], device_id=1)
 
                 # 检查所有寄存器的读取结果
                 error_registers = []

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QSplitter,
     QTreeWidgetItem, QMessageBox, QTableWidgetItem
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 import pandapower as pp
 import time
@@ -29,10 +29,11 @@ from .power_monitor import PowerMonitor
 # TODO:将仿真界面改为独立窗口
 class SimulationWindow(QMainWindow):
     """仿真界面窗口"""
+    # 定义信号，参数为设备索引和新的功率值
+    storage_power_changed = Signal(int, float)
     
     def __init__(self, canvas, parent=None):
         super().__init__(parent)
-        
         # 先进行内存清理，确保之前仿真不会遗留内存
         self._cleanup_previous_simulation()
         
@@ -1099,16 +1100,30 @@ class SimulationWindow(QMainWindow):
         - 寄存器55：开关机控制 (布尔值)
         """
         try:
+            device_context = None
+            try:
+                # 直接通过索引1获取设备上下文
+                device_context = slave_context[1]
+            except (KeyError, IndexError, TypeError):
+                # 如果索引访问失败，保持device_context为None
+                pass
+            if not device_context:
+                return None  # 如果无法获取设备上下文，直接返回None
             # 读取功率设定值（寄存器0）
             try:
-                power_setpoint = slave_context.getValues(4, 0, 1)[0]
-                power_setpoint = power_setpoint / 1000.0  # kW -> MW
+                power_setpoint = device_context.getValues(3, 4, 1)[0]
+                
+                # 先将值转换为int16类型（处理负数）
+                if power_setpoint > 32767:  # 检查最高位是否为1（表示负数）
+                    power_setpoint = power_setpoint - 65536  # 转换为负数
+                
+                power_setpoint = power_setpoint / 10.0 / 1000.0  # kW -> MW
             except (IndexError, ValueError, AttributeError):
                 power_setpoint = None
                 
             # 读取开关机状态（寄存器55）
             try:
-                power_on = slave_context.getValues(4, 55, 1)[0]
+                power_on = device_context.getValues(3, 55, 1)[0]
                 power_on = bool(power_on)
             except (IndexError, ValueError, AttributeError):
                 power_on = False
@@ -1219,21 +1234,38 @@ class SimulationWindow(QMainWindow):
                 if not storage_item:
                     continue
                     
-                power_on = update_data['power_on']
-                
+                power_on = update_data['power_on'] 
+                power_setpoint = update_data['power_setpoint']
                 # 更新开关机状态，根据实际功率判断充放电状态
                 if power_on:
                     storage_item.state = 'ready'  # 默认状态
+                    final_power = power_setpoint if power_setpoint is not None else 0.0
+                    
+                    # 检查SOC限制，SOC超过限制范围时禁止充放电
+                    if hasattr(storage_item, 'soc_percent'):
+                        # SOC大于等于100%时，禁止充电（如果final_power为正）
+                        if storage_item.soc_percent >= 1.0 and final_power > 0:
+                            final_power = 0.0
+                        # SOC小于等于0%时，禁止放电（如果final_power为负）
+                        elif storage_item.soc_percent <= 0.0 and final_power < 0:
+                            final_power = 0.0
                 else:
                     storage_item.state = 'halt'
+                    final_power = 0.0
                     
                 # 更新功率设定值到网络模型
-                if update_data['power_setpoint'] is not None:
-                    try:
-                        #TODO: 数据生成模式\手动控制模式\modbus控制模式,三种模式互斥,不能同时修改网络模型中设备的功率
-                        self.network_model.net.storage.loc[device_idx, 'p_mw'] = update_data['power_setpoint']
-                    except (KeyError, IndexError):
-                        pass
+                try:
+                    # 只有在非手动模式下才执行更新操作
+                    if hasattr(storage_item, 'is_manual_control') and not storage_item.is_manual_control:
+                        # 检查功率值是否发生变化
+                        current_power = self.network_model.net.storage.loc[device_idx, 'p_mw']
+                        if final_power != current_power:
+                            self.network_model.net.storage.loc[device_idx, 'p_mw'] = final_power
+                            # 发射信号通知功率变化
+                            self.storage_power_changed.emit(device_idx, final_power)
+                    
+                except (KeyError, IndexError):
+                    pass
                         
         except Exception as e:
             print(f"批量应用储能更新失败: {e}")

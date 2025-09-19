@@ -656,6 +656,8 @@ class StorageItem(BaseNetworkItem):
         self.total_charge_energy = 0.0  # 累计充电电量 (kWh)
         self.total_discharge_energy = 0.0  # 累计放电电量 (kWh)
         self.state = 'power_off'  # 初始状态为halt
+        self.is_manual_control = True  # 是否处于手动控制模式，默认开启
+        self.is_power_on = False
         
     def update_realtime_data(self, current_power_mw, time_delta_hours=1.0):
         """
