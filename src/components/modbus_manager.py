@@ -586,12 +586,13 @@ class ModbusManager:
                 raise RuntimeError(f"未找到光伏设备 {index} 的图形项")
             
             # 数据转换和验证
-            power_kw = int(round(abs(power_mw) * 1000))  # MW -> kW
+            power_kw = int(round(abs(power_mw) * 1000 * 1000))  # MW -> kW -> W
             total_energy_wh = int(round(pv_item.total_discharge_energy)) 
             today_energy_wh = int(round(pv_item.today_discharge_energy)) 
             
             # 数据范围检查
             if not (0 <= power_kw <= MAX_32BIT_UINT):
+                print(f"光伏设备 {index} 功率超出范围: {power_kw} W")
                 power_kw = max(0, min(power_kw, MAX_32BIT_UINT))
             
             # 拆分32位数据
