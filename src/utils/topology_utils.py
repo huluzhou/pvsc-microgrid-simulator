@@ -307,19 +307,25 @@ class TopologyManager:
         if 'Bus' in topology_data:
             for bus_data in topology_data['Bus']:
                 old_index = bus_data['index']
-                # 检查index是否为整数类型，如果不是则使用_get_next_index生成
-                if not isinstance(old_index, int):
-                    # 设置临时的component_type以使用_get_next_index
-                    temp_bus = BusItem(QPointF(0, 0))
-                    new_index = temp_bus._get_next_index()
-                    index_mapping[old_index] = new_index
-                    old_index = new_index
 
-                # 使用正确的构造函数参数
-                pos = bus_data.get('geodata', [100 + old_index * 100, 100])
-                bus_item = BusItem(QPointF(pos[0], pos[1]))
-                bus_item.component_index = old_index
-                bus_item.properties['index'] = old_index
+                # 处理母线索引和位置
+                if isinstance(old_index, int):
+                    # 索引是整数时，直接使用该索引创建母线
+                    pos = bus_data.get('geodata', [100 + old_index * 100, 100])
+                    bus_item = BusItem(QPointF(pos[0], pos[1]))
+                    # 覆盖默认生成的索引，使用导入的索引值
+                    bus_item.component_index = old_index
+                    bus_item.properties['index'] = old_index
+                else:
+                    # 索引不是整数时，创建母线并使用自动生成的索引
+                    bus_item = BusItem(QPointF(0, 0))
+                    # 自动生成索引后设置位置
+                    pos = bus_data.get('geodata', [100 + bus_item.properties['index'] * 100, 100])
+                    bus_item.setPos(QPointF(pos[0], pos[1]))
+                    # 确保component_index与properties['index']一致
+                    bus_item.component_index = bus_item.properties['index']
+                    index_mapping[old_index] = bus_item.properties['index']
+                    old_index = bus_item.properties['index']
 
                 # 更新属性
                 for key, value in bus_data.items():
