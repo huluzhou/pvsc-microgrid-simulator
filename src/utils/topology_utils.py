@@ -314,15 +314,13 @@ class TopologyManager:
                     new_index = temp_bus._get_next_index()
                     index_mapping[old_index] = new_index
                     old_index = new_index
-                else:
-                    index_mapping[old_index] = old_index    
 
                 # 使用正确的构造函数参数
                 pos = bus_data.get('geodata', [100 + old_index * 100, 100])
                 bus_item = BusItem(QPointF(pos[0], pos[1]))
                 bus_item.component_index = old_index
                 bus_item.properties['index'] = old_index
-                
+
                 # 更新属性
                 for key, value in bus_data.items():
                     if key != 'index':
@@ -384,12 +382,15 @@ class TopologyManager:
                     for key, value in item_data.items():
                         if key != 'index':
                             item.properties[key] = value
-                    if item_type == 'Line':
-                        item.properties['from_bus'] = index_mapping.get(int(item_data.get('from_bus')))
-                        item.properties['to_bus'] = index_mapping.get(int(item_data.get('to_bus')))
-                    if item_type == 'Transformer':
-                        item.properties['hv_bus'] = index_mapping.get(int(item_data.get('hv_bus')))
-                        item.properties['lv_bus'] = index_mapping.get(int(item_data.get('lv_bus')))
+                    if index_mapping:
+                        if item_type == 'Line':
+                            item.properties['from_bus'] = index_mapping.get(item_data.get('from_bus'))
+                            item.properties['to_bus'] = index_mapping.get(item_data.get('to_bus'))
+                        elif item_type == 'Transformer' :
+                            item.properties['hv_bus'] = index_mapping.get(item_data.get('hv_bus'))
+                            item.properties['lv_bus'] = index_mapping.get(item_data.get('lv_bus'))
+                        else: 
+                            item.properties['bus'] = index_mapping.get(item_data.get('bus'))
                     # 更新标签显示的名称
                     if 'name' in item_data:
                         item.label.setPlainText(item_data['name'])
