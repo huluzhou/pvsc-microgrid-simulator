@@ -494,14 +494,90 @@ class NetworkCanvas(QGraphicsView):
                 print(f"连接失败: {item1.component_name}和{item2.component_name}不能连接")
             return False
             
-        # 找到最近的可用连接点
-        connection_point1, point_index1 = self.find_nearest_connection_point(item1, item2)
-        connection_point2, point_index2 = self.find_nearest_connection_point(item2, item1)
+        # 获取连接点索引
+        point_index1 = -1
+        point_index2 = -1
+        
+        # 特殊处理变压器连接母线的情况
+        # 判断总线是变压器的hv_bus还是lv_bus，选择相应的连接点
+        if item1.component_type == 'transformer' and item2.component_type == 'bus':
+            # 获取要连接的总线ID
+            bus_id = item2.properties.get('index')
+            
+            # 如果总线是高压侧母线，选择高压侧连接点（索引0）
+            if item1.properties.get('hv_bus') == bus_id:
+                point_index1 = 0
+            # 如果总线是低压侧母线，选择低压侧连接点（索引1）
+            elif item1.properties.get('lv_bus') == bus_id:
+                point_index1 = 1
+            # 如果都不是，使用最近的连接点
+            else:
+                _, point_index1 = self.find_nearest_connection_point(item1, item2)
+            
+            # 为总线选择最近的连接点
+            _, point_index2 = self.find_nearest_connection_point(item2, item1)
+        elif item2.component_type == 'transformer' and item1.component_type == 'bus':
+            # 获取要连接的总线ID
+            bus_id = item1.properties.get('index')
+            
+            # 如果总线是高压侧母线，选择高压侧连接点（索引0）
+            if item2.properties.get('hv_bus') == bus_id:
+                point_index2 = 0
+            # 如果总线是低压侧母线，选择低压侧连接点（索引1）
+            elif item2.properties.get('lv_bus') == bus_id:
+                point_index2 = 1
+            # 如果都不是，使用最近的连接点
+            else:
+                _, point_index2 = self.find_nearest_connection_point(item2, item1)
+            
+            # 为总线选择最近的连接点
+            _, point_index1 = self.find_nearest_connection_point(item1, item2)
+        # 特殊处理线路连接母线的情况
+        elif item1.component_type == 'line' and item2.component_type == 'bus':
+            # 获取要连接的总线ID
+            bus_id = item2.properties.get('index')
+            
+            # 如果总线是起始母线，选择起始端连接点（索引0）
+            if item1.properties.get('from_bus') == bus_id:
+                point_index1 = 0
+            # 如果总线是终止母线，选择终止端连接点（索引1）
+            elif item1.properties.get('to_bus') == bus_id:
+                point_index1 = 1
+            # 如果都不是，使用最近的连接点
+            else:
+                _, point_index1 = self.find_nearest_connection_point(item1, item2)
+            
+            # 为总线选择最近的连接点
+            _, point_index2 = self.find_nearest_connection_point(item2, item1)
+        elif item2.component_type == 'line' and item1.component_type == 'bus':
+            # 获取要连接的总线ID
+            bus_id = item1.properties.get('index')
+            
+            # 如果总线是起始母线，选择起始端连接点（索引0）
+            if item2.properties.get('from_bus') == bus_id:
+                point_index2 = 0
+            # 如果总线是终止母线，选择终止端连接点（索引1）
+            elif item2.properties.get('to_bus') == bus_id:
+                point_index2 = 1
+            # 如果都不是，使用最近的连接点
+            else:
+                _, point_index2 = self.find_nearest_connection_point(item2, item1)
+            
+            # 为总线选择最近的连接点
+            _, point_index1 = self.find_nearest_connection_point(item1, item2)
+        else:
+            # 对于其他类型的组件，使用最近的连接点
+            _, point_index1 = self.find_nearest_connection_point(item1, item2)
+            _, point_index2 = self.find_nearest_connection_point(item2, item1)
         
         # 检查是否找到了有效的连接点
         if point_index1 == -1 or point_index2 == -1:
             print("连接失败: 没有可用的连接点")
             return False
+        
+        # 获取对应的连接点位置
+        connection_point1 = item1.connection_points[point_index1]
+        connection_point2 = item2.connection_points[point_index2]
         
         # 添加连接，总线组件不标记连接点为已占用
         point_idx1 = point_index1 if item1.component_type != 'bus' else None
