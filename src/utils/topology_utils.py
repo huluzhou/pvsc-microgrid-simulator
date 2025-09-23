@@ -35,8 +35,19 @@ class TopologyManager:
             
             for item in scene.items():
                 if hasattr(item, 'properties') and 'ip' in item.properties and 'port' in item.properties:
-                    ip = str(item.properties.get('ip', '')).strip()
-                    port = str(item.properties.get('port', '')).strip()
+                    # 获取IP和端口值
+                    ip_value = item.properties.get('ip', '')
+                    port_value = item.properties.get('port', '')
+                    
+                    # 处理None值和'None'字符串
+                    ip = str(ip_value).strip() if ip_value is not None else ''
+                    port = str(port_value).strip() if port_value is not None else ''
+                    
+                    # 将'None'字符串转换为空字符串
+                    if ip.lower() == 'none':
+                        ip = ''
+                    if port.lower() == 'none':
+                        port = ''
                     
                     # 获取组件的device_key
                     device_key = f"{item.component_type}_{item.component_index}"
@@ -49,6 +60,7 @@ class TopologyManager:
                         ip_port_map[key].append(device_key)
                     elif ip or port:  # 只有一个有值，另一个为空
                         invalid_components.append((device_key, ip, port))
+                    # 两者都为空时不做任何处理，视为有效情况
             
             # 检查重复
             duplicates = []
@@ -263,7 +275,10 @@ class TopologyManager:
             return True
             
         except Exception as e:
-            if parent_window and hasattr(parent_window, 'show_message'):
+            if parent_window:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.critical(parent_window, "导入失败", f"导入失败: {str(e)}")
+            else:
                 print(f"导入失败: {str(e)}")
             return False
     
@@ -292,6 +307,16 @@ class TopologyManager:
         if 'Bus' in topology_data:
             for bus_data in topology_data['Bus']:
                 old_index = bus_data['index']
+                # 检查index是否为整数类型，如果不是则使用_get_next_index生成
+                if not isinstance(old_index, int):
+                    # 设置临时的component_type以使用_get_next_index
+                    temp_bus = BusItem(QPointF(0, 0))
+                    new_index = temp_bus._get_next_index()
+                    index_mapping[old_index] = new_index
+                    old_index = new_index
+                else:
+                    index_mapping[old_index] = old_index    
+
                 # 使用正确的构造函数参数
                 pos = bus_data.get('geodata', [100 + old_index * 100, 100])
                 bus_item = BusItem(QPointF(pos[0], pos[1]))
@@ -308,7 +333,6 @@ class TopologyManager:
                     bus_item.label.setPlainText(bus_data['name'])
                 
                 scene.addItem(bus_item)
-                index_mapping[old_index] = bus_item.component_index
                 created_items[('Bus', old_index)] = bus_item
                 
                 # 连接信号到画布
@@ -325,23 +349,53 @@ class TopologyManager:
             for item_data in items_data:
                 if item_type in self.type_mapping:
                     item_class = self.type_mapping[item_type]
+                    item_index = item_data['index']
+                    # 检查index是否为整数类型，如果不是则使用_get_next_index生成
+                    if not isinstance(item_index, int):
+                        # 创建临时实例以使用_get_next_index
+                        temp_item = item_class(QPointF(0, 0))
+                        new_index = temp_item._get_next_index()
+                        item_index = new_index
                     # 使用正确的构造函数参数
-                    pos = item_data.get('geodata', [200 + item_data['index'] * 50, 200])
+                    # 为不同类型设备设置不同的基准位置
+                    if item_type == 'Line':
+                        pos = item_data.get('geodata', [150 + item_index * 50, 250])
+                    elif item_type == 'Transformer':
+                        pos = item_data.get('geodata', [200 + item_index * 70, 300])
+                    elif item_type == 'Load':
+                        pos = item_data.get('geodata', [250 + item_index * 60, 350])
+                    elif item_type == 'Storage':
+                        pos = item_data.get('geodata', [300 + item_index * 60, 400])
+                    elif item_type == 'Static_Generator':
+                        pos = item_data.get('geodata', [350 + item_index * 70, 450])
+                    elif item_type == 'External_Grid':
+                        pos = item_data.get('geodata', [400 + item_index * 80, 500])
+                    elif item_type == 'Measurement':
+                        pos = item_data.get('geodata', [450 + item_index * 50, 550])
+                    elif item_type == 'Charger':
+                        pos = item_data.get('geodata', [500 + item_index * 60, 600])
+                    else:
+                        pos = item_data.get('geodata', [200 + item_index * 50, 200])
                     item = item_class(QPointF(pos[0], pos[1]))
-                    item.component_index = item_data['index']
-                    item.properties['index'] = item_data['index']
+                    item.component_index = item_index
+                    item.properties['index'] = item_index
                     
                     # 更新属性 - 保持连接属性的原始索引值
                     for key, value in item_data.items():
                         if key != 'index':
                             item.properties[key] = value
-                    
+                    if item_type == 'Line':
+                        item.properties['from_bus'] = index_mapping.get(int(item_data.get('from_bus')))
+                        item.properties['to_bus'] = index_mapping.get(int(item_data.get('to_bus')))
+                    if item_type == 'Transformer':
+                        item.properties['hv_bus'] = index_mapping.get(int(item_data.get('hv_bus')))
+                        item.properties['lv_bus'] = index_mapping.get(int(item_data.get('lv_bus')))
                     # 更新标签显示的名称
                     if 'name' in item_data:
                         item.label.setPlainText(item_data['name'])
                     
                     scene.addItem(item)
-                    created_items[(item_type, item_data['index'])] = item
+                    created_items[(item_type, item_index)] = item
                     
                     # 连接信号到画布
                     if hasattr(scene, 'parent') and scene.parent():
@@ -350,9 +404,9 @@ class TopologyManager:
                             item.signals.itemSelected.connect(canvas.handle_item_selected)
         
         # 恢复组件间的连接关系
-        self._restore_connections(scene, topology_data, created_items, index_mapping)
+        self._restore_connections(scene, created_items)
     
-    def _restore_connections(self, scene, topology_data: Dict[str, List[Dict[str, Any]]], created_items: Dict, index_mapping: Dict[int, int]):
+    def _restore_connections(self, scene, created_items: Dict):
         """恢复组件间的连接关系"""
         if not hasattr(scene, 'parent') or not scene.parent():
             return
@@ -361,96 +415,93 @@ class TopologyManager:
         if not hasattr(canvas, 'connect_items'):
             return
         
-        # 遍历所有组件，根据连接属性恢复连接
-        for item_type, items_data in topology_data.items():
-            for item_data in items_data:
-                current_index = item_data['index']
-                item_key = (item_type, current_index)
-                
-                if item_key not in created_items:
-                    continue
-                    
-                item = created_items[item_key]
-                
-                # 根据组件类型查找连接关系
-                if item_type == 'Line':
-                    from_bus = item_data.get('from_bus')
-                    to_bus = item_data.get('to_bus')
-                    if from_bus is not None and to_bus is not None:
-                        try:
-                            from_bus_int = int(from_bus)
-                            to_bus_int = int(to_bus)
-                            
-                            bus1_key = ('Bus', from_bus_int)
-                            bus2_key = ('Bus', to_bus_int)
-                            
-                            if bus1_key in created_items and bus2_key in created_items:
-                                canvas.connect_items(created_items[bus1_key], item)
-                                canvas.connect_items(created_items[bus2_key], item)
-                        except (ValueError, TypeError):
-                            pass
-                            
-                elif item_type == 'Transformer':
-                    hv_bus = item_data.get('hv_bus')
-                    lv_bus = item_data.get('lv_bus')
-                    if hv_bus is not None and lv_bus is not None:
-                        try:
-                            hv_bus_int = int(hv_bus)
-                            lv_bus_int = int(lv_bus)
-                            
-                            hv_key = ('Bus', hv_bus_int)
-                            lv_key = ('Bus', lv_bus_int)
-                            
-                            if hv_key in created_items and lv_key in created_items:
-                                canvas.connect_items(created_items[hv_key], item)
-                                canvas.connect_items(created_items[lv_key], item)
-                        except (ValueError, TypeError):
-                            pass
-                            
-                elif item_type in self.COMPONENT_MAPPINGS['load_types']:
-                    bus = item_data.get('bus')
-                    if bus is not None:
-                        try:
-                            bus_int = int(bus)
-                            bus_key = ('Bus', bus_int)
-                            
-                            if bus_key in created_items:
-                                canvas.connect_items(created_items[bus_key], item)
-                        except (ValueError, TypeError):
-                            pass
-                            
-                elif item_type == 'Measurement':
-                    # 电表连接逻辑：优先通过bus连接，其次通过element/element_type连接
-                    bus = item_data.get('bus')
-                    if bus is not None:
-                        # 通过bus属性连接
-                        try:
-                            bus_int = int(bus)
-                            bus_key = ('Bus', bus_int)
-                            
-                            if bus_key in created_items:
-                                canvas.connect_items(created_items[bus_key], item)
-                        except (ValueError, TypeError):
-                            pass
-                    else:
-                        # 通过element/element_type连接
-                        element = item_data.get('element')
-                        element_type = item_data.get('element_type')
+        # 遍历created_items直接建立连接
+        for (item_type, current_index), item in created_items.items():
+            # 从item对象的properties中获取连接信息
+            if not hasattr(item, 'properties'):
+                continue
+            
+            properties = item.properties
+            
+            # 根据组件类型查找连接关系
+            if item_type == 'Line':
+                from_bus = properties.get('from_bus')
+                to_bus = properties.get('to_bus')
+                if from_bus is not None and to_bus is not None:
+                    try:
+                        from_bus_int = int(from_bus)
+                        to_bus_int = int(to_bus)
                         
-                        if element is not None and element_type is not None:
-                            try:
-                                element_int = int(element)
+                        bus1_key = ('Bus', from_bus_int)
+                        bus2_key = ('Bus', to_bus_int)
+                        
+                        if bus1_key in created_items and bus2_key in created_items:
+                            canvas.connect_items(created_items[bus1_key], item)
+                            canvas.connect_items(created_items[bus2_key], item)
+                    except (ValueError, TypeError):
+                        pass
+                        
+            elif item_type == 'Transformer':
+                hv_bus = properties.get('hv_bus')
+                lv_bus = properties.get('lv_bus')
+                if hv_bus is not None and lv_bus is not None:
+                    try:
+                        hv_bus_int = int(hv_bus)
+                        lv_bus_int = int(lv_bus)
+                        
+                        hv_key = ('Bus', hv_bus_int)
+                        lv_key = ('Bus', lv_bus_int)
+                        
+                        if hv_key in created_items and lv_key in created_items:
+                            canvas.connect_items(created_items[hv_key], item)
+                            canvas.connect_items(created_items[lv_key], item)
+                    except (ValueError, TypeError):
+                        pass
+                        
+            elif item_type in self.COMPONENT_MAPPINGS['load_types']:
+                bus = properties.get('bus')
+                if bus is not None:
+                    try:
+                        bus_int = int(bus)
+                        bus_key = ('Bus', bus_int)
+                        
+                        if bus_key in created_items:
+                            canvas.connect_items(created_items[bus_key], item)
+                    except (ValueError, TypeError):
+                        pass
+                        
+            elif item_type == 'Measurement':
+                # 电表连接逻辑：优先通过bus连接，其次通过element/element_type连接
+                bus = properties.get('bus')
+                if bus is not None:
+                    # 通过bus属性连接
+                    try:
+                        bus_int = int(bus)
+                        bus_key = ('Bus', bus_int)
+                        
+                        if bus_key in created_items:
+                            canvas.connect_items(created_items[bus_key], item)
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    # 通过element/element_type连接
+                    element = properties.get('element')
+                    element_type = properties.get('element_type')
+                    
+                    if element is not None and element_type is not None:
+                        try:
+                            element_int = int(element)
+                            
+                            # 根据element_type确定目标组件类型
+                            target_type = self.COMPONENT_MAPPINGS['connection_target_mapping'].get(element_type)
+                            if target_type:
+                                target_key = (target_type, element_int)
                                 
-                                # 根据element_type确定目标组件类型
-                                target_type = self.COMPONENT_MAPPINGS['connection_target_mapping'].get(element_type)
-                                if target_type:
-                                    target_key = (target_type, element_int)
-                                    
-                                    if target_key in created_items:
-                                        # 电表连接到目标设备
-                                        canvas.connect_items(created_items[target_key], item)
-                            except (ValueError, TypeError):
-                                pass
+                                if target_key in created_items:
+                                    # 电表连接到目标设备
+                                    canvas.connect_items(created_items[target_key], item)
+                        except (ValueError, TypeError):
+                            pass
 
     
     def _get_topology_type(self, component_type: str) -> str:
