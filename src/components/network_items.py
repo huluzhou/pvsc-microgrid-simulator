@@ -1080,7 +1080,6 @@ class MeterItem(BaseNetworkItem):
             "side": None,  # 测量侧
             "in_service": True,  # 投入运行
             "name": component_name,  # 名称
-            "bus": None,  # 连接的母线
             "sn": component_name,  # 序列号
             "brand": "",  # 品牌
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0

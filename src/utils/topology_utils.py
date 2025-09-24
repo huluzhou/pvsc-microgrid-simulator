@@ -160,12 +160,15 @@ class TopologyManager:
             'load': 'Load',
             'line': 'Line',
             'transformer': 'Transformer',
+            'trafo': 'Transformer',
             'bus': 'Bus',
             'generator': 'Generator',
             'storage': 'Storage',
             'static_generator': 'Static_Generator',
+            'sgen': 'Static_Generator',
             'ext_grid': 'External_Grid',
-            'measurement': 'Measurement'   # 添加电表映射
+            'measurement': 'Measurement',   # 添加电表映射
+            'charger': 'Charger'
         },
         
         # 负载类型组件（需要连接bus的组件）
@@ -344,40 +347,38 @@ class TopologyManager:
                     canvas = scene.parent()
                     if hasattr(canvas, 'handle_item_selected'):
                         bus_item.signals.itemSelected.connect(canvas.handle_item_selected)
-        
+        power_dev_index= {}
         # 处理其他组件
         for item_type, items_data in topology_data.items():
-            if item_type == 'Bus':
+            if item_type == 'Bus' or item_type == 'Measurement':
                 continue
-            
             for item_data in items_data:
+                if item_type == 'External_Grid':
+                    item_data['index'] = 0
                 if item_type in self.type_mapping:
                     item_class = self.type_mapping[item_type]
                     item_index = item_data['index']
-                    # 检查index是否为整数类型，如果不是则使用_get_next_index生成
                     if not isinstance(item_index, int):
-                        # 创建临时实例以使用_get_next_index
-                        temp_item = item_class(QPointF(0, 0))
-                        new_index = temp_item._get_next_index()
-                        item_index = new_index
-                    # 使用正确的构造函数参数
+                        if item_type not in power_dev_index:
+                            power_dev_index[item_type] = 0
+                        index_mapping[item_index] = power_dev_index[item_type] + 1
+                        item_index = index_mapping[item_index]
+                        power_dev_index[item_type] = item_index
                     # 为不同类型设备设置不同的基准位置
                     if item_type == 'Line':
-                        pos = item_data.get('geodata', [150 + item_index * 50, 250])
+                        pos = item_data.get('geodata', [150 + item_index * 50, 300])
                     elif item_type == 'Transformer':
-                        pos = item_data.get('geodata', [200 + item_index * 70, 300])
+                        pos = item_data.get('geodata', [200 + item_index * 50, 400])
                     elif item_type == 'Load':
-                        pos = item_data.get('geodata', [250 + item_index * 60, 350])
+                        pos = item_data.get('geodata', [250 + item_index * 50, 500])
                     elif item_type == 'Storage':
-                        pos = item_data.get('geodata', [300 + item_index * 60, 400])
+                        pos = item_data.get('geodata', [300 + item_index * 50, 600])
                     elif item_type == 'Static_Generator':
-                        pos = item_data.get('geodata', [350 + item_index * 70, 450])
+                        pos = item_data.get('geodata', [350 + item_index * 50, 700])
                     elif item_type == 'External_Grid':
-                        pos = item_data.get('geodata', [400 + item_index * 80, 500])
-                    elif item_type == 'Measurement':
-                        pos = item_data.get('geodata', [450 + item_index * 50, 550])
+                        pos = item_data.get('geodata', [400 + item_index * 50, 50])
                     elif item_type == 'Charger':
-                        pos = item_data.get('geodata', [500 + item_index * 60, 600])
+                        pos = item_data.get('geodata', [500 + item_index * 50, 800])
                     else:
                         pos = item_data.get('geodata', [200 + item_index * 50, 200])
                     item = item_class(QPointF(pos[0], pos[1]))
@@ -409,7 +410,31 @@ class TopologyManager:
                         canvas = scene.parent()
                         if hasattr(canvas, 'handle_item_selected'):
                             item.signals.itemSelected.connect(canvas.handle_item_selected)
-        
+        if 'Measurement' in topology_data:
+            for item_data in topology_data['Measurement']:
+                item_class = self.type_mapping['Measurement']
+                item_index = item_data['index']
+                item = item_class(QPointF(0, 0))
+                if isinstance(item_index, int):
+                    item.component_index = item_index
+                    item.properties['index'] = item_index
+                else:
+                    item.component_index = item.properties['index']
+                    index_mapping[item_index] = item.properties['index']
+                    item_index = item.properties['index']
+                pos = item_data.get('geodata', [450 + item_index * 50, 550])
+                item.setPos(QPointF(pos[0], pos[1]))
+                for key, value in item_data.items():
+                    if key != 'index':
+                        item.properties[key] = value
+                if index_mapping:
+                    item.properties['element'] = index_mapping.get(item_data.get('element'))
+                if 'name' in item_data:
+                    item.label.setPlainText(item_data['name'])
+                scene.addItem(item)
+                created_items[('Measurement', item_index)] = item
+                if hasattr(canvas, 'handle_item_selected'):
+                    item.signals.itemSelected.connect(canvas.handle_item_selected)
         # 恢复组件间的连接关系
         self._restore_connections(scene, created_items)
     
@@ -424,6 +449,8 @@ class TopologyManager:
         
         # 遍历created_items直接建立连接
         for (item_type, current_index), item in created_items.items():
+            if item_type == 'Bus':
+                continue
             # 从item对象的properties中获取连接信息
             if not hasattr(item, 'properties'):
                 continue
