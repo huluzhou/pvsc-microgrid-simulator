@@ -308,7 +308,7 @@ class ModbusManager:
         
         # 保持寄存器
         charger_hold_registers = [0] * 200
-        charger_hold_registers[0] = 0x7FFF  # 功率限制
+        charger_hold_registers[0 + 1] = 0x7FFF  # 功率限制
         
         # 创建ModbusSequentialDataBlock实例
         holding_regs = ModbusSequentialDataBlock(0, charger_hold_registers)
