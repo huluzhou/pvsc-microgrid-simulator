@@ -51,6 +51,69 @@ class DataControlManager:
                 safe_value = max(min_spin, min(max_spin, new_power))
                 self.parent_window.storage_power_spinbox.setValue(safe_value)
                 self.parent_window.storage_power_spinbox.blockSignals(False)
+                
+    def update_sgen_device_info(self, component_type, component_idx):
+        """更新光伏设备信息"""
+        if hasattr(self.parent_window, 'sgen_current_device_label') and hasattr(self.parent_window, 'sgen_enable_generation_checkbox'):
+            if component_type and component_idx is not None:
+                device_name = f"光伏_{component_idx}"
+                self.parent_window.sgen_current_device_label.setText(f"当前设备: {device_name}")
+                
+                # 检查当前设备是否启用了数据生成
+                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+                self.parent_window.sgen_enable_generation_checkbox.setChecked(is_enabled)
+                self.parent_window.sgen_enable_generation_checkbox.setEnabled(True)
+                
+                # 更新有功功率显示
+                self.update_sgen_active_power(component_idx)
+            else:
+                self.parent_window.sgen_current_device_label.setText("未选择光伏设备")
+                self.parent_window.sgen_enable_generation_checkbox.setChecked(False)
+                self.parent_window.sgen_enable_generation_checkbox.setEnabled(False)
+                
+    def update_load_device_info(self, component_type, component_idx):
+        """更新负载设备信息"""
+        if hasattr(self.parent_window, 'load_current_device_label') and hasattr(self.parent_window, 'load_enable_generation_checkbox'):
+            if component_type and component_idx is not None:
+                device_name = f"负载_{component_idx}"
+                self.parent_window.load_current_device_label.setText(f"当前设备: {device_name}")
+                
+                # 检查当前设备是否启用了数据生成
+                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+                self.parent_window.load_enable_generation_checkbox.setChecked(is_enabled)
+                self.parent_window.load_enable_generation_checkbox.setEnabled(True)
+            else:
+                self.parent_window.load_current_device_label.setText("未选择负载设备")
+                self.parent_window.load_enable_generation_checkbox.setChecked(False)
+                self.parent_window.load_enable_generation_checkbox.setEnabled(False)
+                
+    def update_storage_device_info(self, component_type, component_idx):
+        """更新储能设备信息"""
+        if hasattr(self.parent_window, 'storage_current_device_label'):
+            if component_type and component_idx is not None:
+                device_name = f"储能_{component_idx}"
+                self.parent_window.storage_current_device_label.setText(f"当前设备: {device_name}")
+                
+                # 检查当前设备是否启用了数据生成
+                self.is_device_generation_enabled(component_type, component_idx)
+            else:
+                self.parent_window.storage_current_device_label.setText("未选择储能设备")
+                
+    def update_charger_device_info(self, component_type, component_idx):
+        """更新充电桩设备信息"""
+        if hasattr(self.parent_window, 'charger_current_device_label') and hasattr(self.parent_window, 'charger_enable_generation_checkbox'):
+            if component_type and component_idx is not None:
+                device_name = f"充电桩_{component_idx}"
+                self.parent_window.charger_current_device_label.setText(f"当前设备: {device_name}")
+            else:
+                self.parent_window.charger_current_device_label.setText("未选择充电桩设备")
+                self.parent_window.charger_enable_generation_checkbox.setChecked(False)
+                self.parent_window.charger_enable_generation_checkbox.setEnabled(False)
+                
+    def is_device_generation_enabled(self, component_type, component_idx):
+        """检查指定设备是否启用了数据生成"""
+        device_key = f"{component_type}_{component_idx}"
+        return device_key in self.parent_window.generated_devices
     
     def create_sgen_data_generation_tab(self):
         """创建光伏设备专用的数据生成控制选项卡"""
@@ -72,10 +135,22 @@ class DataControlManager:
         
         current_device_layout.addLayout(device_control_layout)
         layout.addWidget(current_device_group)
+        # 光伏主要结果展示
+        sgen_result_group = QGroupBox("光伏发电主要结果")
+        sgen_result_layout = QFormLayout(sgen_result_group)
         
+        # 有功功率显示
+        self.parent_window.sgen_active_power_label = QLabel("-- MW")
+        self.parent_window.sgen_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        sgen_result_layout.addRow("有功功率:", self.parent_window.sgen_active_power_label)
+        
+        # 添加到主布局
+        layout.addWidget(sgen_result_group)
+
         # 光伏专用参数设置
         sgen_params_group = QGroupBox("光伏发电参数设置")
         sgen_params_layout = QFormLayout(sgen_params_group)
+        
         
         # 变化幅度
         self.parent_window.sgen_variation_spinbox = QDoubleSpinBox()
@@ -139,6 +214,18 @@ class DataControlManager:
         
         current_device_layout.addLayout(device_control_layout)
         layout.addWidget(current_device_group)
+        
+        # 负载主要结果展示
+        load_result_group = QGroupBox("负载用电主要结果")
+        load_result_layout = QFormLayout(load_result_group)
+        
+        # 有功功率显示
+        self.parent_window.load_active_power_label = QLabel("-- MW")
+        self.parent_window.load_active_power_label.setStyleSheet("font-weight: bold; color: #F44336;")
+        load_result_layout.addRow("有功功率:", self.parent_window.load_active_power_label)
+        
+        # 添加到主布局
+        layout.addWidget(load_result_group)
         
         # 负载专用参数设置
         load_params_group = QGroupBox("负载用电参数设置")
@@ -224,6 +311,23 @@ class DataControlManager:
         
         layout.addWidget(current_device_group)
         
+        # 储能主要结果展示
+        storage_result_group = QGroupBox("储能主要结果")
+        storage_result_layout = QFormLayout(storage_result_group)
+        
+        # 有功功率显示
+        self.parent_window.storage_active_power_label = QLabel("-- MW")
+        self.parent_window.storage_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        storage_result_layout.addRow("有功功率:", self.parent_window.storage_active_power_label)
+        
+        # 储能荷电状态显示
+        self.parent_window.storage_soc_label = QLabel("-- %")
+        self.parent_window.storage_soc_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        storage_result_layout.addRow("荷电状态:", self.parent_window.storage_soc_label)
+        
+        # 添加到主布局
+        layout.addWidget(storage_result_group)
+        
         # 储能手动控制
         storage_manual_group = QGroupBox("储能功率控制")
         storage_manual_layout = QVBoxLayout(storage_manual_group)
@@ -294,6 +398,18 @@ class DataControlManager:
         
         layout.addWidget(current_device_group)
         
+        # 充电桩主要结果展示
+        charger_result_group = QGroupBox("充电桩用电主要结果")
+        charger_result_layout = QFormLayout(charger_result_group)
+        
+        # 有功功率显示
+        self.parent_window.charger_active_power_label = QLabel("-- kW")
+        self.parent_window.charger_active_power_label.setStyleSheet("font-weight: bold; color: #9C27B0;")
+        charger_result_layout.addRow("有功功率:", self.parent_window.charger_active_power_label)
+        
+        # 添加到主布局
+        layout.addWidget(charger_result_group)
+        
         # 充电桩需求功率手动控制
         charger_manual_group = QGroupBox("充电桩需求功率控制")
         charger_manual_layout = QVBoxLayout(charger_manual_group)
@@ -338,12 +454,6 @@ class DataControlManager:
         
         layout.addStretch()
         
-    # 数据生成状态管理方法
-    def is_device_generation_enabled(self, component_type, component_idx):
-        """检查指定设备是否启用了数据生成"""
-        device_key = f"{component_type}_{component_idx}"
-        return device_key in self.parent_window.generated_devices
-    
     def toggle_sgen_data_generation(self, state):
         """切换光伏设备的数据生成状态"""
         self._toggle_device_data_generation(state, 'sgen')
@@ -352,11 +462,6 @@ class DataControlManager:
         """切换负载设备的数据生成状态"""
         self._toggle_device_data_generation(state, 'load')
     
-    def toggle_storage_data_generation(self, state):
-        """切换储能设备的数据生成状态"""
-        self._toggle_device_data_generation(state, 'storage')
-
-
     
     def _toggle_device_data_generation(self, state, device_type):
         """切换指定类型设备的数据生成状态"""
@@ -425,16 +530,6 @@ class DataControlManager:
             else:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
     
-    def toggle_device_data_generation(self, state):
-        """切换当前设备的数据生成状态（保留兼容性）"""
-        if hasattr(self.parent_window, 'current_component_type'):
-            if self.parent_window.current_component_type == 'sgen':
-                self.toggle_sgen_data_generation(state)
-            elif self.parent_window.current_component_type == 'load':
-                self.toggle_load_data_generation(state)
-            elif self.parent_window.current_component_type == 'storage':
-                self.toggle_storage_data_generation(state)
-    
     # 参数变化回调方法
     def on_variation_changed(self, value):
         """变化幅度改变时的回调"""
@@ -445,7 +540,111 @@ class DataControlManager:
         """生成间隔改变时的回调"""
         self.data_generator_manager.set_interval('load', value)
         self.data_generator_manager.set_interval('sgen', value)
+
+    def update_sgen_active_power(self, component_idx):
+        """更新光伏设备的有功功率显示"""
+        if hasattr(self.parent_window, "sgen_active_power_label") and hasattr(
+            self.parent_window, "network_model"
+        ):
+            net = self.parent_window.network_model.net
+            if hasattr(net, "res_sgen") and component_idx in net.res_sgen.index:
+                active_power = net.res_sgen.loc[component_idx, "p_mw"]
+                self.parent_window.sgen_active_power_label.setText(
+                    f"{active_power:.4f} MW"
+                )
+            else:
+                self.parent_window.sgen_active_power_label.setText("未计算")
+
+    def update_storage_active_power(self, component_idx):
+        """更新储能设备的有功功率显示"""
+        if hasattr(self.parent_window, "storage_active_power_label") and hasattr(
+            self.parent_window, "network_model"
+        ):
+            net = self.parent_window.network_model.net
+            if hasattr(net, "res_storage") and component_idx in net.res_storage.index:
+                active_power = net.res_storage.loc[component_idx, "p_mw"]
+                self.parent_window.storage_active_power_label.setText(
+                    f"{active_power:.4f} MW"
+                )
+            else:
+                self.parent_window.storage_active_power_label.setText("未计算")
     
+    def update_load_active_power(self, component_idx):
+        """更新负载设备的有功功率显示"""
+        if hasattr(self.parent_window, "load_active_power_label") and hasattr(
+            self.parent_window, "network_model"
+        ):
+            net = self.parent_window.network_model.net
+            # 检查component_idx是否为None
+            if component_idx is None:
+                self.parent_window.load_active_power_label.setText("未计算")
+                return
+            
+            if hasattr(net, "res_load") and component_idx in net.res_load.index:
+                active_power = net.res_load.loc[component_idx, "p_mw"]
+                self.parent_window.load_active_power_label.setText(
+                    f"{active_power:.4f} MW"
+                )
+            else:
+                self.parent_window.load_active_power_label.setText("未计算")
+    
+    def update_charger_active_power(self, component_idx):
+        """更新充电桩设备的有功功率显示"""
+        if hasattr(self.parent_window, "charger_active_power_label") and hasattr(
+            self.parent_window, "network_model"
+        ):
+            net = self.parent_window.network_model.net
+            # 检查component_idx是否为None
+            if component_idx is None:
+                self.parent_window.charger_active_power_label.setText("未计算")
+                return
+            
+            # 充电桩在模型中作为负载处理，索引有+1000的偏移
+            charger_index = component_idx + 1000
+            if hasattr(net, "res_load") and charger_index in net.res_load.index:
+                active_power = net.res_load.loc[charger_index, "p_mw"]
+                # 转换为kW显示
+                active_power_kw = active_power * 1000
+                self.parent_window.charger_active_power_label.setText(
+                    f"{active_power_kw:.1f} kW"
+                )
+            else:
+                self.parent_window.charger_active_power_label.setText("未计算")
+
+    def update_storage_soc(self, component_idx):
+        """更新储能设备的状态量显示"""
+        if hasattr(self.parent_window, "storage_soc_label"):
+            try:
+                # 从scene.items()中获取SOC值
+                if hasattr(self.parent_window, 'canvas') and hasattr(self.parent_window.canvas, 'scene'):
+                    # 查找对应索引的储能设备
+                    for item in self.parent_window.canvas.scene.items():
+                        if hasattr(item, 'component_type') and item.component_type == 'storage' and item.component_index == component_idx:
+                            if hasattr(item, 'properties') and 'soc_percent' in item.properties:
+                                soc_percent = item.properties['soc_percent']
+                                self.parent_window.storage_soc_label.setText(f"{soc_percent*100:.4f}%")
+                                return
+                # 如果未找到，显示默认值
+                self.parent_window.storage_soc_label.setText("未计算")
+            except Exception as e:
+                print(f"更新储能SOC失败: {str(e)}")
+                self.parent_window.storage_soc_label.setText("未计算")
+
+    def update_realtime_data(self):
+        # 根据当前设备类型只调用对应的更新方法
+        component_type = getattr(self.parent_window, 'current_component_type', None)
+        component_idx = getattr(self.parent_window, 'current_component_idx', None)
+        
+        if component_type == 'sgen':
+            self.update_sgen_active_power(component_idx)
+        elif component_type == 'storage':
+            self.update_storage_active_power(component_idx)
+            self.update_storage_soc(component_idx)
+        elif component_type == 'load':
+            self.update_load_active_power(component_idx)
+        elif component_type == 'charger':
+            self.update_charger_active_power(component_idx)
+
     def on_sgen_variation_changed(self, value):
         """光伏变化幅度改变时的回调"""
         self.data_generator_manager.set_variation('sgen', value)

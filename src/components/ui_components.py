@@ -216,10 +216,10 @@ class UIComponentManager:
         # 创建选项卡
         self.parent_window.results_tabs = QTabWidget()
         
-        # 组件详情选项卡
-        self.parent_window.component_details_tab = QWidget()
-        self.create_component_details_tab()
-        self.parent_window.results_tabs.addTab(self.parent_window.component_details_tab, "组件详情")
+        # # 组件详情选项卡
+        # self.parent_window.component_details_tab = QWidget()
+        # self.create_component_details_tab()
+        # self.parent_window.results_tabs.addTab(self.parent_window.component_details_tab, "组件详情")
         
         # 为不同设备类型创建独立的数据生成控制选项卡
         self.parent_window.sgen_data_tab = QWidget()  # 光伏设备选项卡
@@ -230,18 +230,6 @@ class UIComponentManager:
         results_layout.addWidget(self.parent_window.results_tabs)
         
         parent.addWidget(results_widget)
-        
-    def create_component_details_tab(self):
-        """创建组件详情选项卡"""
-        layout = QVBoxLayout(self.parent_window.component_details_tab)
-        
-        # 组件参数表格
-        self.parent_window.component_params_table = QTableWidget()
-        self.parent_window.component_params_table.setColumnCount(2)
-        self.parent_window.component_params_table.setHorizontalHeaderLabels(["参数", "值"])
-        self.parent_window.component_params_table.horizontalHeader().setStretchLastSection(True)
-        layout.addWidget(self.parent_window.component_params_table)
-        
         
     def create_monitor_control_panel(self, parent_layout):
         """创建监控控制面板"""
