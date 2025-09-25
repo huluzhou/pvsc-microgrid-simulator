@@ -337,7 +337,7 @@ class DataControlManager:
         
         # 使用复选框代替单选按钮，选中表示启用远程控制
         self.parent_window.storage_enable_remote = QCheckBox("启用远程控制")
-        self.parent_window.storage_enable_remote.setChecked(False)  # 默认禁用远程控制（使用手动控制）
+        self.parent_window.storage_enable_remote.setChecked(True)  # 默认启用远程控制
         self.parent_window.storage_enable_remote.stateChanged.connect(self.on_storage_control_mode_changed)
         
         control_mode_layout.addWidget(control_mode_label)
