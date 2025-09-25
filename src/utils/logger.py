@@ -25,7 +25,7 @@ class LoggerManager:
     def _initialize(self):
         """初始化日志配置"""
         # 创建logger对象
-        self.logger = logging.getLogger('auto_calculation')
+        self.logger = logging.getLogger('power_simulation')
         self.logger.setLevel(logging.INFO)
         
         # 确保没有重复添加处理器
@@ -45,13 +45,13 @@ class LoggerManager:
         
         # 设置日志文件名（按日期命名）
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
-        log_file = os.path.join(log_dir, f'auto_calculation_{current_date}.log')
+        log_file = os.path.join(log_dir, f'power_simulation_{current_date}.log')
         
         # 创建文件处理器，使用RotatingFileHandler来控制文件大小
         file_handler = RotatingFileHandler(
             log_file,
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=5,          # 保留5个备份文件
+            maxBytes=100*1024*1024,  # 10MB
+            backupCount=10,          # 保留5个备份文件
             encoding='utf-8'
         )
         
