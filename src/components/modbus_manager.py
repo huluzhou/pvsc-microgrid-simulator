@@ -7,10 +7,10 @@ Modbus服务器管理模块
 """
 
 import threading
+from utils.logger import logger
 from pymodbus.server import StartTcpServer
 from pymodbus import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock, ModbusSequentialDataBlock
-
 
 class ModbusManager:
     """Modbus服务器管理器"""
@@ -716,11 +716,15 @@ class ModbusManager:
             slave_context.setValues(4, 0, [state_values['reg1']])      # 状态寄存器1
             # 设置可用状态寄存器400
             # 判断设备是否可用：只有在就绪、充电、放电状态时为可用
-            if current_state in ['ready', 'charge', 'discharge']:
+            if current_state in ['ready', 'charge', 'discharge','halt']:
                 slave_context.setValues(4, 400, [1])  # 可用
+                alarm_401 = 1
             else:
                 slave_context.setValues(4, 400, [0])  # 不可用（停机或故障）
+                alarm_401 = 0
             
+            logger.info(f"储能设备 {index} 状态更新: {current_state}")
+            logger.info(f"电池柜状态:{state_values['reg1']},工作状态:{state_values['reg409']},开关机状态:{state_values['reg840']},警报状态:{alarm_401}")
             # 调试信息（可选，生产环境可注释掉）
             # if abs(active_power) > 0.001:
             #     print(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
