@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QComboBox
 )
 from PySide6.QtCore import Qt
+from pandas.core.frame import com
 from .data_generators import DataGeneratorManager
 
 
@@ -598,9 +599,8 @@ class DataControlManager:
                 return
             
             # 充电桩在模型中作为负载处理，索引有+1000的偏移
-            charger_index = component_idx + 1000
-            if hasattr(net, "res_load") and charger_index in net.res_load.index:
-                active_power = net.res_load.loc[charger_index, "p_mw"]
+            if hasattr(net, "res_load") and component_idx in net.res_load.index:
+                active_power = net.res_load.loc[component_idx, "p_mw"]
                 # 转换为kW显示
                 active_power_kw = active_power * 1000
                 self.parent_window.charger_active_power_label.setText(
