@@ -101,14 +101,12 @@ class DataControlManager:
                 
     def update_charger_device_info(self, component_type, component_idx):
         """更新充电桩设备信息"""
-        if hasattr(self.parent_window, 'charger_current_device_label') and hasattr(self.parent_window, 'charger_enable_generation_checkbox'):
+        if hasattr(self.parent_window, 'charger_current_device_label'):
             if component_type and component_idx is not None:
                 device_name = f"充电桩_{component_idx}"
                 self.parent_window.charger_current_device_label.setText(f"当前设备: {device_name}")
             else:
                 self.parent_window.charger_current_device_label.setText("未选择充电桩设备")
-                self.parent_window.charger_enable_generation_checkbox.setChecked(False)
-                self.parent_window.charger_enable_generation_checkbox.setEnabled(False)
                 
     def is_device_generation_enabled(self, component_type, component_idx):
         """检查指定设备是否启用了数据生成"""
