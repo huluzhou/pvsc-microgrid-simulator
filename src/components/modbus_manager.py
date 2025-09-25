@@ -513,7 +513,7 @@ class ModbusManager:
                 elif element_type == "sgen" and element in self.network_model.net.sgen.index:
                     power_value = self.network_model.net.res_sgen.loc[element, "p_mw"]
                 elif element_type == 'storage' and element in self.network_model.net.storage.index:
-                    power_value = self.network_model.net.res_storage.loc[element, 'p_mw']
+                    power_value = -self.network_model.net.res_storage.loc[element, 'p_mw']
                 elif element_type == 'line' and element in self.network_model.net.line.index:
                     if side == 'from':
                         power_value = self.network_model.net.res_line.loc[element, 'p_from_mw']
@@ -646,7 +646,7 @@ class ModbusManager:
             remaining_capacity = max(0, min(65535, int(remaining_kwh * 10)))
             #
             active_power_raw = float(
-                self.network_model.net.res_storage.loc[index, "p_mw"]
+                -self.network_model.net.res_storage.loc[index, "p_mw"]
             )
             active_power = int(active_power_raw * 1000 * 10)
             # 计算电流 - 修正单相220V计算逻辑
@@ -676,15 +676,8 @@ class ModbusManager:
             total_discharge_wh = int(total_discharge_energy * 10)
             total_discharge_low = total_discharge_wh & 0xFFFF
             total_discharge_high = (total_discharge_wh >> 16) & 0xFFFF
-            # 根据功率值自动判断储能设备状态
-            if abs(active_power) < 0.001:
-                current_state = "ready"  # 功率接近0，处于就绪状态
-            elif active_power > 0:  # 正值为充电
-                current_state = "charge"
-            elif active_power < 0:  # 负值为放电
-                current_state = "discharge"
-            else:
-                current_state = storage_item.state  # 保持原有状态
+
+            current_state = storage_item.state  # 保持原有状态
 
             # 状态映射表
             state_map = {

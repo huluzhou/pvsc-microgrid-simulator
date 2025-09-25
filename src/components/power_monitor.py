@@ -140,12 +140,12 @@ class PowerMonitor:
             elif device_type == "储能":
                 # 从储能潮流计算结果中获取实际功率
                 if hasattr(self.network_model.net, 'res_storage') and device_id in self.network_model.net.res_storage.index:
-                    return self.network_model.net.res_storage.loc[device_id, 'p_mw']
+                    return -self.network_model.net.res_storage.loc[device_id, 'p_mw']
                 else:
                     # 使用设定值
                     storage = self.network_model.net.storage
                     if device_id in storage.index:
-                        return storage.loc[device_id, 'p_mw']
+                        return -storage.loc[device_id, 'p_mw']
                     return 0.0
                     
             elif device_type == "外部电网":

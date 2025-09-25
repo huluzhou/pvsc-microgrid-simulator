@@ -675,14 +675,18 @@ class StorageItem(BaseNetworkItem):
         
         # 更新SOC
         max_energy_kwh = self.properties.get("max_e_mwh", 1.0) * 1000
-        if current_power_kw > 0:  # 充电
-            self.soc_percent = min(1.0, self.soc_percent + (energy_delta / max_energy_kwh))
-            self.today_charge_energy += energy_delta
-            self.total_charge_energy += energy_delta
-        elif current_power_kw < 0:  # 放电
-            self.soc_percent = max(0, self.soc_percent - (energy_delta / max_energy_kwh))
+        if current_power_kw > 0:  # 放电
+            self.soc_percent = min(1.0, self.soc_percent - (energy_delta / max_energy_kwh))
             self.today_discharge_energy += energy_delta
             self.total_discharge_energy += energy_delta
+            self.state = 'discharge'
+        elif current_power_kw < 0:  # 充电
+            self.soc_percent = max(0, self.soc_percent + (energy_delta / max_energy_kwh))
+            self.today_charge_energy += energy_delta
+            self.total_charge_energy += energy_delta
+            self.state = 'charge'
+        else:
+            self.state = 'ready'
             
         # 更新属性中的SOC值
         self.properties["soc_percent"] = self.soc_percent

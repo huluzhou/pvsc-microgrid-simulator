@@ -323,7 +323,11 @@ class DataControlManager:
         self.parent_window.storage_soc_label = QLabel("-- %")
         self.parent_window.storage_soc_label.setStyleSheet("font-weight: bold; color: #2196F3;")
         storage_result_layout.addRow("荷电状态:", self.parent_window.storage_soc_label)
-        
+        # 储能工作状态显示
+        self.parent_window.storage_work_status_label = QLabel("--")
+        self.parent_window.storage_work_status_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        storage_result_layout.addRow("工作状态:", self.parent_window.storage_work_status_label)
+
         # 添加到主布局
         layout.addWidget(storage_result_group)
         
@@ -561,7 +565,7 @@ class DataControlManager:
         ):
             net = self.parent_window.network_model.net
             if hasattr(net, "res_storage") and component_idx in net.res_storage.index:
-                active_power = net.res_storage.loc[component_idx, "p_mw"]
+                active_power = -net.res_storage.loc[component_idx, "p_mw"]
                 self.parent_window.storage_active_power_label.setText(
                     f"{active_power:.4f} MW"
                 )
@@ -609,24 +613,44 @@ class DataControlManager:
             else:
                 self.parent_window.charger_active_power_label.setText("未计算")
 
-    def update_storage_soc(self, component_idx):
+    def update_storage_info(self, component_idx):
         """更新储能设备的状态量显示"""
+        # 查找储能设备
+        storage_item = None
+        try:
+            if hasattr(self.parent_window, 'canvas') and hasattr(self.parent_window.canvas, 'scene'):
+                for item in self.parent_window.canvas.scene.items():
+                    if (hasattr(item, 'component_type') and 
+                        item.component_type == 'storage' and 
+                        item.component_index == component_idx):
+                        storage_item = item
+                        break
+        except Exception as e:
+            print(f"查找储能设备失败: {str(e)}")
+            
+        # 更新SOC显示
         if hasattr(self.parent_window, "storage_soc_label"):
             try:
-                # 从scene.items()中获取SOC值
-                if hasattr(self.parent_window, 'canvas') and hasattr(self.parent_window.canvas, 'scene'):
-                    # 查找对应索引的储能设备
-                    for item in self.parent_window.canvas.scene.items():
-                        if hasattr(item, 'component_type') and item.component_type == 'storage' and item.component_index == component_idx:
-                            if hasattr(item, 'properties') and 'soc_percent' in item.properties:
-                                soc_percent = item.properties['soc_percent']
-                                self.parent_window.storage_soc_label.setText(f"{soc_percent*100:.4f}%")
-                                return
-                # 如果未找到，显示默认值
-                self.parent_window.storage_soc_label.setText("未计算")
+                if storage_item and hasattr(storage_item, 'properties') and 'soc_percent' in storage_item.properties:
+                    soc_percent = storage_item.properties['soc_percent']
+                    self.parent_window.storage_soc_label.setText(f"{soc_percent*100:.4f}%")
+                else:
+                    self.parent_window.storage_soc_label.setText("未计算")
             except Exception as e:
                 print(f"更新储能SOC失败: {str(e)}")
                 self.parent_window.storage_soc_label.setText("未计算")
+        
+        # 更新工作状态显示
+        if hasattr(self.parent_window, "storage_work_status_label"):
+            try:
+                if storage_item and hasattr(storage_item, 'state'):
+                    work_status = storage_item.state
+                    self.parent_window.storage_work_status_label.setText(work_status)
+                else:
+                    self.parent_window.storage_work_status_label.setText("未计算")
+            except Exception as e:
+                print(f"更新储能工作状态失败: {str(e)}")
+                self.parent_window.storage_work_status_label.setText("未计算")
 
     def update_realtime_data(self):
         # 根据当前设备类型只调用对应的更新方法
@@ -637,7 +661,7 @@ class DataControlManager:
             self.update_sgen_active_power(component_idx)
         elif component_type == 'storage':
             self.update_storage_active_power(component_idx)
-            self.update_storage_soc(component_idx)
+            self.update_storage_info(component_idx)
         elif component_type == 'load':
             self.update_load_active_power(component_idx)
         elif component_type == 'charger':
@@ -787,7 +811,7 @@ class DataControlManager:
         try:
             
             # 获取储能设备的当前功率值
-            current_power = self.parent_window.network_model.net.storage.at[self.parent_window.current_component_idx, 'p_mw']
+            current_power = -self.parent_window.network_model.net.storage.at[self.parent_window.current_component_idx, 'p_mw']
             
             # 获取储能设备的额定功率
             from .network_items import StorageItem
@@ -1009,50 +1033,6 @@ class DataControlManager:
         except Exception as e:
             print(f"更新手动控制值时出错: {e}")
     
-    # 滑块和输入框变化回调方法
-    def on_manual_power_changed(self, value):
-        """手动功率滑块改变时的回调"""
-        # 将滑块值（百分比）转换为实际功率值
-        if hasattr(self.parent_window, 'power_spinbox') and hasattr(self.parent_window, 'base_power_value'):
-            # 使用基准功率值计算实际功率（精确到0.01MW）
-            new_power = self.parent_window.base_power_value * (value / 100.0)
-            # 暂时断开信号连接，避免循环调用
-            self.parent_window.power_spinbox.blockSignals(True)
-            self.parent_window.power_spinbox.setValue(new_power)
-            self.parent_window.power_spinbox.blockSignals(False)
-            
-            # 自动应用功率设置到设备
-            self.apply_manual_power_settings()
-
-    
-    def on_manual_reactive_power_changed(self, value):
-        """手动无功功率滑块改变时的回调"""
-        if hasattr(self.parent_window, 'reactive_power_spinbox') and hasattr(self.parent_window, 'base_reactive_power_value'):
-            # 使用基准无功功率值计算实际功率（精确到0.01MVar）
-            new_power = self.parent_window.base_reactive_power_value * (value / 100.0)
-            self.parent_window.reactive_power_spinbox.blockSignals(True)
-            self.parent_window.reactive_power_spinbox.setValue(new_power)
-            self.parent_window.reactive_power_spinbox.blockSignals(False)
-            
-            # 自动应用功率设置到设备
-            self.apply_manual_power_settings()
-    
-    def on_manual_reactive_power_spinbox_changed(self, value):
-        """手动无功功率输入框改变时的回调"""
-        if hasattr(self.parent_window, 'reactive_power_slider') and hasattr(self.parent_window, 'base_reactive_power_value') and self.parent_window.base_reactive_power_value > 0:
-            percentage = int((value / self.parent_window.base_reactive_power_value) * 100)
-            
-            # 获取当前滑块范围（动态范围）
-            max_slider = self.parent_window.reactive_power_slider.maximum()
-            min_slider = self.parent_window.reactive_power_slider.minimum()
-            percentage = max(min_slider, min(max_slider, percentage))
-            
-            self.parent_window.reactive_power_slider.blockSignals(True)
-            self.parent_window.reactive_power_slider.setValue(percentage)
-            self.parent_window.reactive_power_slider.blockSignals(False)
-            
-            # 自动应用功率设置到设备
-            self.apply_manual_power_settings()
     
     def on_sgen_power_changed(self, value):
         """光伏功率滑块改变时的回调"""
@@ -1167,62 +1147,6 @@ class DataControlManager:
             self.parent_window.charger_required_power_slider.setValue(slider_value)
             self.parent_window.charger_required_power_slider.blockSignals(False)
     
-    # 功率设置应用方法
-    def apply_manual_power_settings(self):
-        """应用手动功率设置到网络模型"""
-        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
-            QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
-            return
-            
-        if not self.parent_window.network_model or not hasattr(self.parent_window.network_model, 'net'):
-            QMessageBox.warning(self.parent_window, "警告", "网络模型未加载")
-            return
-            
-        component_type = self.parent_window.current_component_type
-        component_idx = self.parent_window.current_component_idx
-        
-        try:
-            if component_type == 'load':
-                if component_idx in self.parent_window.network_model.net.load.index:
-                    p_mw = self.parent_window.power_spinbox.value()
-                    q_mvar = self.parent_window.reactive_power_spinbox.value()
-                    
-                    self.parent_window.network_model.net.load.loc[component_idx, 'p_mw'] = p_mw
-                    self.parent_window.network_model.net.load.loc[component_idx, 'q_mvar'] = q_mvar
-                    
-                    
-                    self.parent_window.statusBar().showMessage(f"已更新负载设备 {component_idx} 的功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
-                    print(f"应用负载设备 {component_idx} 功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
-                else:
-                    QMessageBox.warning(self.parent_window, "错误", f"负载设备 {component_idx} 不存在")
-                    
-            elif component_type == 'sgen':
-                if component_idx in self.parent_window.network_model.net.sgen.index:
-                    p_mw = self.parent_window.power_spinbox.value()
-                    
-                    # 光伏设备的功率为负值（发电）
-                    self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw'] = -abs(p_mw)
-                    
-                    self.parent_window.statusBar().showMessage(f"已更新光伏设备 {component_idx} 的功率设置: P={p_mw:.2f}MW")
-                    print(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW")
-                else:
-                    QMessageBox.warning(self.parent_window, "错误", f"光伏设备 {component_idx} 不存在")
-                    
-            elif component_type == 'storage':
-                if component_idx in self.parent_window.network_model.net.storage.index:
-                    p_mw = self.parent_window.power_spinbox.value()
-                    
-                    self.parent_window.network_model.net.storage.loc[component_idx, 'p_mw'] = p_mw
-                    
-                    power_status = "放电" if p_mw > 0 else "充电" if p_mw < 0 else "待机"
-                    self.parent_window.statusBar().showMessage(f"已更新储能设备 {component_idx} 的功率设置: P={p_mw:.2f}MW ({power_status})")
-                    print(f"应用储能设备 {component_idx} 功率设置: P={p_mw:.2f}MW ({power_status})")
-                else:
-                    QMessageBox.warning(self.parent_window, "错误", f"储能设备 {component_idx} 不存在")
-                    
-        except Exception as e:
-            QMessageBox.critical(self.parent_window, "错误", f"应用功率设置时出错: {str(e)}")
-            print(f"应用功率设置时出错: {e}")
     
     def apply_sgen_settings(self):
         """应用光伏设备设置"""
@@ -1309,7 +1233,7 @@ class DataControlManager:
             if component_idx in self.parent_window.network_model.net.storage.index:
                 p_mw = self.parent_window.storage_power_spinbox.value()
                 
-                self.parent_window.network_model.net.storage.loc[component_idx, 'p_mw'] = p_mw
+                self.parent_window.network_model.net.storage.loc[component_idx, 'p_mw'] = -p_mw
                 
                 power_status = "放电" if p_mw > 0 else "充电" if p_mw < 0 else "待机"
                 self.parent_window.statusBar().showMessage(f"已更新储能设备 {component_idx} 的功率设置: P={p_mw:.2f}MW ({power_status})")

@@ -434,7 +434,7 @@ class NetworkModel:
                 self.net.load.loc[idx, "in_service"] = properties.get("in_service", self.net.load.loc[idx, "in_service"])
         
         elif component_type == "storage":
-            self.net.storage.loc[idx, "p_mw"] = properties.get("p_mw", self.net.storage.loc[idx, "p_mw"])
+            self.net.storage.loc[idx, "p_mw"] = -properties.get("p_mw", self.net.storage.loc[idx, "p_mw"])
             self.net.storage.loc[idx, "max_e_mwh"] = properties.get("max_e_mwh", self.net.storage.loc[idx, "max_e_mwh"])
 
         elif component_type == "charger":

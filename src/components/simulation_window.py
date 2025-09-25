@@ -362,7 +362,7 @@ class SimulationWindow(QMainWindow):
                         para = "p_mw"
                 elif element_type == 'storage' and hasattr(self.network_model.net, 'res_storage'):
                     if element_idx in self.network_model.net.res_storage.index:
-                        measurement_value = self.network_model.net.res_storage.loc[element_idx, 'p_mw']
+                        measurement_value = -self.network_model.net.res_storage.loc[element_idx, 'p_mw']
                         para = "p_mw"
                 elif element_type == 'bus' and hasattr(self.network_model.net, 'res_bus'):  
                     if element_idx in self.network_model.net.res_bus.index:
@@ -693,81 +693,6 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             print(f"每日数据重置检查失败: {str(e)}")
 
-    def auto_power_flow_calculation(self):
-        """自动潮流计算主方法"""
-        try:
-            if not self.network_model or not hasattr(self.network_model, 'net'):
-                return
-                
-            # 性能监控：跳过计算如果上次计算未完成
-            if hasattr(self, '_is_calculating') and self._is_calculating:
-                return
-            self._is_calculating = True
-                
-            # 记录日志：计算周期开始
-            logger.info("开始新一轮潮流计算")
-                
-            # 检查每日重置
-            self.check_and_reset_daily_data()
-                
-            # 使用批处理更新生成的数据
-            if self.generated_devices:
-                logger.info(f"更新生成数据，设备数量: {len(self.generated_devices)}")
-                self._update_generated_data_batch(self.generated_devices, self.network_model, self.data_generator_manager)
-                
-            # 批量更新Modbus参数
-            logger.info("批量更新Modbus参数")
-            self._update_para_from_modbus_batch()
-            
-            # 运行潮流计算
-            try:
-                pp.runpp(self.network_model.net)
-                self.statusBar().showMessage("潮流计算成功")
-                logger.info("潮流计算成功完成")
-                
-                # 批量更新能量统计
-                self._update_energy_stats_batch()
-                logger.info("能量统计更新完成")
-                
-                # 智能更新策略：仅在数据变化时更新UI
-                if not hasattr(self, '_ui_update_counter'):
-                    self._ui_update_counter = 0
-                self._ui_update_counter += 1
-                
-                # 每3次计算更新一次设备树（约6秒一次）
-                if self._ui_update_counter % 3 == 0:
-                    self.update_device_tree_status()
-                    logger.info("设备树状态更新完成")
-                
-                # 每2次计算更新一次功率曲线（约4秒一次）
-                if self._ui_update_counter % 1 == 0:
-                    self.power_monitor.update_power_curve()
-                    logger.info("功率曲线更新完成")
-                
-                self.data_control_manager.update_realtime_data()
-                logger.info("实时数据更新完成")
-                
-                # 批量更新Modbus数据
-                self.modbus_manager.update_all_modbus_data()
-                logger.info("Modbus数据更新完成")
-                    
-            except Exception as e:
-                self.statusBar().showMessage(f"潮流计算失败: {str(e)}")
-                logger.error(f"潮流计算失败: {str(e)}")
-                return  # 潮流计算失败，跳过后续数据更新操作
-                
-        except Exception as e:
-            error_msg = f"自动潮流计算错误: {str(e)}"
-            print(error_msg)
-            self.statusBar().showMessage("自动潮流计算发生错误")
-            logger.critical(error_msg)
-        finally:
-            # 重置计算状态标志
-            if hasattr(self, '_is_calculating'):
-                self._is_calculating = False
-                logger.info("计算周期结束")
-
-
 
     def _update_energy_stats_batch(self):
         """批量更新能量统计信息 - 优化版本"""
@@ -830,7 +755,7 @@ class SimulationWindow(QMainWindow):
                 for device_idx in valid_storage_indices:
                     try:
                         storage_item = self._energy_cache['storage_items'][device_idx]
-                        current_power_mw = self.network_model.net.storage.at[device_idx, 'p_mw']
+                        current_power_mw = -self.network_model.net.storage.at[device_idx, 'p_mw']
                         
                         # 调用StorageItem的实时数据更新方法
                         storage_item.update_realtime_data(current_power_mw, time_interval_hours)
@@ -1098,9 +1023,9 @@ class SimulationWindow(QMainWindow):
                     # 只有在非手动模式下才执行更新操作
                     if hasattr(storage_item, 'is_manual_control') and not storage_item.is_manual_control:
                         # 检查功率值是否发生变化
-                        current_power = self.network_model.net.storage.loc[device_idx, 'p_mw']
+                        current_power = -self.network_model.net.storage.loc[device_idx, 'p_mw']
                         if final_power != current_power:
-                            self.network_model.net.storage.loc[device_idx, 'p_mw'] = final_power
+                            self.network_model.net.storage.loc[device_idx, 'p_mw'] = -final_power
                             # 发射信号通知功率变化
                             self.storage_power_changed.emit(device_idx, final_power)
                     
@@ -1391,3 +1316,77 @@ class SimulationWindow(QMainWindow):
             
         except Exception as e:
             print(f"重置光伏日发电量失败: {str(e)}")
+
+    def auto_power_flow_calculation(self):
+        """自动潮流计算主方法"""
+        try:
+            if not self.network_model or not hasattr(self.network_model, 'net'):
+                return
+                
+            # 性能监控：跳过计算如果上次计算未完成
+            if hasattr(self, '_is_calculating') and self._is_calculating:
+                return
+            self._is_calculating = True
+                
+            # 记录日志：计算周期开始
+            logger.info("开始新一轮潮流计算")
+                
+            # 检查每日重置
+            self.check_and_reset_daily_data()
+                
+            # 使用批处理更新生成的数据
+            if self.generated_devices:
+                logger.info(f"更新生成数据，设备数量: {len(self.generated_devices)}")
+                self._update_generated_data_batch(self.generated_devices, self.network_model, self.data_generator_manager)
+                
+            # 批量更新Modbus参数
+            logger.info("批量更新Modbus参数")
+            self._update_para_from_modbus_batch()
+            
+            # 运行潮流计算
+            try:
+                pp.runpp(self.network_model.net)
+                self.statusBar().showMessage("潮流计算成功")
+                logger.info("潮流计算成功完成")
+                
+                # 批量更新能量统计
+                self._update_energy_stats_batch()
+                logger.info("能量统计更新完成")
+                
+                # 智能更新策略：仅在数据变化时更新UI
+                if not hasattr(self, '_ui_update_counter'):
+                    self._ui_update_counter = 0
+                self._ui_update_counter += 1
+                
+                # 每3次计算更新一次设备树（约6秒一次）
+                if self._ui_update_counter % 3 == 0:
+                    self.update_device_tree_status()
+                    logger.info("设备树状态更新完成")
+                
+                # 每2次计算更新一次功率曲线（约4秒一次）
+                if self._ui_update_counter % 1 == 0:
+                    self.power_monitor.update_power_curve()
+                    logger.info("功率曲线更新完成")
+                
+                self.data_control_manager.update_realtime_data()
+                logger.info("实时数据更新完成")
+                
+                # 批量更新Modbus数据
+                self.modbus_manager.update_all_modbus_data()
+                logger.info("Modbus数据更新完成")
+                    
+            except Exception as e:
+                self.statusBar().showMessage(f"潮流计算失败: {str(e)}")
+                logger.error(f"潮流计算失败: {str(e)}")
+                return  # 潮流计算失败，跳过后续数据更新操作
+                
+        except Exception as e:
+            error_msg = f"自动潮流计算错误: {str(e)}"
+            print(error_msg)
+            self.statusBar().showMessage("自动潮流计算发生错误")
+            logger.critical(error_msg)
+        finally:
+            # 重置计算状态标志
+            if hasattr(self, '_is_calculating'):
+                self._is_calculating = False
+                logger.info("计算周期结束")
