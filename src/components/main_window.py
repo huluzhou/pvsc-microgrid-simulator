@@ -13,7 +13,11 @@ from components.canvas import NetworkCanvas
 from components.component_palette import ComponentPalette
 from components.properties_panel import PropertiesPanel
 from utils.topology_utils import TopologyManager
+from models.network_model import NetworkModel
 import pandapower as pp
+
+# 从globals.py导入全局变量
+from components.globals import network_model, network_items
 class MainWindow(QMainWindow):
     """主窗口类"""
 
@@ -214,11 +218,6 @@ class MainWindow(QMainWindow):
             
             # 如果是名称属性变化，需要更新网络模型中的名称
             if prop_name == 'name':
-                # 更新网络模型（如果存在）
-                if hasattr(self.canvas, 'network_model') and self.canvas.network_model:
-                    # 这里可以添加网络模型更新逻辑
-                    pass
-                
                 # 强制刷新画布显示
                 self.canvas.scene.update()
                 
@@ -234,8 +233,6 @@ class MainWindow(QMainWindow):
     def enter_simulation_mode(self):
         """进入仿真模式"""
         try:
-            if not self.canvas.create_network_model():
-                return
             
             # 首先验证IP和端口的唯一性
             is_valid, error_msg = self.topology_manager.validate_ip_port_uniqueness(self.canvas.scene, self)
@@ -258,10 +255,14 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "错误", f"进入仿真模式时发生错误：{str(e)}")
     def diagnostic_network(self):
         try:
-            if not self.canvas.create_network_model():
+            global network_model
+            network_model = NetworkModel()
+            if not network_model.create_from_network_items(self.canvas):
+                QMessageBox.warning(self, "网络诊断", "创建网络模型失败，请检查电网组件。")
                 return
             is_valid, error_msg = self.topology_manager.validate_ip_port_uniqueness(self.canvas.scene, self)
             if not is_valid:
+                QMessageBox.warning(self, "网络诊断", f"IP和端口不唯一：{error_msg}")
                 return
             validation_results = self.validate_network()
             if not validation_results:
@@ -274,11 +275,11 @@ class MainWindow(QMainWindow):
         """使用pandapower内置函数验证网络拓扑和参数"""
         try:
             # 检查是否有网络模型
-            if not hasattr(self.canvas, 'network_model') or not self.canvas.network_model:
+            if not network_model:
                 QMessageBox.warning(self, "网络诊断", "当前没有创建网络模型，请先添加电网组件。")
                 return False
             
-            network_model = self.canvas.network_model
+            # network_model已作为全局变量导入
             
             # 检查是否有足够的组件
             if network_model.net.bus.empty:

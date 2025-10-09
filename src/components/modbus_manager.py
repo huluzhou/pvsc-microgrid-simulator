@@ -12,12 +12,15 @@ from pymodbus.server import StartTcpServer
 from pymodbus import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock, ModbusSequentialDataBlock
 
+# 导入全局网络项字典
+from .globals import network_items
+
+
 class ModbusManager:
     """Modbus服务器管理器"""
     
     def __init__(self, network_model, scene=None):
         self.network_model = network_model
-        self.scene = scene  # 存储场景引用
         self.modbus_servers = {}  # 存储服务器实例
         self.modbus_contexts = {}  # 存储Modbus上下文
         self.running_services = set()  # 跟踪运行中的服务
@@ -27,32 +30,36 @@ class ModbusManager:
     def scan_ip_devices(self):
         """扫描网络中具有IP属性的设备"""
         self.ip_devices.clear()
-        
-        # 从场景中获取所有网络项
-        if not hasattr(self, 'scene') or not self.scene:
-            print("未找到场景，无法扫描IP设备")
-            return self.ip_devices
-            
-        # 扫描场景中的所有网络项
-        for item in self.scene.items():
-            if hasattr(item, 'properties') and 'ip' in item.properties and item.properties['ip']:
-                ip = item.properties['ip']
-                # 使用配置的IP地址，默认为0.0.0.0
-                effective_ip = ip if ip else "0.0.0.0"
-                    
-                device_info = {
-                    'type': item.component_type,
-                    'index': item.component_index,
-                    'name': item.properties.get('name', f"{item.component_type}_{item.component_index}"),
-                    'sn': item.properties.get('sn', None),  # 添加SN字段，如果不存在则为None
-                    'ip': effective_ip,
-                    'port': int(item.properties.get('port', 502)),
-                    'p_mw': float(item.properties.get('p_mw', 0)),
-                    'q_mvar': float(item.properties.get('q_mvar', 0)),
-                    'sn_mva': float(item.properties.get('sn_mva', 0)),
-                    'max_e_mwh': float(item.properties.get('max_e_mwh', 1.0)),
-                }
-                self.ip_devices.append(device_info)
+
+        # 使用全局network_items遍历所有网络项
+        for component_type, items_dict in network_items.items():
+            for component_index, item in items_dict.items():
+                if (
+                    hasattr(item, "properties")
+                    and "ip" in item.properties
+                    and item.properties["ip"]
+                ):
+                    ip = item.properties["ip"]
+                    # 使用配置的IP地址，默认为0.0.0.0
+                    effective_ip = ip if ip else "0.0.0.0"
+
+                    device_info = {
+                        "type": item.component_type,
+                        "index": item.component_index,
+                        "name": item.properties.get(
+                            "name", f"{item.component_type}_{item.component_index}"
+                        ),
+                        "sn": item.properties.get(
+                            "sn", None
+                        ),  # 添加SN字段，如果不存在则为None
+                        "ip": effective_ip,
+                        "port": int(item.properties.get("port", 502)),
+                        "p_mw": float(item.properties.get("p_mw", 0)),
+                        "q_mvar": float(item.properties.get("q_mvar", 0)),
+                        "sn_mva": float(item.properties.get("sn_mva", 0)),
+                        "max_e_mwh": float(item.properties.get("max_e_mwh", 1.0)),
+                    }
+                    self.ip_devices.append(device_info)
         
         print(f"发现 {len(self.ip_devices)} 个具有IP属性的设备")
         return self.ip_devices
@@ -479,20 +486,10 @@ class ModbusManager:
         try:
             from .network_items import MeterItem
             
-            # 初始化单一缓存结构（如果尚未初始化）
-            if not hasattr(self, '_meter_cache'):
-                self._meter_cache = {}
-            
-            # 检查并获取电表设备
-            meter_item = self._meter_cache.get(index)
-            if meter_item is None:
-                # 仅在首次访问时查找设备
-                for item in self.scene.items():
-                    if isinstance(item, MeterItem) and item.component_index == index:
-                        meter_item = item
-                        self._meter_cache[index] = meter_item
-                        break
-            
+            # 直接使用network_items[component_type][component_index]查找电表设备
+            if 'meter' in network_items and index in network_items['meter']:
+                meter_item = network_items['meter'][index]
+   
             if not meter_item:
                 print(f"未找到电表图形项: {index}")
                 return
@@ -568,19 +565,9 @@ class ModbusManager:
             power_mw = self.network_model.net.res_sgen.loc[index, "p_mw"]
             
             # 使用缓存机制提高性能
-            from .network_items import StaticGeneratorItem
-            if not hasattr(self, '_pv_cache'):
-                self._pv_cache = {}
-            
-            # 检查缓存，如果存在且索引匹配则直接使用
-            pv_item = self._pv_cache.get(index)
-            if pv_item is None or pv_item.component_index != index:
-                # 仅在缓存未命中时遍历场景
-                for item in self.scene.items():
-                    if isinstance(item, StaticGeneratorItem) and item.component_index == index:
-                        pv_item = item
-                        self._pv_cache[index] = pv_item
-                        break
+            # 直接使用network_items[component_type][component_index]查找光伏设备
+            if 'static_generator' in network_items and index in network_items['static_generator']:
+                pv_item = network_items['static_generator'][index]
             
             if pv_item is None:
                 raise RuntimeError(f"未找到光伏设备 {index} 的图形项")
@@ -618,20 +605,9 @@ class ModbusManager:
     def update_storage_context(self, index, device_info, slave_context):
         """更新储能设备特定上下文数据"""
         try:
-            # 使用缓存机制提高性能 - 通过场景直接查找设备
-            from .network_items import StorageItem
-            if not hasattr(self, '_storage_cache'):
-                self._storage_cache = {}
-            
-            # 检查缓存，如果存在且索引匹配则直接使用
-            storage_item = self._storage_cache.get(index)
-            if storage_item is None or storage_item.component_index != index:
-                # 仅在缓存未命中时遍历场景
-                for item in self.scene.items():
-                    if isinstance(item, StorageItem) and item.component_index == index:
-                        storage_item = item
-                        self._storage_cache[index] = storage_item
-                        break
+            # 直接使用network_items[component_type][component_index]查找储能设备
+            if 'storage' in network_items and index in network_items['storage']:
+                storage_item = network_items['storage'][index]
             
             if storage_item is None:
                 raise RuntimeError(f"未找到储能设备 {index} 的图形项")
@@ -746,20 +722,9 @@ class ModbusManager:
             # 获取充电桩功率数据
             power_mw = self.network_model.net.res_load.loc[index, "p_mw"]
             
-            # 使用缓存机制提高性能
-            from .network_items import ChargerItem
-            if not hasattr(self, '_charger_cache'):
-                self._charger_cache = {}
-            
-            # 检查缓存，如果存在且索引匹配则直接使用
-            charger_item = self._charger_cache.get(index)
-            if charger_item is None or charger_item.component_index != index:
-                # 仅在缓存未命中时遍历场景
-                for item in self.scene.items():
-                    if isinstance(item, ChargerItem) and item.component_index == index:
-                        charger_item = item
-                        self._charger_cache[index] = charger_item
-                        break
+            # 直接使用network_items[component_type][component_index]查找充电桩设备
+            if 'charger' in network_items and index in network_items['charger']:
+                charger_item = network_items['charger'][index]
             
             if charger_item is None:
                 raise RuntimeError(f"未找到充电桩设备 {index} 的图形项")
@@ -853,7 +818,6 @@ class ModbusManager:
             self.ip_devices.clear()
             
             # 清理所有缓存
-            self.clear_device_cache()
             # self.clear_all_members()
             print("已停止所有Modbus服务器")
             return True
@@ -935,17 +899,6 @@ class ModbusManager:
             except Exception as e:
                 print(f"更新设备Modbus数据失败 {device_info['name']}: {e}")
     
-    def clear_device_cache(self):
-        """清除所有设备缓存，在场景变化时调用"""
-        if hasattr(self, '_storage_cache'):
-            self._storage_cache.clear()
-        if hasattr(self, '_meter_cache'):
-            self._meter_cache.clear()
-        if hasattr(self, '_pv_cache'):
-            self._pv_cache.clear()
-        if hasattr(self, '_charger_cache'):
-            self._charger_cache.clear()
-        print("设备缓存已清除")
     
     def get_device_count(self):
         """获取设备数量统计"""

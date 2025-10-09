@@ -14,6 +14,7 @@ import math
 
 
 from config import get_resource_path
+from components.globals import network_items
 
 
 class ItemSignals(QObject):
@@ -519,17 +520,15 @@ class BaseNetworkItem(QGraphicsItem):
             # 先断开所有连接
             self.disconnect_all_connections()
             
-            # 清除Modbus设备缓存，因为场景已变化
-            scene = self.scene()
-            if scene:
-                views = scene.views()
-                if views:
-                    canvas = views[0]
-                    if hasattr(canvas, 'modbus_manager') and canvas.modbus_manager:
-                        canvas.modbus_manager.clear_device_cache()
+            # 从全局network_items字典中删除对应元素
+            component_type = self.component_type.lower()
+            if component_type in network_items:
+                if self.component_index in network_items[component_type]:
+                    del network_items[component_type][self.component_index]
+                    print(f"从network_items中移除组件: {self.component_name} (索引 {self.component_index})")
             
             # 从场景中移除
-            scene.removeItem(self)
+            self.scene().removeItem(self)
             print(f"删除组件: {self.component_name} (索引 {self.component_index} 已回收)")
     
     def contextMenuEvent(self, event):
@@ -1331,22 +1330,8 @@ class MeterItem(BaseNetworkItem):
     
     def delete_component(self):
         """删除组件"""
-        if self.scene():
-            # 先断开所有连接
-            self.disconnect_all_connections()
-            
-            # 清除Modbus设备缓存，因为场景已变化
-            scene = self.scene()
-            if scene:
-                views = scene.views()
-                if views:
-                    canvas = views[0]
-                    if hasattr(canvas, 'modbus_manager') and canvas.modbus_manager:
-                        canvas.modbus_manager.clear_device_cache()
-            
-            # 从场景中移除
-            scene.removeItem(self)
-            print(f"删除组件: {self.component_name}")
+        # 调用父类的delete_component方法，确保所有子类使用统一的删除逻辑
+        super().delete_component()
     
     def contextMenuEvent(self, event):
         """右键菜单事件"""

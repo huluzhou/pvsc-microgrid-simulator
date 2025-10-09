@@ -10,7 +10,9 @@ from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
 from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem
-from models.network_model import NetworkModel
+
+# 导入全局变量
+from components.globals import network_model, network_items
 
 
 class NetworkCanvas(QGraphicsView):
@@ -23,8 +25,7 @@ class NetworkCanvas(QGraphicsView):
         super().__init__(parent)
         # 保存父窗口引用用于更新状态栏
         self.main_window = parent
-        # 初始化网络模型
-        self.network_model = None
+        # 初始化UI
         self.init_ui()
 
     def init_ui(self):
@@ -167,7 +168,6 @@ class NetworkCanvas(QGraphicsView):
                 return None
         
         item = None
-        
         # 根据组件类型创建对应的图形项
         if component_type == "bus":
             item = BusItem(pos)
@@ -187,6 +187,12 @@ class NetworkCanvas(QGraphicsView):
             item = StaticGeneratorItem(pos)
         elif component_type == "meter":
             item = MeterItem(pos)
+        
+        # 将所有类型的组件添加到全局network_items中，使用嵌套字典结构
+        if item and component_type in network_items:
+            # 确保当前索引的键存在
+            if item.component_index not in network_items[component_type]:
+                network_items[component_type][item.component_index] = item
         
         # 添加到场景
         if item:
@@ -213,9 +219,7 @@ class NetworkCanvas(QGraphicsView):
             # 连接信号
             item.signals.itemSelected.connect(self.handle_item_selected)
             
-            # 清除Modbus设备缓存，因为场景已变化
-            if hasattr(self, 'modbus_manager') and self.modbus_manager:
-                self.modbus_manager.clear_device_cache()
+            # 场景已变化，但不需要清除Modbus设备缓存，因为现在直接使用network_items
             
             return item
         
@@ -246,153 +250,6 @@ class NetworkCanvas(QGraphicsView):
             # 记录第一个选中的组件
             print(f"记录第一个选中的组件: {item.component_type}")
             self.first_selected_item = item
-    
-    def create_network_model(self):
-        """从画布上的图形组件创建pandapower网络模型"""
-        try:
-            # 创建新的网络模型
-            self.network_model = NetworkModel()
-            
-            # 获取所有图形组件
-            items = [item for item in self.scene.items() if hasattr(item, 'component_type')]
-            
-            if not items:
-                print("画布上没有组件，无法创建网络模型")
-                return False
-            
-            # 第一步：创建所有母线
-            bus_items = [item for item in items if item.component_type == 'bus']
-            bus_map = {}  # 存储图形项到pandapower母线索引的映射
-            
-            for bus_item in bus_items:
-                try:
-                    bus_idx = self.network_model.create_bus(
-                        id(bus_item),  # 使用对象ID作为唯一标识
-                        bus_item.properties if hasattr(bus_item, 'properties') else {}
-                    )
-                    bus_map[bus_item] = bus_idx
-                    print(f"创建母线: {bus_item.component_name} -> 索引 {bus_idx}")
-                except Exception as e:
-                    print(f"创建母线 {bus_item.component_name} 时出错: {str(e)}")
-                    return False
-            
-            if not bus_map:
-                print("没有有效的母线组件，无法创建网络模型")
-                return False
-            
-            # 第二步：创建连接到母线的组件（负载、发电机等，但不包括电表）
-            non_meter_items = [item for item in items if item.component_type != 'bus' and item.component_type != 'meter']
-            for item in non_meter_items:
-                try:
-                    # 查找该组件连接的母线
-                    connected_buses = self.get_connected_buses(item, bus_map)
-                    
-                    if item.component_type == 'load':
-                        if connected_buses:
-                            bus_idx = connected_buses[0]
-                            self.network_model.create_load(
-                                id(item),
-                                bus_idx,
-                                item.properties if hasattr(item, 'properties') else {}
-                            )
-                            print(f"创建负载: {item.component_name} -> 母线 {bus_idx}")
-                    
-                    elif item.component_type == 'external_grid':
-                        if connected_buses:
-                            bus_idx = connected_buses[0]
-                            self.network_model.create_external_grid(
-                                id(item),
-                                bus_idx,
-                                item.properties if hasattr(item, 'properties') else {}
-                            )
-                            print(f"创建外部电网: {item.component_name} -> 母线 {bus_idx}")
-                    
-                    elif item.component_type == 'static_generator':
-                        if connected_buses:
-                            bus_idx = connected_buses[0]
-                            self.network_model.create_static_generator(
-                                id(item),
-                                bus_idx,
-                                item.properties if hasattr(item, 'properties') else {}
-                            )
-                            print(f"创建光伏: {item.component_name} -> 母线 {bus_idx}")
-                    
-                    elif item.component_type == 'storage':
-                        if connected_buses:
-                            bus_idx = connected_buses[0]
-                            self.network_model.create_storage(
-                                id(item),
-                                bus_idx,
-                                item.properties if hasattr(item, 'properties') else {}
-                            )
-                            print(f"创建储能: {item.component_name} -> 母线 {bus_idx}")
-                    
-                    elif item.component_type == 'charger':
-                        if connected_buses:
-                            bus_idx = connected_buses[0]
-                            self.network_model.create_charger(
-                                id(item),
-                                bus_idx,
-                                item.properties if hasattr(item, 'properties') else {}
-                            )
-                            print(f"创建充电站: {item.component_name} -> 母线 {bus_idx}")
-                    
-                    elif item.component_type == 'transformer':
-                        if len(connected_buses) >= 2:
-                            hv_bus = connected_buses[0]
-                            lv_bus = connected_buses[1]
-                            self.network_model.create_transformer(
-                                id(item),
-                                hv_bus,
-                                lv_bus,
-                                item.properties if hasattr(item, 'properties') else {}
-                            )
-                            print(f"创建变压器: {item.component_name} -> 母线 {hv_bus}-{lv_bus}")
-                    
-                    elif item.component_type == 'line':
-                        if len(connected_buses) >= 2:
-                            from_bus = connected_buses[0]
-                            to_bus = connected_buses[1]
-                            self.network_model.create_line(
-                                id(item),
-                                from_bus,
-                                to_bus,
-                                item.properties if hasattr(item, 'properties') else {}
-                            )
-                            print(f"创建线路: {item.component_name} -> 母线 {from_bus}-{to_bus}")
-                
-                except Exception as e:
-                    print(f"创建组件 {item.component_name} 时出错: {str(e)}")
-                    # 继续处理其他组件，不中断整个过程
-
-            # 第三步：最后创建电表设备（确保所有其他设备已创建）
-            meter_items = [item for item in items if item.component_type == 'meter']
-            for item in meter_items:
-                try:
-                    meter_idx = self.network_model.create_measurement(
-                        id(item),
-                        item.properties if hasattr(item, 'properties') else {}
-                    )
-                    print(f"创建电表: {item.component_name} -> 测量索引 {meter_idx}")
-                            
-                
-                except Exception as e:
-                    print(f"创建组件 {item.component_name} 时出错: {str(e)}")
-                    # 继续处理其他组件，不中断整个过程
-            
-            print(f"网络模型创建完成，包含 {len(self.network_model.net.bus)} 个母线")
-            import os
-            from pandapower.file_io import to_json
-            file_path = "network.json"
-            to_json(self.network_model.net, file_path)
-            # 获取完整保存路径
-            full_path = os.path.abspath(file_path)
-            print(f"网络模型已保存到: {full_path}")
-            return True
-            
-        except Exception as e:
-            print(f"创建网络模型时出错: {str(e)}")
-            return False
     
     def get_connected_buses(self, item, bus_map):
         """获取与指定组件连接的母线列表"""
@@ -648,12 +505,12 @@ class NetworkCanvas(QGraphicsView):
         
         # 获取网络模型中的实际索引
         actual_index = connected_index
-        if hasattr(self, 'network_model') and self.network_model:
+        if network_model:
             # 对于不同类型的组件，获取其在网络模型中的实际索引
             if connected_type == 'static_generator':
                 # 检查静态发电机是否存在
-                if hasattr(self.network_model.net, 'sgen') and not self.network_model.net.sgen.empty:
-                    if connected_index < len(self.network_model.net.sgen)+1:
+                if hasattr(network_model.net, 'sgen') and not network_model.net.sgen.empty:
+                    if connected_index < len(network_model.net.sgen)+1:
                         actual_index = connected_index
                     else:
                         print(f"警告：静态发电机索引 {connected_index} 超出范围，使用索引 0")
@@ -663,8 +520,8 @@ class NetworkCanvas(QGraphicsView):
                     return
             elif connected_type == 'load':
                 # 检查负载是否存在
-                if hasattr(self.network_model.net, 'load') and not self.network_model.net.load.empty:
-                    if connected_index < len(self.network_model.net.load)+1:
+                if hasattr(network_model.net, 'load') and not network_model.net.load.empty:
+                    if connected_index < len(network_model.net.load)+1:
                         actual_index = connected_index
                     else:
                         print(f"警告：负载索引 {connected_index} 超出范围，使用索引 0")
@@ -674,8 +531,8 @@ class NetworkCanvas(QGraphicsView):
                     return
             elif connected_type == 'gen':
                 # 检查发电机是否存在
-                if hasattr(self.network_model.net, 'gen') and not self.network_model.net.gen.empty:
-                    if connected_index < len(self.network_model.net.gen)+1:
+                if hasattr(network_model.net, 'gen') and not network_model.net.gen.empty:
+                    if connected_index < len(network_model.net.gen)+1:
                         actual_index = connected_index
                     else:
                         print(f"警告：发电机索引 {connected_index} 超出范围，使用索引 0")
@@ -685,8 +542,8 @@ class NetworkCanvas(QGraphicsView):
                     return
             elif connected_type == 'bus':
                 # 检查母线是否存在
-                if hasattr(self.network_model.net, 'bus') and not self.network_model.net.bus.empty:
-                    if connected_index < len(self.network_model.net.bus)+1:
+                if hasattr(network_model.net, 'bus') and not network_model.net.bus.empty:
+                    if connected_index < len(network_model.net.bus)+1:
                         actual_index = connected_index
                     else:
                         print(f"警告：母线索引 {connected_index} 超出范围，使用索引 0")
@@ -696,8 +553,8 @@ class NetworkCanvas(QGraphicsView):
                     return
             elif connected_type == 'transformer':
                 # 检查变压器是否存在
-                if hasattr(self.network_model.net, 'trafo') and not self.network_model.net.trafo.empty:
-                    if connected_index < len(self.network_model.net.trafo)+1:
+                if hasattr(network_model.net, 'trafo') and not network_model.net.trafo.empty:
+                    if connected_index < len(network_model.net.trafo)+1:
                         actual_index = connected_index
                     else:
                         print(f"警告：变压器索引 {connected_index} 超出范围，使用索引 0")
@@ -707,8 +564,8 @@ class NetworkCanvas(QGraphicsView):
                     return
             elif connected_type == 'line':
                 # 检查线路是否存在
-                if hasattr(self.network_model.net, 'line') and not self.network_model.net.line.empty:
-                    if connected_index < len(self.network_model.net.line):
+                if hasattr(network_model.net, 'line') and not network_model.net.line.empty:
+                    if connected_index < len(network_model.net.line):
                         actual_index = connected_index
                     else:
                         print(f"警告：线路索引 {connected_index} 超出范围，使用索引 0")
@@ -718,8 +575,8 @@ class NetworkCanvas(QGraphicsView):
                     return
             elif connected_type == 'external_grid':
                 # 检查外部电网是否存在
-                if hasattr(self.network_model.net, 'ext_grid') and not self.network_model.net.ext_grid.empty:
-                    if connected_index < len(self.network_model.net.ext_grid) + 1:
+                if hasattr(network_model.net, 'ext_grid') and not network_model.net.ext_grid.empty:
+                    if connected_index < len(network_model.net.ext_grid) + 1:
                         actual_index = connected_index
                     else:
                         print(f"警告：外部电网索引 {connected_index} 超出范围，使用索引 0")
@@ -1304,9 +1161,11 @@ class NetworkCanvas(QGraphicsView):
     
     def clear_canvas(self):
         """清空画布"""
-        # 清除Modbus设备缓存，因为场景将被清空
-        if hasattr(self, 'modbus_manager') and self.modbus_manager:
-            self.modbus_manager.clear_device_cache()
+        # 场景已被清空，但不需要清除Modbus设备缓存，因为现在直接使用network_items
+            
+        # 清空全局network_items字典
+        for key in network_items:
+            network_items[key].clear()
             
         self.scene.clear()
         self.draw_grid()

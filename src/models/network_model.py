@@ -7,15 +7,16 @@
 
 import pandapower as pp
 import pandas as pd
-
-
+from components.globals import network_model, network_items
+import os
 class NetworkModel:
     """电网模型类，用于处理pandapower网络模型"""
 
     def __init__(self):
         """初始化电网模型"""
         self.net = pp.create_empty_network()
-        self.component_map = {}  # 存储图形项与pandapower元素的映射关系
+        import components.globals
+        components.globals.network_model = self
 
     def create_bus(self, item_id, properties):
         """创建母线
@@ -37,7 +38,7 @@ class NetworkModel:
             max_vm_pu=properties.get("max_vm_pu", float("nan")),
             min_vm_pu=properties.get("min_vm_pu", float("nan")),
         )
-        self.component_map[item_id] = {"type": "bus", "idx": bus_idx}
+        # self.component_map[item_id] = {"type": "bus", "idx": bus_idx}
         return bus_idx
 
     def create_line(self, item_id, from_bus, to_bus, properties):
@@ -82,9 +83,9 @@ class NetworkModel:
                 name=properties.get("name", "Line"),
                 index=properties.get("index", None),
             )
-        self.component_map[item_id] = {"type": "line", "idx": line_idx}
+        # self.component_map[item_id] = {"type": "line", "idx": line_idx}
         return line_idx
-
+        
     def create_transformer(self, item_id, hv_bus, lv_bus, properties):
         """创建变压器
         
@@ -124,7 +125,7 @@ class NetworkModel:
                 name=properties.get("name", "Transformer"),
                 index=properties.get("index", None),
             )
-        self.component_map[item_id] = {"type": "transformer", "idx": trafo_idx}
+        # self.component_map[item_id] = {"type": "transformer", "idx": trafo_idx}
         return trafo_idx
 
     def create_generator(self, item_id, bus, properties):
@@ -146,7 +147,7 @@ class NetworkModel:
             index=properties.get("index", None),
             in_service=properties.get("in_service", True),
         )
-        self.component_map[item_id] = {"type": "generator", "idx": gen_idx}
+        # self.component_map[item_id] = {"type": "generator", "idx": gen_idx}
         return gen_idx
 
     def create_load(self, item_id, bus, properties):
@@ -192,7 +193,7 @@ class NetworkModel:
                 in_service=properties.get("in_service", True),
             )
         
-        self.component_map[item_id] = {"type": "load", "idx": load_idx}
+        # self.component_map[item_id] = {"type": "load", "idx": load_idx}
         return load_idx
 
     def create_storage(self, item_id, bus, properties):
@@ -215,7 +216,7 @@ class NetworkModel:
             index=properties.get("index", None),
             in_service=properties.get("in_service", True),
         )
-        self.component_map[item_id] = {"type": "storage", "idx": storage_idx}
+        # self.component_map[item_id] = {"type": "storage", "idx": storage_idx}
         return storage_idx
 
     def create_measurement(self, item_id, properties):
@@ -240,7 +241,7 @@ class NetworkModel:
             name=properties.get("name", "Meter"),
             index=properties.get("index", None),
         )
-        self.component_map[item_id] = {"type": "meter", "idx": measurement_idx}
+        # self.component_map[item_id] = {"type": "meter", "idx": measurement_idx}
         return measurement_idx
 
     def create_charger(self, item_id, bus, properties):
@@ -289,7 +290,7 @@ class NetworkModel:
                 index=charger_index,
                 in_service=properties.get("in_service", True),
             )
-        self.component_map[item_id] = {"type": "charger", "idx": charger_idx}
+        # self.component_map[item_id] = {"type": "charger", "idx": charger_idx}
         return charger_idx
 
     def create_external_grid(self, item_id, bus, properties):
@@ -308,11 +309,11 @@ class NetworkModel:
             bus=bus,
             name=properties.get("name", "External Grid"),
         )
-        self.component_map[item_id] = {"type": "external_grid", "idx": ext_grid_idx}
+        # self.component_map[item_id] = {"type": "external_grid", "idx": ext_grid_idx}
         return ext_grid_idx
 
     def create_static_generator(self, item_id, bus, properties):
-        """创建光伏
+        """创建光伏设备
         
         Args:
             item_id: 图形项ID
@@ -350,205 +351,266 @@ class NetworkModel:
             index = properties.get("index", None),
             in_service=properties.get("in_service", True),
         )
-        self.component_map[item_id] = {"type": "static_generator", "idx": sgen_idx}
+        # self.component_map[item_id] = {"type": "static_generator", "idx": sgen_idx}
         return sgen_idx
 
-    def update_component(self, item_id, properties):
-        """更新组件属性
+    def create_from_network_items(self, canvas):
+        """从canvas中的组件创建pandapower网络模型
         
         Args:
-            item_id: 图形项ID
-            properties: 新的属性
+            canvas: Canvas对象，包含connections
+        
+        Returns:
+            bool: 创建是否成功
         """
-        if item_id not in self.component_map:
-            return
-        
-        component = self.component_map[item_id]
-        component_type = component["type"]
-        idx = component["idx"]
-        
-        if component_type == "bus":
-            self.net.bus.loc[idx, "vn_kv"] = properties.get("vn_kv", self.net.bus.loc[idx, "vn_kv"])
-            self.net.bus.loc[idx, "name"] = properties.get("name", self.net.bus.loc[idx, "name"])
-            self.net.bus.loc[idx, "type"] = properties.get("type", self.net.bus.loc[idx, "type"])
-            self.net.bus.loc[idx, "zone"] = properties.get("zone", self.net.bus.loc[idx, "zone"])
-            self.net.bus.loc[idx, "in_service"] = properties.get("in_service", self.net.bus.loc[idx, "in_service"])
-            # 处理NaN值的特殊情况
-            max_vm_pu = properties.get("max_vm_pu", self.net.bus.loc[idx, "max_vm_pu"])
-            min_vm_pu = properties.get("min_vm_pu", self.net.bus.loc[idx, "min_vm_pu"])
-            if not pd.isna(max_vm_pu):
-                self.net.bus.loc[idx, "max_vm_pu"] = max_vm_pu
-            if not pd.isna(min_vm_pu):
-                self.net.bus.loc[idx, "min_vm_pu"] = min_vm_pu
-        
-        elif component_type == "line":
-            self.net.line.loc[idx, "length_km"] = properties.get("length_km", self.net.line.loc[idx, "length_km"])
-            self.net.line.loc[idx, "name"] = properties.get("name", self.net.line.loc[idx, "name"])
-        
-        elif component_type == "transformer":
-            # 变压器属性更新
-            self.net.trafo.loc[idx, "name"] = properties.get("name", self.net.trafo.loc[idx, "name"])
-        
-        elif component_type == "generator":
-            self.net.gen.loc[idx, "p_mw"] = properties.get("p_mw", self.net.gen.loc[idx, "p_mw"])
-            self.net.gen.loc[idx, "vm_pu"] = properties.get("vm_pu", self.net.gen.loc[idx, "vm_pu"])
-            self.net.gen.loc[idx, "name"] = properties.get("name", self.net.gen.loc[idx, "name"])
-        
-        elif component_type == "load":
-            # 根据use_power_factor参数决定如何更新功率值
-            use_power_factor = properties.get("use_power_factor", False)
+        try:
+            # 检查是否有组件
+            if not network_items or not any(network_items.values()):
+                print("没有组件，无法创建网络模型")
+                return False
             
-            if use_power_factor:
-                # 使用功率因数模式 - 根据sn_mva和cos_phi计算p_mw
-                sn_mva = properties.get("sn_mva", 1.0)
-                cos_phi = properties.get("cos_phi", 0.9)
-                
-                # 根据功率因数计算有功功率
-                p_mw = sn_mva * cos_phi
-                self.net.load.loc[idx, "p_mw"] = p_mw
-                
-                # 如果存在q_mvar列，也更新无功功率
-                if "q_mvar" in self.net.load.columns:
-                    sin_phi = (1 - cos_phi**2)**0.5
-                    q_mvar = sn_mva * sin_phi  # 负载通常消耗感性无功功率
-                    self.net.load.loc[idx, "q_mvar"] = q_mvar
-            else:
-                # 直接使用有功功率
-                self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
-                
-                # 如果存在q_mvar列且用户提供了值，也更新无功功率
-                if "q_mvar" in self.net.load.columns and "q_mvar" in properties:
-                    self.net.load.loc[idx, "q_mvar"] = properties.get("q_mvar", self.net.load.loc[idx, "q_mvar"])
+            # 第一步：创建所有母线
+            bus_map = {}  # 存储图形项到pandapower母线索引的映射
             
-            # 更新其他属性
-            self.net.load.loc[idx, "name"] = properties.get("name", self.net.load.loc[idx, "name"])
+            if 'bus' in network_items:
+                # 遍历嵌套字典中的所有母线（每个索引直接对应一个BusItem对象）
+                for idx, bus_item in network_items['bus'].items():
+                    try:
+                        bus_idx = self.create_bus(
+                            id(bus_item),  # 使用对象ID作为唯一标识
+                            bus_item.properties if hasattr(bus_item, 'properties') else {}
+                        )
+                        bus_map[bus_item] = bus_idx
+                        print(f"创建母线: {bus_item.component_name} -> 索引 {bus_idx}")
+                    except Exception as e:
+                        print(f"创建母线 {bus_item.component_name} 时出错: {str(e)}")
+                        return False
             
-            # 只更新存在的列
-            if "const_z_percent" in self.net.load.columns:
-                self.net.load.loc[idx, "const_z_percent"] = properties.get("const_z_percent", self.net.load.loc[idx, "const_z_percent"])
-            if "const_i_percent" in self.net.load.columns:
-                self.net.load.loc[idx, "const_i_percent"] = properties.get("const_i_percent", self.net.load.loc[idx, "const_i_percent"])
-            if "scaling" in self.net.load.columns:
-                self.net.load.loc[idx, "scaling"] = properties.get("scaling", self.net.load.loc[idx, "scaling"])
-            if "in_service" in self.net.load.columns:
-                self.net.load.loc[idx, "in_service"] = properties.get("in_service", self.net.load.loc[idx, "in_service"])
-        
-        elif component_type == "storage":
-            self.net.storage.loc[idx, "p_mw"] = -properties.get("p_mw", self.net.storage.loc[idx, "p_mw"])
-            self.net.storage.loc[idx, "max_e_mwh"] = properties.get("max_e_mwh", self.net.storage.loc[idx, "max_e_mwh"])
-
-        elif component_type == "charger":
-            # 充电桩作为负载处理，但使用独立的索引（已偏移1000）
-            use_power_factor = properties.get("use_power_factor", False)
+            if not bus_map:
+                print("没有有效的母线组件，无法创建网络模型")
+                return False
             
-            # 确保索引在有效范围内（已考虑1000偏移）
-            if idx < len(self.net.load)+1000:
-                if use_power_factor:
-                    # 使用功率因数模式 - 与负载保持一致
-                    sn_mva = properties.get("sn_mva", 1.0)
-                    cos_phi = properties.get("cos_phi", 0.9)
+            # 第二步：创建连接到母线的组件（负载、发电机等，但不包括电表）
+            non_meter_items = []
+            for comp_type, comp_dict in network_items.items():
+                if comp_type != 'bus' and comp_type != 'meter':
+                    # 遍历嵌套字典中的所有组件（每个索引直接对应一个组件对象）
+                    for idx, item in comp_dict.items():
+                        non_meter_items.append(item)
+            
+            for item in non_meter_items:
+                try:
+                    # 查找该组件连接的母线
+                    connected_buses = canvas.get_connected_buses(item, bus_map)
                     
-                    # 根据功率因数计算有功功率
-                    p_mw = sn_mva * cos_phi
-                    self.net.load.loc[idx, "p_mw"] = p_mw
+                    if item.component_type == 'load':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            self.create_load(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建负载: {item.component_name} -> 母线 {bus_idx}")
                     
-                    # 如果存在q_mvar列，也更新无功功率
-                    if "q_mvar" in self.net.load.columns:
-                        sin_phi = (1 - cos_phi**2)**0.5
-                        q_mvar = sn_mva * sin_phi  # 负载通常消耗感性无功功率
-                        self.net.load.loc[idx, "q_mvar"] = q_mvar
+                    elif item.component_type == 'external_grid':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            self.create_external_grid(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建外部电网: {item.component_name} -> 母线 {bus_idx}")
                     
-                    # 更新视在功率（与负载保持一致）
-                    if "sn_mva" in self.net.load.columns:
-                        self.net.load.loc[idx, "sn_mva"] = sn_mva
-                else:
-                    # 直接使用有功功率模式
-                    self.net.load.loc[idx, "p_mw"] = properties.get("p_mw", self.net.load.loc[idx, "p_mw"])
+                    elif item.component_type == 'static_generator':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            self.create_static_generator(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建光伏: {item.component_name} -> 母线 {bus_idx}")
+                    
+                    elif item.component_type == 'storage':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            self.create_storage(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建储能: {item.component_name} -> 母线 {bus_idx}")
+                    
+                    elif item.component_type == 'charger':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            self.create_charger(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建充电站: {item.component_name} -> 母线 {bus_idx}")
+                    
+                    elif item.component_type == 'transformer':
+                        if len(connected_buses) >= 2:
+                            hv_bus = connected_buses[0]
+                            lv_bus = connected_buses[1]
+                            self.create_transformer(
+                                id(item),
+                                hv_bus,
+                                lv_bus,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建变压器: {item.component_name} -> 母线 {hv_bus}-{lv_bus}")
+                    
+                    elif item.component_type == 'line':
+                        if len(connected_buses) >= 2:
+                            from_bus = connected_buses[0]
+                            to_bus = connected_buses[1]
+                            self.create_line(
+                                id(item),
+                                from_bus,
+                                to_bus,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            print(f"创建线路: {item.component_name} -> 母线 {from_bus}-{to_bus}")
                 
-                # 更新名称属性
-                self.net.load.loc[idx, "name"] = properties.get("name", self.net.load.loc[idx, "name"])
-                
-                # 更新其他与负载一致的属性
-                if "const_z_percent" in self.net.load.columns:
-                    self.net.load.loc[idx, "const_z_percent"] = properties.get("const_z_percent", self.net.load.loc[idx, "const_z_percent"])
-                if "const_i_percent" in self.net.load.columns:
-                    self.net.load.loc[idx, "const_i_percent"] = properties.get("const_i_percent", self.net.load.loc[idx, "const_i_percent"])
-                if "scaling" in self.net.load.columns:
-                    self.net.load.loc[idx, "scaling"] = properties.get("scaling", self.net.load.loc[idx, "scaling"])
-                if "in_service" in self.net.load.columns:
-                    self.net.load.loc[idx, "in_service"] = properties.get("in_service", self.net.load.loc[idx, "in_service"])
-        
-        elif component_type == "static_generator":
-            # 根据use_power_factor参数决定如何更新功率值
-            use_power_factor = properties.get("use_power_factor", False)
-            
-            if use_power_factor:
-                # 使用功率因数模式
-                sn_mva = properties.get("sn_mva", 1.0)
-                cos_phi = properties.get("cos_phi", 0.9)
-                
-                # 根据功率因数计算有功功率，无功功率设为0（光伏发电通常不提供无功功率）
-                p_mw = sn_mva * cos_phi
-                q_mvar = 0.0
-                
-                self.net.sgen.loc[idx, "p_mw"] = p_mw
-                self.net.sgen.loc[idx, "q_mvar"] = q_mvar
-            else:
-                # 直接使用有功功率，无功功率设为0
-                self.net.sgen.loc[idx, "p_mw"] = properties.get("p_mw", self.net.sgen.loc[idx, "p_mw"])
-                self.net.sgen.loc[idx, "q_mvar"] = 0.0
-            
-            # 更新其他属性
-            self.net.sgen.loc[idx, "name"] = properties.get("name", self.net.sgen.loc[idx, "name"])
-            self.net.sgen.loc[idx, "scaling"] = properties.get("scaling", self.net.sgen.loc[idx, "scaling"])
-            self.net.sgen.loc[idx, "in_service"] = properties.get("in_service", self.net.sgen.loc[idx, "in_service"])
-        
-        elif component_type == "external_grid":
-            # 外部电网只需要bus参数，无需更新其他属性
-            pass
-        
+                except Exception as e:
+                    print(f"创建组件 {item.component_name} 时出错: {str(e)}")
+                    # 继续处理其他组件，不中断整个过程
 
+            # 第三步：最后创建电表设备（确保所有其他设备已创建）
+            meter_items = []
+            if 'meter' in network_items:
+                # 遍历嵌套字典中的所有电表（每个索引直接对应一个电表对象）
+                for idx, item in network_items['meter'].items():
+                    meter_items.append(item)
+            
+            for item in meter_items:
+                try:
+                    meter_idx = self.create_measurement(
+                        id(item),
+                        item.properties if hasattr(item, 'properties') else {}
+                    )
+                    print(f"创建电表: {item.component_name} -> 测量索引 {meter_idx}")
+                except Exception as e:
+                    print(f"创建组件 {item.component_name} 时出错: {str(e)}")
+                    # 继续处理其他组件，不中断整个过程
+            
+            print(f"网络模型创建完成，包含 {len(self.net.bus)} 个母线")
+            
+            # 保存网络模型到JSON文件
+            import os
+            from pandapower.file_io import to_json
+            file_path = "network.json"
+            to_json(self.net, file_path)
+            # 获取完整保存路径
+            full_path = os.path.abspath(file_path)
+            print(f"网络模型已保存到: {full_path}")
+            
+            return True
+        except Exception as e:
+            print(f"创建网络模型时出错: {str(e)}")
+            return False
 
-    def delete_component(self, item_id):
-        """删除组件
+    def run_power_flow(self):
+        """运行潮流计算
+        
+        Returns:
+            bool: 计算是否成功
+        """
+        try:
+            pp.runpp(self.net)
+            print("潮流计算完成")
+            return True
+        except Exception as e:
+            print(f"潮流计算失败: {str(e)}")
+            return False
+
+    def get_bus_voltage(self, bus_idx):
+        """获取母线电压
         
         Args:
-            item_id: 图形项ID
+            bus_idx: 母线索引
+        
+        Returns:
+            float: 电压幅值
         """
-        if item_id not in self.component_map:
-            return
-        
-        component = self.component_map[item_id]
-        component_type = component["type"]
-        idx = component["idx"]
-        
-        if component_type == "bus":
-            pp.drop_elements(self.net, "bus", [idx])
-        elif component_type == "line":
-            pp.drop_elements(self.net, "line", [idx])
-        elif component_type == "transformer":
-            pp.drop_elements(self.net, "trafo", [idx])
-        elif component_type == "generator":
-            pp.drop_elements(self.net, "gen", [idx])
-        elif component_type == "load":
-            pp.drop_elements(self.net, "load", [idx])
-        elif component_type == "storage":
-            pp.drop_elements(self.net, "storage", [idx])
-        elif component_type == "charger":
-            pp.drop_elements(self.net, "load", [idx])  # 充电站作为负载删除
-        elif component_type == "external_grid":
-            pp.drop_elements(self.net, "ext_grid", [idx])
-        elif component_type == "meter":
-            pp.drop_elements(self.net, "measurement", [idx])
+        if hasattr(self.net, 'res_bus') and not self.net.res_bus.empty:
+            if bus_idx in self.net.res_bus.index:
+                return self.net.res_bus.loc[bus_idx, 'vm_pu']
+        return None
 
+    def get_line_power(self, line_idx):
+        """获取线路功率
         
-        # 从映射中删除
-        del self.component_map[item_id]
+        Args:
+            line_idx: 线路索引
+        
+        Returns:
+            tuple: (有功功率, 无功功率)
+        """
+        if hasattr(self.net, 'res_line') and not self.net.res_line.empty:
+            if line_idx in self.net.res_line.index:
+                p_from = self.net.res_line.loc[line_idx, 'p_from_mw']
+                q_from = self.net.res_line.loc[line_idx, 'q_from_mvar']
+                return (p_from, q_from)
+        return (None, None)
 
-    # 删除潮流计算相关方法（潮流计算功能已移除）
+    def get_transformer_power(self, trafo_idx):
+        """获取变压器功率
+        
+        Args:
+            trafo_idx: 变压器索引
+        
+        Returns:
+            tuple: (高压侧有功功率, 高压侧无功功率, 低压侧有功功率, 低压侧无功功率)
+        """
+        if hasattr(self.net, 'res_trafo') and not self.net.res_trafo.empty:
+            if trafo_idx in self.net.res_trafo.index:
+                p_hv = self.net.res_trafo.loc[trafo_idx, 'p_hv_mw']
+                q_hv = self.net.res_trafo.loc[trafo_idx, 'q_hv_mvar']
+                p_lv = self.net.res_trafo.loc[trafo_idx, 'p_lv_mw']
+                q_lv = self.net.res_trafo.loc[trafo_idx, 'q_lv_mvar']
+                return (p_hv, q_hv, p_lv, q_lv)
+        return (None, None, None, None)
 
-    def save_to_json(self, filename):
-        """保存网络到JSON文件
+    def get_load_power(self, load_idx):
+        """获取负载功率
+        
+        Args:
+            load_idx: 负载索引
+        
+        Returns:
+            tuple: (有功功率, 无功功率)
+        """
+        if hasattr(self.net, 'res_load') and not self.net.res_load.empty:
+            if load_idx in self.net.res_load.index:
+                p_mw = self.net.res_load.loc[load_idx, 'p_mw']
+                q_mvar = self.net.res_load.loc[load_idx, 'q_mvar']
+                return (p_mw, q_mvar)
+        return (None, None)
+
+    def get_generator_power(self, gen_idx):
+        """获取发电机功率
+        
+        Args:
+            gen_idx: 发电机索引
+        
+        Returns:
+            tuple: (有功功率, 无功功率)
+        """
+        if hasattr(self.net, 'res_gen') and not self.net.res_gen.empty:
+            if gen_idx in self.net.res_gen.index:
+                p_mw = self.net.res_gen.loc[gen_idx, 'p_mw']
+                q_mvar = self.net.res_gen.loc[gen_idx, 'q_mvar']
+                return (p_mw, q_mvar)
+        return (None, None)
+
+    def save_network(self, filename="network.json"):
+        """保存网络模型到JSON文件
         
         Args:
             filename: 文件名
@@ -558,15 +620,14 @@ class NetworkModel:
         """
         try:
             pp.to_json(self.net, filename)
-            # 保存组件映射关系
-            pd.DataFrame(self.component_map).to_json(f"{filename}_map.json")
+            print(f"网络模型已保存到: {os.path.abspath(filename)}")
             return True
         except Exception as e:
-            print(f"保存网络错误: {e}")
+            print(f"保存网络模型时出错: {str(e)}")
             return False
 
-    def load_from_json(self, filename):
-        """从JSON文件加载网络
+    def load_network(self, filename="network.json"):
+        """从JSON文件加载网络模型
         
         Args:
             filename: 文件名
@@ -576,9 +637,8 @@ class NetworkModel:
         """
         try:
             self.net = pp.from_json(filename)
-            # 加载组件映射关系
-            self.component_map = pd.read_json(f"{filename}_map.json").to_dict()
+            print(f"网络模型已从: {os.path.abspath(filename)} 加载")
             return True
         except Exception as e:
-            print(f"加载网络错误: {e}")
+            print(f"加载网络模型时出错: {str(e)}")
             return False

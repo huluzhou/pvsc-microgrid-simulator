@@ -26,6 +26,7 @@ from .ui_components import UIComponentManager
 from .power_monitor import PowerMonitor
 from utils.logger import logger
 
+from .globals import network_model
 
 # TODO:将仿真界面改为独立窗口
 class SimulationWindow(QMainWindow):
@@ -40,7 +41,8 @@ class SimulationWindow(QMainWindow):
         
         self.canvas = canvas
         self.parent_window = parent
-        self.network_model = canvas.network_model if hasattr(canvas, 'network_model') else None
+        # 直接使用从.globals导入的network_model，无需重新声明global
+        self.network_model = network_model
         # 从canvas获取scene引用
         self.scene = canvas.scene if hasattr(canvas, 'scene') else None
         
@@ -177,96 +179,69 @@ class SimulationWindow(QMainWindow):
         if not self.network_model:
             return
             
-        # 清除设备缓存，因为网络模型已变化
-        if hasattr(self, 'modbus_manager') and self.modbus_manager:
-            self.modbus_manager.clear_device_cache()
+        # 网络模型已变化，但不需要清除Modbus设备缓存，因为现在直接使用network_items
             
         # 使电表缓存失效，因为网络模型已变化
         self.invalidate_meter_cache()
             
         self.device_tree.clear()
         
-        # 添加母线
-        if not self.network_model.net.bus.empty:
-            bus_root = QTreeWidgetItem(self.device_tree, ["母线", "分类", "-"])
-            for idx, bus in self.network_model.net.bus.iterrows():
-                bus_name = bus.get('name', f'Bus_{idx}')
-                status = "正常" if hasattr(self.network_model.net, 'res_bus') and not self.network_model.net.res_bus.empty and idx in self.network_model.net.res_bus.index else "未计算"
-                bus_item = QTreeWidgetItem(bus_root, [f"Bus {idx}: {bus_name}", "母线", status])
-                bus_item.setData(0, Qt.UserRole, ('bus', idx))
+        # 缓存网络模型引用，减少重复访问
+        net = self.network_model.net
+        
+        # 提前检查结果属性是否存在且非空，避免重复检查
+        result_available = {
+            'bus': hasattr(net, 'res_bus') and not net.res_bus.empty,
+            'line': hasattr(net, 'res_line') and not net.res_line.empty,
+            'trafo': hasattr(net, 'res_trafo') and not net.res_trafo.empty,
+            'load': hasattr(net, 'res_load') and not net.res_load.empty,
+            'gen': hasattr(net, 'res_gen') and not net.res_gen.empty,
+            'sgen': hasattr(net, 'res_sgen') and not net.res_sgen.empty,
+            'ext_grid': hasattr(net, 'res_ext_grid') and not net.res_ext_grid.empty,
+            'storage': hasattr(net, 'res_storage') and not net.res_storage.empty
+        }
+        
+        # 添加组件的通用函数，减少重复代码
+        def add_components(component_type, display_name, icon_type=None):
+            if not hasattr(net, component_type) or getattr(net, component_type).empty:
+                return
                 
-        # 添加线路
-        if not self.network_model.net.line.empty:
-            line_root = QTreeWidgetItem(self.device_tree, ["线路", "分类", "-"])
-            for idx, line in self.network_model.net.line.iterrows():
-                line_name = line.get('name', f'Line_{idx}')
-                status = "正常" if hasattr(self.network_model.net, 'res_line') and not self.network_model.net.res_line.empty and idx in self.network_model.net.res_line.index else "未计算"
-                line_item = QTreeWidgetItem(line_root, [f"Line {idx}: {line_name}", "线路", status])
-                line_item.setData(0, Qt.UserRole, ('line', idx))
+            root = QTreeWidgetItem(self.device_tree, [display_name, "分类", "-"])
+            component_data = getattr(net, component_type)
+            
+            for idx, item_data in component_data.iterrows():
+                item_name = item_data.get('name', f'{display_name}_{idx}')
                 
-        # 添加变压器
-        if not self.network_model.net.trafo.empty:
-            trafo_root = QTreeWidgetItem(self.device_tree, ["变压器", "分类", "-"])
-            for idx, trafo in self.network_model.net.trafo.iterrows():
-                trafo_name = trafo.get('name', f'Trafo_{idx}')
-                status = "正常" if hasattr(self.network_model.net, 'res_trafo') and not self.network_model.net.res_trafo.empty and idx in self.network_model.net.res_trafo.index else "未计算"
-                trafo_item = QTreeWidgetItem(trafo_root, [f"Trafo {idx}: {trafo_name}", "变压器", status])
-                trafo_item.setData(0, Qt.UserRole, ('trafo', idx))
-                
-        # 添加负载
-        if not self.network_model.net.load.empty:
-            load_root = QTreeWidgetItem(self.device_tree, ["负载", "分类", "-"])
-            for idx, load in self.network_model.net.load.iterrows():
-                status = "正常" if hasattr(self.network_model.net, 'res_load') and not self.network_model.net.res_load.empty and idx in self.network_model.net.res_load.index else "未计算"
-                if idx >=1000:
-                    load_name = load.get('name', f'Charger_{idx}')
-                    load_item = QTreeWidgetItem(load_root, [f"Charger {idx}: {load_name}", "充电桩", status])
-                    load_item.setData(0, Qt.UserRole, ('charger', idx))
+                # 处理特殊情况：负载包含充电桩
+                if component_type == 'load' and idx >= 1000:
+                    current_type = 'charger'
+                    current_name = f'Charger {idx}: {item_data.get("name", f"Charger_{idx}")}'
+                    current_icon = "充电桩"
                 else:
-                    load_name = load.get('name', f'Load_{idx}')
-                    load_item = QTreeWidgetItem(load_root, [f"Load {idx}: {load_name}", "负载", status])
-                    load_item.setData(0, Qt.UserRole, ('load', idx))
+                    current_type = component_type
+                    current_name = f'{display_name[:2]} {idx}: {item_name}'
+                    current_icon = icon_type or display_name
                 
-        # 添加发电机
-        if not self.network_model.net.gen.empty:
-            gen_root = QTreeWidgetItem(self.device_tree, ["发电机", "分类", "-"])
-            for idx, gen in self.network_model.net.gen.iterrows():
-                gen_name = gen.get('name', f'Gen_{idx}')
-                status = "正常" if hasattr(self.network_model.net, 'res_gen') and not self.network_model.net.res_gen.empty and idx in self.network_model.net.res_gen.index else "未计算"
-                gen_item = QTreeWidgetItem(gen_root, [f"Gen {idx}: {gen_name}", "发电机", status])
-                gen_item.setData(0, Qt.UserRole, ('gen', idx))
+                # 确定状态
+                status = "正常" if result_available.get(current_type) and idx in getattr(net, f'res_{current_type}').index else "未计算"
                 
-        # 添加光伏
-        if not self.network_model.net.sgen.empty:
-            sgen_root = QTreeWidgetItem(self.device_tree, ["光伏", "分类", "-"])
-            for idx, sgen in self.network_model.net.sgen.iterrows():
-                sgen_name = sgen.get('name', f'SGen_{idx}')
-                status = "正常" if hasattr(self.network_model.net, 'res_sgen') and not self.network_model.net.res_sgen.empty and idx in self.network_model.net.res_sgen.index else "未计算"
-                sgen_item = QTreeWidgetItem(sgen_root, [f"SGen {idx}: {sgen_name}", "光伏", status])
-                sgen_item.setData(0, Qt.UserRole, ('sgen', idx))
-                
-        # 添加外部电网
-        if not self.network_model.net.ext_grid.empty:
-            ext_grid_root = QTreeWidgetItem(self.device_tree, ["外部电网", "分类", "-"])
-            for idx, ext_grid in self.network_model.net.ext_grid.iterrows():
-                ext_grid_name = ext_grid.get('name', f'ExtGrid_{idx}')
-                status = "正常" if hasattr(self.network_model.net, 'res_ext_grid') and not self.network_model.net.res_ext_grid.empty and idx in self.network_model.net.res_ext_grid.index else "未计算"
-                ext_grid_item = QTreeWidgetItem(ext_grid_root, [f"ExtGrid {idx}: {ext_grid_name}", "外部电网", status])
-                ext_grid_item.setData(0, Qt.UserRole, ('ext_grid', idx))
-                
-        # 添加储能
-        if not self.network_model.net.storage.empty:
-            storage_root = QTreeWidgetItem(self.device_tree, ["储能", "分类", "-"])
-            for idx, storage in self.network_model.net.storage.iterrows():
-                storage_name = storage.get('name', f'Storage_{idx}')
-                status = "正常" if hasattr(self.network_model.net, 'res_storage') and not self.network_model.net.res_storage.empty and idx in self.network_model.net.res_storage.index else "未计算"
-                storage_item = QTreeWidgetItem(storage_root, [f"Storage {idx}: {storage_name}", "储能", status])
-                storage_item.setData(0, Qt.UserRole, ('storage', idx))
-                
+                tree_item = QTreeWidgetItem(root, [current_name, current_icon, status])
+                tree_item.setData(0, Qt.UserRole, (current_type, idx))
+        
+        # 批量添加各类组件
+        add_components('bus', '母线')
+        add_components('line', '线路')
+        add_components('trafo', '变压器')
+        add_components('load', '负载')  # 包含充电桩
+        add_components('gen', '发电机')
+        add_components('sgen', '光伏')
+        add_components('ext_grid', '外部电网')
+        add_components('storage', '储能')
+        
         # 添加电表
-        if hasattr(self.network_model.net, 'measurement') and not self.network_model.net.measurement.empty:
+        if hasattr(net, 'measurement') and not net.measurement.empty:
             meter_root = QTreeWidgetItem(self.device_tree, ["电表", "分类", "-"])
-            for idx, meter in self.network_model.net.measurement.iterrows():
+            for idx, meter in net.measurement.iterrows():
                 meter_name = meter.get('name', f'Meter_{idx}')
                 element_type = meter.get('element_type', '未知')
                 element_idx = meter.get('element', idx)
@@ -348,55 +323,67 @@ class SimulationWindow(QMainWindow):
             element_idx = properties.get('element', 0)
             side = properties.get('side', None)
             
-            # 获取实时测量值
-            measurement_value = 0.0
-            para = ""
-            try:
-                if element_type == 'load' and hasattr(self.network_model.net, 'res_load'):
-                    if element_idx in self.network_model.net.res_load.index:
-                        measurement_value = self.network_model.net.res_load.loc[element_idx, 'p_mw']
-                        para = "p_mw"
-                elif element_type == 'sgen' and hasattr(self.network_model.net, 'res_sgen'):
-                    if element_idx in self.network_model.net.res_sgen.index:
-                        measurement_value = self.network_model.net.res_sgen.loc[element_idx, 'p_mw']
-                        para = "p_mw"
-                elif element_type == 'storage' and hasattr(self.network_model.net, 'res_storage'):
-                    if element_idx in self.network_model.net.res_storage.index:
-                        measurement_value = -self.network_model.net.res_storage.loc[element_idx, 'p_mw']
-                        para = "p_mw"
-                elif element_type == 'bus' and hasattr(self.network_model.net, 'res_bus'):  
-                    if element_idx in self.network_model.net.res_bus.index:
-                        measurement_value = self.network_model.net.res_bus.loc[element_idx, 'p_mw']
-                        para = "p_mw"
-                elif element_type == 'line' and hasattr(self.network_model.net, 'res_line'):
-                    if element_idx in self.network_model.net.res_line.index:
-                        if side == "from":
-                            measurement_value = self.network_model.net.res_line.loc[element_idx, 'p_from_mw']
-                            para = "p_from_mw"
-                        elif side == "to":
-                            measurement_value = self.network_model.net.res_line.loc[element_idx, 'p_to_mw']
-                            para = "p_to_mw"
-                elif element_type == 'trafo' and hasattr(self.network_model.net, 'res_trafo'):
-                    if element_idx in self.network_model.net.res_trafo.index:
-                        if side == "hv":
-                            measurement_value = self.network_model.net.res_trafo.loc[element_idx, 'p_hv_mw']
-                            para = "p_hv_mw"
-                        elif side == "lv":
-                            measurement_value = self.network_model.net.res_trafo.loc[element_idx, 'p_lv_mw']
-                            para = "p_lv_mw"
-                elif element_type == 'ext_grid' and hasattr(self.network_model.net, 'res_ext_grid'):
-                    if element_idx in self.network_model.net.res_ext_grid.index:
-                        measurement_value = self.network_model.net.res_ext_grid.loc[element_idx, 'p_mw']
-                        para = "p_mw"
-            except Exception as e:
-                return {"error": f"获取测量值时出错: {str(e)}"}
-            
             # 构建返回字典
-            result = {
-                para: measurement_value,
+            result = {}
+            
+            # 快速检查网络模型是否可用
+            if not self.network_model or not hasattr(self.network_model, 'net'):
+                return {"error": "网络模型不可用"}
+            
+            net = self.network_model.net
+            
+            # 获取实时测量值 - 使用映射表避免重复的条件判断
+            measurement_mapping = {
+                'load': {'res_attr': 'res_load', 'param': 'p_mw'},
+                'sgen': {'res_attr': 'res_sgen', 'param': 'p_mw'},
+                'storage': {'res_attr': 'res_storage', 'param': 'p_mw', 'factor': -1},
+                'bus': {'res_attr': 'res_bus', 'param': 'p_mw'},
+                'line': {
+                    'res_attr': 'res_line',
+                    'params': {'from': 'p_from_mw', 'to': 'p_to_mw'},
+                    'side': side
+                },
+                'trafo': {
+                    'res_attr': 'res_trafo',
+                    'params': {'hv': 'p_hv_mw', 'lv': 'p_lv_mw'},
+                    'side': side
+                },
+                'ext_grid': {'res_attr': 'res_ext_grid', 'param': 'p_mw'}
             }
             
-            return result
+            if element_type in measurement_mapping:
+                mapping = measurement_mapping[element_type]
+                res_attr = mapping.get('res_attr')
+                
+                # 检查结果属性是否存在
+                if hasattr(net, res_attr) and not getattr(net, res_attr).empty and element_idx in getattr(net, res_attr).index:
+                    result_set = False
+                    res_data = getattr(net, res_attr)
+                    
+                    # 处理带方向的组件（线路和变压器）
+                    if 'params' in mapping and 'side' in mapping:
+                        side_param = mapping.get('params', {}).get(mapping.get('side'))
+                        if side_param:
+                            measurement_value = res_data.loc[element_idx, side_param]
+                            result[side_param] = measurement_value
+                            result_set = True
+                    # 处理普通组件
+                    elif 'param' in mapping:
+                        param = mapping.get('param')
+                        measurement_value = res_data.loc[element_idx, param]
+                        # 应用可选的转换因子
+                        if 'factor' in mapping:
+                            measurement_value *= mapping.get('factor')
+                        result[param] = measurement_value
+                        result_set = True
+                    
+                    # 如果成功获取测量值，添加其他有用信息
+                    if result_set:
+                        result['element_type'] = element_type
+                        result['element_idx'] = element_idx
+                        result['side'] = side
+            
+            return result if result else {"error": "无法获取测量值"}
                 
         except Exception as e:
             return {"error": f"获取电表详情时出错: {str(e)}"}
@@ -471,9 +458,7 @@ class SimulationWindow(QMainWindow):
     
     def refresh_device_tree(self):
         """刷新设备树"""
-        # 清除设备缓存，因为网络模型可能已变化
-        if hasattr(self, 'modbus_manager') and self.modbus_manager:
-            self.modbus_manager.clear_device_cache()
+        # 网络模型可能已变化，但不需要清除Modbus设备缓存，因为现在直接使用network_items
             
         self.load_network_data()
         self.search_input.clear()
@@ -513,7 +498,6 @@ class SimulationWindow(QMainWindow):
             # 停止所有Modbus服务器
             if hasattr(self, 'modbus_manager'):
                 self.modbus_manager.stop_all_modbus_servers()
-                self.modbus_manager.clear_device_cache()
             
             # 清理数据生成器
             if hasattr(self, 'data_generator_manager'):
@@ -553,7 +537,7 @@ class SimulationWindow(QMainWindow):
         # 清理各种缓存
         cache_attrs = [
             '_energy_cache', '_meter_cache', '_pv_cache', 
-            '_storage_cache', '_charger_cache', 'generated_devices',
+            '_storage_cache', 'generated_devices',
             'current_component_type', 'current_component_idx'
         ]
         
@@ -625,10 +609,10 @@ class SimulationWindow(QMainWindow):
                 QMessageBox.warning(self, "警告", "没有可用的网络模型")
                 return
             
-            # 首先验证IP和端口的唯一性
-            is_valid, error_msg = self.parent_window.topology_manager.validate_ip_port_uniqueness(self.scene, self)
-            if not is_valid:
-                return
+            # # 首先验证IP和端口的唯一性 诊断时已经验证
+            # is_valid, error_msg = self.parent_window.topology_manager.validate_ip_port_uniqueness(self.scene, self)
+            # if not is_valid:
+            #     return
                 
             # 启动所有Modbus服务器
             self.modbus_manager.start_all_modbus_servers()
@@ -1320,6 +1304,7 @@ class SimulationWindow(QMainWindow):
     def auto_power_flow_calculation(self):
         """自动潮流计算主方法"""
         try:
+            # 快速检查网络模型可用性
             if not self.network_model or not hasattr(self.network_model, 'net'):
                 return
                 
@@ -1327,6 +1312,10 @@ class SimulationWindow(QMainWindow):
             if hasattr(self, '_is_calculating') and self._is_calculating:
                 return
             self._is_calculating = True
+                
+            # 缓存网络模型引用，减少重复访问
+            network_model = self.network_model
+            net = network_model.net
                 
             # 记录日志：计算周期开始
             logger.info("开始新一轮潮流计算")
@@ -1337,7 +1326,7 @@ class SimulationWindow(QMainWindow):
             # 使用批处理更新生成的数据
             if self.generated_devices:
                 logger.info(f"更新生成数据，设备数量: {len(self.generated_devices)}")
-                self._update_generated_data_batch(self.generated_devices, self.network_model, self.data_generator_manager)
+                self._update_generated_data_batch(self.generated_devices, network_model, self.data_generator_manager)
                 
             # 批量更新Modbus参数
             logger.info("批量更新Modbus参数")
@@ -1345,7 +1334,7 @@ class SimulationWindow(QMainWindow):
             
             # 运行潮流计算
             try:
-                pp.runpp(self.network_model.net)
+                pp.runpp(net)
                 self.statusBar().showMessage("潮流计算成功")
                 logger.info("潮流计算成功完成")
                 

@@ -62,98 +62,92 @@ class PowerMonitor:
             self.canvas = self.parent_window.canvas_mpl
     
     def get_device_power(self, device_id, device_type):
-        """获取设备的实际功率属性值"""
+        """获取设备的实际功率属性值 - 优化版，减少对network_model.net的重复访问"""
         try:
             device_id = int(device_id)  # 确保device_id是整数
+            
+            # 缓存网络模型引用，减少重复访问
+            net = self.network_model.net
             
             # 根据设备类型从潮流计算结果中获取功率值
             if device_type == "母线":
                 # 母线本身不直接设置功率，但可以通过潮流计算结果获取总注入功率
-                if hasattr(self.network_model.net, 'res_bus') and device_id in self.network_model.net.res_bus.index:
+                if hasattr(net, 'res_bus') and device_id in net.res_bus.index:
                     # 获取该母线的总注入功率（发电减负荷）
-                    return abs(self.network_model.net.res_bus.loc[device_id, 'p_mw'])
-                else:
-                    return 0.0
+                    return abs(net.res_bus.loc[device_id, 'p_mw'])
+                return 0.0
                 
             elif device_type == "线路":
                 # 从线路潮流计算结果中获取功率
-                if hasattr(self.network_model.net, 'res_line') and device_id in self.network_model.net.res_line.index:
+                if hasattr(net, 'res_line') and device_id in net.res_line.index:
                     # 获取线路的有功功率（取两端功率的平均值或较大值）
-                    p_from = abs(self.network_model.net.res_line.loc[device_id, 'p_from_mw'])
-                    p_to = abs(self.network_model.net.res_line.loc[device_id, 'p_to_mw'])
+                    p_from = abs(net.res_line.loc[device_id, 'p_from_mw'])
+                    p_to = abs(net.res_line.loc[device_id, 'p_to_mw'])
                     return max(p_from, p_to)  # 返回较大的功率值
-                else:
-                    return 0.0
+                return 0.0
                     
             elif device_type == "变压器":
                 # 从变压器潮流计算结果中获取功率
-                if hasattr(self.network_model.net, 'res_trafo') and device_id in self.network_model.net.res_trafo.index:
+                if hasattr(net, 'res_trafo') and device_id in net.res_trafo.index:
                     # 获取变压器的有功功率
-                    p_hv = abs(self.network_model.net.res_trafo.loc[device_id, 'p_hv_mw'])
-                    p_lv = abs(self.network_model.net.res_trafo.loc[device_id, 'p_lv_mw'])
+                    p_hv = abs(net.res_trafo.loc[device_id, 'p_hv_mw'])
+                    p_lv = abs(net.res_trafo.loc[device_id, 'p_lv_mw'])
                     return max(p_hv, p_lv)
-                else:
-                    return 0.0
+                return 0.0
                     
             elif device_type == "发电机":
                 # 从发电机潮流计算结果中获取实际功率
-                if hasattr(self.network_model.net, 'res_gen') and device_id in self.network_model.net.res_gen.index:
-                    return abs(self.network_model.net.res_gen.loc[device_id, 'p_mw'])
-                else:
-                    # 如果潮流计算结果没有，使用设定值
-                    gens = self.network_model.net.gen
-                    if device_id in gens.index:
-                        return abs(gens.loc[device_id, 'p_mw'])
-                    return 0.0
+                if hasattr(net, 'res_gen') and device_id in net.res_gen.index:
+                    return abs(net.res_gen.loc[device_id, 'p_mw'])
+                # 如果潮流计算结果没有，使用设定值
+                gens = net.gen
+                if device_id in gens.index:
+                    return abs(gens.loc[device_id, 'p_mw'])
+                return 0.0
                     
             elif device_type == "光伏":
                 # 从光伏潮流计算结果中获取实际功率
-                if hasattr(self.network_model.net, 'res_sgen') and device_id in self.network_model.net.res_sgen.index:
-                    return abs(self.network_model.net.res_sgen.loc[device_id, 'p_mw'])
-                else:
-                    # 使用设定值
-                    sgens = self.network_model.net.sgen
-                    if device_id in sgens.index:
-                        return abs(sgens.loc[device_id, 'p_mw'])
-                    return 0.0
+                if hasattr(net, 'res_sgen') and device_id in net.res_sgen.index:
+                    return abs(net.res_sgen.loc[device_id, 'p_mw'])
+                # 使用设定值
+                sgens = net.sgen
+                if device_id in sgens.index:
+                    return abs(sgens.loc[device_id, 'p_mw'])
+                return 0.0
                     
             elif device_type == "负载":
                 # 从负载潮流计算结果中获取实际功率
-                if hasattr(self.network_model.net, 'res_load') and device_id in self.network_model.net.res_load.index:
-                    return abs(self.network_model.net.res_load.loc[device_id, 'p_mw'])
-                else:
-                    # 使用设定值
-                    loads = self.network_model.net.load
-                    if device_id in loads.index:
-                        return abs(loads.loc[device_id, 'p_mw'])
-                    return 0.0
+                if hasattr(net, 'res_load') and device_id in net.res_load.index:
+                    return abs(net.res_load.loc[device_id, 'p_mw'])
+                # 使用设定值
+                loads = net.load
+                if device_id in loads.index:
+                    return abs(loads.loc[device_id, 'p_mw'])
+                return 0.0
             elif device_type == "充电桩":
                 # 从充电桩潮流计算结果中获取实际功率
-                if hasattr(self.network_model.net, 'res_charger') and device_id in self.network_model.net.res_load.index:
-                    return self.network_model.net.res_load.loc[device_id, 'p_mw']
-                else:
-                    # 使用设定值
-                    chargers = self.network_model.net.load
-                    if device_id in chargers.index:
-                        return chargers.loc[device_id, 'p_mw']
-                    return 0.0
+                if hasattr(net, 'res_charger') and device_id in net.res_load.index:
+                    return net.res_load.loc[device_id, 'p_mw']
+                # 使用设定值
+                chargers = net.load
+                if device_id in chargers.index:
+                    return chargers.loc[device_id, 'p_mw']
+                return 0.0
             elif device_type == "储能":
                 # 从储能潮流计算结果中获取实际功率
-                if hasattr(self.network_model.net, 'res_storage') and device_id in self.network_model.net.res_storage.index:
-                    return -self.network_model.net.res_storage.loc[device_id, 'p_mw']
-                else:
-                    # 使用设定值
-                    storage = self.network_model.net.storage
-                    if device_id in storage.index:
-                        return -storage.loc[device_id, 'p_mw']
-                    return 0.0
+                if hasattr(net, 'res_storage') and device_id in net.res_storage.index:
+                    return -net.res_storage.loc[device_id, 'p_mw']
+                # 使用设定值
+                storage = net.storage
+                if device_id in storage.index:
+                    return -storage.loc[device_id, 'p_mw']
+                return 0.0
                     
             elif device_type == "外部电网":
                 # 从外部电网潮流计算结果中获取功率
-                if hasattr(self.network_model.net, 'res_ext_grid') and device_id in self.network_model.net.res_ext_grid.index:
-                    return abs(self.network_model.net.res_ext_grid.loc[device_id, 'p_mw'])
-                else:
-                    return 0.0
+                if hasattr(net, 'res_ext_grid') and device_id in net.res_ext_grid.index:
+                    return abs(net.res_ext_grid.loc[device_id, 'p_mw'])
+                return 0.0
             elif device_type == "电表":
                 return self._get_meter_power(device_id)
         except Exception as e:
@@ -537,7 +531,7 @@ class PowerMonitor:
     
     def _query_measurement_value(self, config):
         """
-        根据测量配置查询实时测量值
+        根据测量配置查询实时测量值 - 优化版，减少对network_model.net的重复访问
         
         参数:
             config (dict): 包含测量配置的字典
@@ -545,69 +539,73 @@ class PowerMonitor:
         返回:
             float: 测量到的功率值（单位：MW）
         """
-        element_type = config['element_type']
-        element_idx = config['element_idx']
-        side = config['side']
-        
-        # 定义各元素类型的查询映射
-        query_map = {
-            'load': {
-                'result_attr': 'res_load',
-                'value_key': 'p_mw'
-            },
-            'sgen': {
-                'result_attr': 'res_sgen',
-                'value_key': 'p_mw'
-            },
-            'storage': {
-                'result_attr': 'res_storage',
-                'value_key': 'p_mw'
-            },
-            'bus': {
-                'result_attr': 'res_bus',
-                'value_key': 'p_mw'
-            },
-            'line': {
-                'result_attr': 'res_line',
-                'side_mapping': {
-                    'from': 'p_from_mw',
-                    'to': 'p_to_mw',
-                }
-            },
-            'trafo': {
-                'result_attr': 'res_trafo',
-                'side_mapping': {
-                    'hv': 'p_hv_mw',
-                    'lv': 'p_lv_mw',
-                }
-            },
-            'ext_grid': {
-                'result_attr': 'res_ext_grid',
-                'value_key': 'p_mw'
-            }
-        }
-        
-        # 检查元素类型是否支持
-        if element_type not in query_map:
-            print(f"不支持的元素类型: {element_type}")
-            return 0.0
-            
-        query_info = query_map[element_type]
-        result_attr = query_info['result_attr']
-        
-        # 检查网络模型是否包含结果数据
-        if not hasattr(self.network_model.net, result_attr):
-            return 0.0
-            
-        result_df = getattr(self.network_model.net, result_attr)
-        if element_idx not in result_df.index:
-            return 0.0
-            
-        # 获取测量值
         try:
+            element_type = config['element_type']
+            element_idx = config['element_idx']
+            side = config['side']
+            
+            # 定义各元素类型的查询映射（移至函数顶部，减少重复定义）
+            query_map = {
+                'load': {
+                    'result_attr': 'res_load',
+                    'value_key': 'p_mw'
+                },
+                'sgen': {
+                    'result_attr': 'res_sgen',
+                    'value_key': 'p_mw'
+                },
+                'storage': {
+                    'result_attr': 'res_storage',
+                    'value_key': 'p_mw'
+                },
+                'bus': {
+                    'result_attr': 'res_bus',
+                    'value_key': 'p_mw'
+                },
+                'line': {
+                    'result_attr': 'res_line',
+                    'side_mapping': {
+                        'from': 'p_from_mw',
+                        'to': 'p_to_mw',
+                    }
+                },
+                'trafo': {
+                    'result_attr': 'res_trafo',
+                    'side_mapping': {
+                        'hv': 'p_hv_mw',
+                        'lv': 'p_lv_mw',
+                    }
+                },
+                'ext_grid': {
+                    'result_attr': 'res_ext_grid',
+                    'value_key': 'p_mw'
+                }
+            }
+            
+            # 检查元素类型是否支持
+            if element_type not in query_map:
+                print(f"不支持的元素类型: {element_type}")
+                return 0.0
+                
+            query_info = query_map[element_type]
+            result_attr = query_info['result_attr']
+            
+            # 缓存网络模型引用，减少重复访问
+            net = self.network_model.net
+            
+            # 检查网络模型是否包含结果数据
+            if not hasattr(net, result_attr):
+                return 0.0
+                
+            result_df = getattr(net, result_attr)
+            if element_idx not in result_df.index:
+                return 0.0
+                
+            # 获取测量值
             if 'side_mapping' in query_info:
                 # 处理有side参数的元素类型（line, trafo）
-                value_key = query_info['side_mapping'].get(side, query_info['side_mapping'][None])
+                if side in query_info['side_mapping']:
+                    value_key = query_info['side_mapping'][side]
             else:
                 # 处理无side参数的元素类型
                 value_key = query_info['value_key']
@@ -615,6 +613,6 @@ class PowerMonitor:
             measurement_value = result_df.loc[element_idx, value_key]
             return abs(float(measurement_value))
             
-        except (KeyError, ValueError) as e:
+        except (KeyError, ValueError, AttributeError) as e:
             print(f"获取测量值时出错: {str(e)}")
             return 0.0
