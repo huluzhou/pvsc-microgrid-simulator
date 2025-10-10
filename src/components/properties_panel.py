@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, 
     QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox,
-    QScrollArea, QFrame, QFormLayout, QApplication
+    QScrollArea, QFrame, QFormLayout, QApplication,
+    QPushButton, QHBoxLayout, QGridLayout
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QPalette
@@ -91,6 +92,10 @@ class PropertiesPanel(QWidget):
         if not item or not hasattr(item, 'properties'):
             self.show_no_selection()
             return
+            
+        # 初始化custom_fields字典，如果不存在的话
+        if 'custom_fields' not in self.current_item.properties:
+            self.current_item.properties['custom_fields'] = {}
             
         # 组件信息组
         info_group = QGroupBox("组件信息")
@@ -213,6 +218,9 @@ class PropertiesPanel(QWidget):
         
         # 标准类型选择已集成到参数区域内，不再需要独立的选择器
         
+        # 配置控件模块
+        self.add_configuration_module()
+
         # 添加弹性空间
         self.properties_layout.addStretch()
         
@@ -731,6 +739,139 @@ class PropertiesPanel(QWidget):
             window_color = palette.color(QPalette.Window)
             return window_color.lightness() < 128
         return False
+    
+    def add_configuration_module(self):
+        """添加配置控件模块，支持用户添加任意自定义字段及其对应值"""
+        # 配置模块组
+        config_group = QGroupBox("配置")
+        config_layout = QVBoxLayout(config_group)
+        
+        # 自定义字段容器 - 使用滚动区域以便于浏览
+        self.custom_fields_scroll = QScrollArea()
+        self.custom_fields_scroll.setWidgetResizable(True)
+        self.custom_fields_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.custom_fields_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        # 自定义字段容器部件
+        self.custom_fields_container = QWidget()
+        self.custom_fields_layout = QVBoxLayout(self.custom_fields_container)
+        self.custom_fields_layout.setAlignment(Qt.AlignTop)
+        self.custom_fields_layout.setSpacing(5)
+        
+        self.custom_fields_scroll.setWidget(self.custom_fields_container)
+        config_layout.addWidget(self.custom_fields_scroll)
+        
+        # 添加自定义字段的按钮
+        add_button = QPushButton("添加字段")
+        add_button.clicked.connect(self.add_custom_field)
+        config_layout.addWidget(add_button)
+        
+        # 初始化自定义字段数据结构
+        if hasattr(self.current_item, 'properties'):
+            # 从组件属性中获取已有的自定义字段
+            custom_fields = self.current_item.properties.get('custom_fields', {})
+            for field_name, field_value in custom_fields.items():
+                self._create_custom_field_entry(field_name, field_value)
+        
+        self.properties_layout.addWidget(config_group)
+    
+    def add_custom_field(self):
+        """添加一个新的自定义字段"""
+        # 创建默认的字段名和值
+        field_index = 1
+        if hasattr(self.current_item, 'properties'):
+            custom_fields = self.current_item.properties.get('custom_fields', {})
+            field_index = len(custom_fields) + 1
+        
+        default_name = f"field_{field_index}"
+        default_value = ""
+        
+        # 创建字段输入框
+        self._create_custom_field_entry(default_name, default_value)
+        
+        # 保存到组件属性
+        self._save_custom_fields()
+    
+    def _create_custom_field_entry(self, field_name, field_value):
+        """创建一个自定义字段的输入项"""
+        # 创建水平布局来放置字段名、字段值和删除按钮
+        field_layout = QHBoxLayout()
+        field_layout.setSpacing(5)
+        
+        # 字段名输入框
+        name_edit = QLineEdit(field_name)
+        name_edit.setMinimumWidth(100)
+        name_edit.textChanged.connect(lambda: self._save_custom_fields())
+        field_layout.addWidget(name_edit)
+        
+        # 字段值输入框
+        value_edit = QLineEdit(str(field_value))
+        value_edit.setMinimumWidth(100)
+        value_edit.textChanged.connect(lambda: self._save_custom_fields())
+        field_layout.addWidget(value_edit, 1)  # 让值输入框占据剩余空间
+        
+        # 删除按钮
+        delete_button = QPushButton("-")
+        delete_button.setMaximumWidth(25)
+        delete_button.clicked.connect(lambda: self._remove_custom_field(field_layout))
+        field_layout.addWidget(delete_button)
+        
+        # 创建一个容器部件来容纳这个布局
+        field_widget = QWidget()
+        field_widget.setLayout(field_layout)
+        
+        # 添加到自定义字段容器
+        self.custom_fields_layout.addWidget(field_widget)
+    
+    def _remove_custom_field(self, field_layout):
+        """删除一个自定义字段"""
+        # 找到包含这个布局的部件
+        field_widget = None
+        for i in range(self.custom_fields_layout.count()):
+            widget = self.custom_fields_layout.itemAt(i).widget()
+            if widget and widget.layout() == field_layout:
+                field_widget = widget
+                break
+        
+        # 删除部件
+        if field_widget:
+            self.custom_fields_layout.removeWidget(field_widget)
+            field_widget.deleteLater()
+        
+        # 保存到组件属性
+        self._save_custom_fields()
+    
+    def _save_custom_fields(self):
+        """保存自定义字段到组件属性"""
+        if not hasattr(self.current_item, 'properties'):
+            return
+        
+        custom_fields = {}
+        
+        # 遍历所有自定义字段输入项
+        for i in range(self.custom_fields_layout.count()):
+            widget = self.custom_fields_layout.itemAt(i).widget()
+            if widget and widget.layout():
+                field_layout = widget.layout()
+                if field_layout.count() >= 2:
+                    # 获取字段名和字段值
+                    name_edit = field_layout.itemAt(0).widget()
+                    value_edit = field_layout.itemAt(1).widget()
+                    
+                    if hasattr(name_edit, 'text') and hasattr(value_edit, 'text'):
+                        field_name = name_edit.text().strip()
+                        field_value = value_edit.text().strip()
+                        
+                        if field_name:  # 只有当字段名不为空时才保存
+                            custom_fields[field_name] = field_value
+        
+        # 保存到组件属性
+        self.current_item.properties['custom_fields'] = custom_fields
+        
+        # 发出属性改变信号
+        self.property_changed.emit(
+            self.current_item.component_type, 'custom_fields', custom_fields
+        )
     
     def update_theme_colors(self):
         """更新主题相关的所有颜色"""
