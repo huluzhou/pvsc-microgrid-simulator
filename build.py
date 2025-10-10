@@ -11,7 +11,14 @@ import subprocess
 import shutil
 import time
 from pathlib import Path
-
+from src.config import (
+    # 功能标志
+    FEATURE_SIMULATION, FEATURE_MODBUS, FEATURE_REPORT, FEATURE_EXPORT,
+    # 调试模式标志
+    DEBUG_MODE, VERBOSE_LOGGING,
+    # 辅助函数和装饰器
+    is_feature_enabled, conditional_compile, import_if_enabled
+)
 try:
     from tqdm import tqdm
     TQDM_AVAILABLE = True
@@ -112,62 +119,137 @@ def build_executable():
     
     # 使用简化的PyInstaller命令，避免复杂的spec文件配置问题
     # 排除未使用的PySide6组件以减小可执行文件大小
-    cmd = [
-        sys.executable, "-m", "PyInstaller",
-        "--onedir",
-        "--windowed", 
-        "--name=pandapower_sim",
-        "--upx-dir=upx",
-        "--clean",
-        "--optimize=2",
-        "--add-data=src/assets;assets",
-        # 排除未使用的PySide6模块
-        "--exclude-module=PySide6.QtBluetooth",
-        "--exclude-module=PySide6.QtConcurrent",
-        "--exclude-module=PySide6.QtDBus",
-        "--exclude-module=PySide6.QtDesigner",
-        "--exclude-module=PySide6.QtHelp",
-        "--exclude-module=PySide6.QtMultimedia",
-        "--exclude-module=PySide6.QtMultimediaWidgets",
-        "--exclude-module=PySide6.QtNetwork",
-        "--exclude-module=PySide6.QtOpenGL",
-        "--exclude-module=PySide6.QtOpenGLWidgets",
-        "--exclude-module=PySide6.QtPositioning",
-        "--exclude-module=PySide6.QtPrintSupport",
-        "--exclude-module=PySide6.QtQml",
-        "--exclude-module=PySide6.QtQuick",
-        "--exclude-module=PySide6.QtQuickControls2",
-        "--exclude-module=PySide6.QtQuickWidgets",
-        "--exclude-module=PySide6.QtRemoteObjects",
-        "--exclude-module=PySide6.QtScxml",
-        "--exclude-module=PySide6.QtSensors",
-        "--exclude-module=PySide6.QtSerialPort",
-        "--exclude-module=PySide6.QtSql",
-        "--exclude-module=PySide6.QtTest",
-        "--exclude-module=PySide6.QtWebChannel",
-        "--exclude-module=PySide6.QtWebEngine",
-        "--exclude-module=PySide6.QtWebEngineCore",
-        "--exclude-module=PySide6.QtWebEngineWidgets",
-        "--exclude-module=PySide6.QtWebSockets",
-        "--exclude-module=PySide6.QtXml",
+    if FEATURE_SIMULATION:
+        cmd = [
+            sys.executable, "-m", "PyInstaller",
+            "--onedir",
+            "--windowed", 
+            "--name=pandapower_sim",
+            "--upx-dir=upx",
+            "--clean",
+            "--optimize=2",
+            "--add-data=src/assets;assets",
+            # 排除未使用的PySide6模块
+            "--exclude-module=PySide6.QtBluetooth",
+            "--exclude-module=PySide6.QtConcurrent",
+            "--exclude-module=PySide6.QtDBus",
+            "--exclude-module=PySide6.QtDesigner",
+            "--exclude-module=PySide6.QtHelp",
+            "--exclude-module=PySide6.QtMultimedia",
+            "--exclude-module=PySide6.QtMultimediaWidgets",
+            "--exclude-module=PySide6.QtNetwork",
+            "--exclude-module=PySide6.QtOpenGL",
+            "--exclude-module=PySide6.QtOpenGLWidgets",
+            "--exclude-module=PySide6.QtPositioning",
+            "--exclude-module=PySide6.QtPrintSupport",
+            "--exclude-module=PySide6.QtQml",
+            "--exclude-module=PySide6.QtQuick",
+            "--exclude-module=PySide6.QtQuickControls2",
+            "--exclude-module=PySide6.QtQuickWidgets",
+            "--exclude-module=PySide6.QtRemoteObjects",
+            "--exclude-module=PySide6.QtScxml",
+            "--exclude-module=PySide6.QtSensors",
+            "--exclude-module=PySide6.QtSerialPort",
+            "--exclude-module=PySide6.QtSql",
+            "--exclude-module=PySide6.QtTest",
+            "--exclude-module=PySide6.QtWebChannel",
+            "--exclude-module=PySide6.QtWebEngine",
+            "--exclude-module=PySide6.QtWebEngineCore",
+            "--exclude-module=PySide6.QtWebEngineWidgets",
+            "--exclude-module=PySide6.QtWebSockets",
+            "--exclude-module=PySide6.QtXml",
 
-        # 排除其他可能不需要的模块
-        "--exclude-module=tkinter",
-        "--exclude-module=Tkinter",
-        "--exclude-module=matplotlib.backends.backend_tkagg",
-        "--exclude-module=matplotlib.backends.backend_webagg",
-        "--exclude-module=matplotlib.backends.backend_qt4agg",
-        "--exclude-module=IPython",
-        "--exclude-module=jupyter",
-        "--exclude-module=notebook",
-        "--exclude-module=pytest",
-        "--exclude-module=test",
-        "--exclude-module=doctest",
-        "--exclude-module=distutils",
-        "--exclude-module=setuptools",
-        "--exclude-module=pkg_resources",
-        "src/main.py"
-    ]
+            # 排除其他可能不需要的模块
+            "--exclude-module=tkinter",
+            "--exclude-module=Tkinter",
+            "--exclude-module=matplotlib.backends.backend_tkagg",
+            "--exclude-module=matplotlib.backends.backend_webagg",
+            "--exclude-module=matplotlib.backends.backend_qt4agg",
+            "--exclude-module=IPython",
+            "--exclude-module=jupyter",
+            "--exclude-module=notebook",
+            "--exclude-module=pytest",
+            "--exclude-module=test",
+            "--exclude-module=doctest",
+            "--exclude-module=distutils",
+            "--exclude-module=setuptools",
+            "--exclude-module=pkg_resources",
+            "src/main.py"
+        ]
+    else:
+        cmd = [
+            sys.executable, "-m", "PyInstaller",
+            "--onedir",
+            "--windowed", 
+            "--name=pandapower_sim",
+            "--upx-dir=upx",
+            "--clean",
+            "--optimize=2",
+            "--add-data=src/assets;assets",
+            # 排除未使用的PySide6模块
+            "--exclude-module=PySide6.QtBluetooth",
+            "--exclude-module=PySide6.QtConcurrent",
+            "--exclude-module=PySide6.QtDBus",
+            "--exclude-module=PySide6.QtDesigner",
+            "--exclude-module=PySide6.QtHelp",
+            "--exclude-module=PySide6.QtMultimedia",
+            "--exclude-module=PySide6.QtMultimediaWidgets",
+            "--exclude-module=PySide6.QtNetwork",
+            "--exclude-module=PySide6.QtOpenGL",
+            "--exclude-module=PySide6.QtOpenGLWidgets",
+            "--exclude-module=PySide6.QtPositioning",
+            "--exclude-module=PySide6.QtPrintSupport",
+            "--exclude-module=PySide6.QtQml",
+            "--exclude-module=PySide6.QtQuick",
+            "--exclude-module=PySide6.QtQuickControls2",
+            "--exclude-module=PySide6.QtQuickWidgets",
+            "--exclude-module=PySide6.QtRemoteObjects",
+            "--exclude-module=PySide6.QtScxml",
+            "--exclude-module=PySide6.QtSensors",
+            "--exclude-module=PySide6.QtSerialPort",
+            "--exclude-module=PySide6.QtSql",
+            "--exclude-module=PySide6.QtTest",
+            "--exclude-module=PySide6.QtWebChannel",
+            "--exclude-module=PySide6.QtWebEngine",
+            "--exclude-module=PySide6.QtWebEngineCore",
+            "--exclude-module=PySide6.QtWebEngineWidgets",
+            "--exclude-module=PySide6.QtWebSockets",
+            "--exclude-module=PySide6.QtXml",
+
+            # 排除pandapower及其相关组件
+            "--exclude-module=pandapower",
+            "--exclude-module=pandapower.converter",
+            "--exclude-module=pandapower.control",
+            "--exclude-module=pandapower.plotting",
+            "--exclude-module=pandapower.pf",
+            "--exclude-module=pandapower.opf",
+            "--exclude-module=pandapower.shortcircuit",
+            "--exclude-module=pandapower.results",
+            "--exclude-module=pandapower.timeseries",
+            "--exclude-module=numpy",
+            "--exclude-module=scipy",
+            "--exclude-module=pandas",
+            "--exclude-module=matplotlib",
+            "--exclude-module=sympy",
+            
+            # 排除其他可能不需要的模块
+            "--exclude-module=tkinter",
+            "--exclude-module=Tkinter",
+            "--exclude-module=matplotlib.backends.backend_tkagg",
+            "--exclude-module=matplotlib.backends.backend_webagg",
+            "--exclude-module=matplotlib.backends.backend_qt4agg",
+            "--exclude-module=IPython",
+            "--exclude-module=jupyter",
+            "--exclude-module=notebook",
+            "--exclude-module=pytest",
+            "--exclude-module=test",
+            "--exclude-module=doctest",
+            "--exclude-module=distutils",
+            "--exclude-module=setuptools",
+            "--exclude-module=pkg_resources",
+            "src/main.py"
+        ]
+        
     
     try:
         print("正在执行PyInstaller...")

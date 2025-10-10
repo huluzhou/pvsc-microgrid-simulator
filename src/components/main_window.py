@@ -13,11 +13,21 @@ from components.canvas import NetworkCanvas
 from components.component_palette import ComponentPalette
 from components.properties_panel import PropertiesPanel
 from utils.topology_utils import TopologyManager
-from models.network_model import NetworkModel
-import pandapower as pp
-
+from config import (
+    # 功能标志
+    FEATURE_SIMULATION, FEATURE_MODBUS, FEATURE_REPORT, FEATURE_EXPORT,
+    # 调试模式标志
+    DEBUG_MODE, VERBOSE_LOGGING,
+    # 辅助函数和装饰器
+    is_feature_enabled, conditional_compile, import_if_enabled
+)
+# import pandapower as pp
+if FEATURE_SIMULATION:
+    import pandapower as pp
+    from models.network_model import NetworkModel
+    from components.globals import network_model 
 # 从globals.py导入全局变量
-from components.globals import network_model, network_items
+
 class MainWindow(QMainWindow):
     """主窗口类"""
 
@@ -160,22 +170,22 @@ class MainWindow(QMainWindow):
         view_menu.addAction(fit_view_action)
         
         view_menu.addSeparator()
-        
-        # 仿真菜单
-        sim_menu = self.menuBar().addMenu("仿真")
-        
-        # 仿真模式菜单项
-        diagnostic_action = QAction("诊断", self)
-        diagnostic_action.setShortcut("F6")
-        diagnostic_action.triggered.connect(self.diagnostic_network)
-        sim_menu.addAction(diagnostic_action)
+        if FEATURE_SIMULATION:
+            # 仿真菜单
+            sim_menu = self.menuBar().addMenu("仿真")
+            
+            # 仿真模式菜单项
+            diagnostic_action = QAction("诊断", self)
+            diagnostic_action.setShortcut("F6")
+            diagnostic_action.triggered.connect(self.diagnostic_network)
+            sim_menu.addAction(diagnostic_action)
 
-        simulation_mode_action = QAction("仿真模式", self)
-        simulation_mode_action.setShortcut("F5")
-        simulation_mode_action.triggered.connect(self.enter_simulation_mode)
-        sim_menu.addAction(simulation_mode_action)
-        
-        sim_menu.addSeparator()
+            simulation_mode_action = QAction("仿真模式", self)
+            simulation_mode_action.setShortcut("F5")
+            simulation_mode_action.triggered.connect(self.enter_simulation_mode)
+            sim_menu.addAction(simulation_mode_action)
+            
+            sim_menu.addSeparator()
         
         # 帮助菜单
         help_menu = self.menuBar().addMenu("帮助")
@@ -229,7 +239,7 @@ class MainWindow(QMainWindow):
             print(f"处理属性变化时出错: {e}")
     
     # 删除快速潮流计算方法（潮流计算功能已移除）
-    
+    @conditional_compile(FEATURE_SIMULATION)
     def enter_simulation_mode(self):
         """进入仿真模式"""
         try:
@@ -253,6 +263,8 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "错误", f"进入仿真模式时发生错误：{str(e)}")
+    
+    @conditional_compile(FEATURE_SIMULATION)
     def diagnostic_network(self):
         try:
             global network_model
@@ -270,7 +282,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"网络诊断时发生错误：{e}")
             QMessageBox.critical(self, "错误", f"网络诊断时发生错误：{str(e)}")
-
+        
+    @conditional_compile(FEATURE_SIMULATION)    
     def validate_network(self):
         """使用pandapower内置函数验证网络拓扑和参数"""
         try:
