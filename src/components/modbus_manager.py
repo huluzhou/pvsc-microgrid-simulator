@@ -11,7 +11,8 @@ from utils.logger import logger
 from pymodbus.server import StartTcpServer
 from pymodbus import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock, ModbusSequentialDataBlock
-
+import asyncio
+from pymodbus.server import ModbusTcpServer
 # 导入全局网络项字典
 from .globals import network_items
 
@@ -417,9 +418,8 @@ class ModbusManager:
         except Exception as e:
             print(f"写入光伏设备SN失败: {e}")
             return False
-    
     def start_modbus_server(self, device_info):
-        """为指定设备启动Modbus服务器"""
+        """启动Modbus TCP服务器（使用底层ModbusTcpServer类）"""
         device_key = f"{device_info['type']}_{device_info['index']}"
 
         if device_key in self.modbus_servers or device_key in self.running_services:
@@ -427,52 +427,127 @@ class ModbusManager:
             return False
 
         try:
-            # 创建Modbus上下文
-            context = self.create_modbus_context(device_info)
-            if context is None:
-                # 创建失败（SN不存在），直接返回False
+            # 1. 创建Modbus上下文（数据存储）
+            context = self.create_modbus_context(device_info)  # 复用你的上下文创建逻辑
+            if not context:
                 return False
             self.modbus_contexts[device_key] = context
-            
-            # 创建设备标识
+
+            # 2. 创建设备标识
             identity = ModbusDeviceIdentification()
             identity.VendorName = 'PandaPower Simulator'
             identity.ProductCode = 'PPS'
-            identity.VendorUrl = 'http://localhost'
             identity.ProductName = f"Device {device_info['name']}"
             identity.ModelName = f"{device_info['type'].upper()} Simulator"
             identity.MajorMinorRevision = '1.0'
+
+            # 4. 在独立线程中启动服务器（避免阻塞主线程）
+            # 为了避免线程间共享异步对象导致的问题，我们需要特殊的处理方式
+            # 我们先创建一个事件，用于在线程内部创建服务器实例后通知主线程
+            server_ready_event = threading.Event()
+            thread_server = [None]  # 使用列表作为可变容器来存储服务器引用
             
-            # 使用StartTcpServer启动服务器，pymodbus内部管理资源
-            server_thread = threading.Thread(
-                target=StartTcpServer,
-                kwargs={
-                    'context': context,
-                    'identity': identity,
-                    'address': (device_info['ip'], device_info['port'])
-                },
-                daemon=True
-            )
+            # 线程函数：运行异步服务器的事件循环
+            def run_server():
+                # 在新线程中创建并设置事件循环
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # 在事件循环中创建并启动服务器
+                async def start_server():
+                    # 在异步函数内部创建服务器
+                    server = ModbusTcpServer(
+                        context=context,
+                        identity=identity,
+                        address=(device_info['ip'], device_info['port'])
+                    )
+                    
+                    # 存储服务器引用，以便主线程可以访问
+                    thread_server[0] = server
+                    
+                    # 通知主线程服务器已创建
+                    server_ready_event.set()
+                    
+                    # 启动服务器
+                    await server.serve_forever()
+                
+                # 在事件循环中运行异步函数
+                loop.run_until_complete(start_server())
+                loop.close()
+
+            # 创建并启动线程
+            server_thread = threading.Thread(target=run_server, daemon=True)
             server_thread.start()
+
+            # 等待服务器实例在线程中创建完成（最多等待2秒）
+            server_ready_event.wait(timeout=2.0)
             
-            # 记录服务器信息（StartTcpServer内部管理实际服务器实例）
-            self.modbus_servers[device_key] = server_thread  # 记录线程引用
+            # 获取服务器实例
+            server = thread_server[0]
+            if server is None:
+                print(f"服务器实例创建失败: {device_key}")
+                server_thread.join(timeout=1.0)  # 尝试等待线程结束
+                return False
+
+            # 5. 保存服务器实例和线程引用
+            self.modbus_servers[device_key] = {
+                "server": server,       # 异步服务器实例
+                "thread": server_thread # 运行服务器的线程
+            }
             self.running_services.add(device_key)
-            
-            print(f"已启动Modbus服务器: {device_info['name']} ({device_info['ip']}:{device_info['port']})")
+
+            print(f"已启动Modbus服务器: {device_info['name']} ({device_info['ip']}:{device_info['port']}) ")
             return True
-            
+
         except OSError as e:
-            if e.errno == 10048:  # Windows端口占用错误
-                print(f"端口 {device_info['port']} 已被占用，无法启动服务器: {device_key}")
+            if e.errno == 10048:
+                print(f"端口 {device_info['port']} 已被占用: {device_key}")
             else:
-                print(f"启动Modbus服务器失败 {device_key}: {e}")
+                print(f"启动失败 {device_key}: {e}")
             return False
         except Exception as e:
-            print(f"启动Modbus服务器失败 {device_key}: {e}")
+            print(f"启动失败 {device_key}: {e}")
             self.running_services.discard(device_key)
             if device_key in self.modbus_contexts:
                 del self.modbus_contexts[device_key]
+            return False
+
+    def stop_modbus_server(self, device_type, device_idx):
+        """关闭Modbus服务器并终止线程"""
+        device_key = f"{device_type}_{device_idx}"
+        if device_key not in self.modbus_servers or device_key not in self.running_services:
+            print(f"设备 {device_key} 未运行")
+            return False
+
+        try:
+            # 1. 获取服务器实例和线程
+            server_data = self.modbus_servers[device_key]
+            server = server_data["server"]
+            server_thread = server_data["thread"]
+
+            # 2. 停止异步服务器（核心：调用服务器的stop方法）
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(server.shutdown())  # 优雅关闭服务器
+            loop.close()
+
+            # 3. 等待线程结束（最多等待5秒）
+            server_thread.join(timeout=5.0)
+            if server_thread.is_alive():
+                print(f"警告：服务器线程 {device_key} 未正常退出")
+            else:
+                print(f"服务器线程 {device_key} 已终止")
+
+            # 4. 清理资源
+            self.running_services.discard(device_key)
+            del self.modbus_servers[device_key]
+            if device_key in self.modbus_contexts:
+                del self.modbus_contexts[device_key]
+
+            return True
+
+        except Exception as e:
+            print(f"关闭服务器失败 {device_key}: {e}")
             return False
 
     def update_meter_context(self, index, slave_context):
@@ -763,44 +838,6 @@ class ModbusManager:
         for device_info in self.ip_devices:
             self.start_modbus_server(device_info)
     
-    def stop_modbus_server(self, device_type, device_idx):
-        """停止指定设备的Modbus服务器（使用StartTcpServer后简化停止流程）"""
-        device_key = f"{device_type}_{device_idx}"
-        
-        try:
-            if device_key in self.modbus_servers:
-                # 对于储能设备，停止Modbus服务器时设置状态为poweroff
-                if device_type == 'storage':
-                    from .network_items import StorageItem
-                    # 查找对应的储能设备并设置状态
-                    for item in self.scene.items():
-                        if isinstance(item, StorageItem) and item.component_index == device_idx:
-                            item.state = 'power_off'
-                            print(f"储能设备 {device_idx} 已设置为poweroff状态")
-                            break
-                #TODO:没有真正停止
-                # 由于StartTcpServer内部管理资源，只需清理引用
-                self.modbus_servers[device_key]
-                
-                # 清理上下文和引用
-                if device_key in self.modbus_contexts:
-                    del self.modbus_contexts[device_key]
-                
-                if device_key in self.modbus_servers:
-                    del self.modbus_servers[device_key]
-                
-                # 从运行服务集合中移除
-                self.running_services.discard(device_key)
-                
-                print(f"已停止Modbus服务器: {device_key}")
-                return True
-            else:
-                print(f"Modbus服务器未运行: {device_key}")
-                return False
-        except Exception as e:
-            print(f"停止Modbus服务器失败 {device_key}: {e}")
-            return False
-    
     def stop_all_modbus_servers(self):
         """停止所有Modbus服务器 - 增强内存清理"""
         try:
@@ -809,7 +846,7 @@ class ModbusManager:
                 device_type, device_idx = device_key.rsplit('_', 1)
                 self.stop_modbus_server(device_type, int(device_idx))
             
-            # 清理所有集合
+            # 防御性清理所有集合（即使单个停止过程中出错，也能确保资源被释放）
             self.modbus_servers.clear()
             self.modbus_contexts.clear()
             self.running_services.clear()
@@ -817,22 +854,11 @@ class ModbusManager:
             # 清空IP设备列表，避免后续更新尝试
             self.ip_devices.clear()
             
-            # 清理所有缓存
-            # self.clear_all_members()
             print("已停止所有Modbus服务器")
             return True
         except Exception as e:
             print(f"停止所有Modbus服务器失败: {e}")
             return False
-
-    def clear_all_members(self):
-        """清空类中所有成员变量"""
-        # 保留基本属性，清空其他所有
-        keep_attrs = ['__class__', '__dict__', '__weakref__']
-        
-        for attr in list(self.__dict__.keys()):
-            if attr not in keep_attrs:
-                delattr(self, attr)
 
     def cleanup(self):
         """完整清理Modbus资源"""
@@ -920,8 +946,16 @@ class ModbusManager:
         return list(self.running_services)
     
     def is_service_running(self, device_type, device_idx):
-        """检查指定设备的服务是否正在运行"""
+        """检查指定设备的服务是否正在运行 - 基于线程实际存活状态"""
         device_key = f"{device_type}_{device_idx}"
+        
+        # 优先检查线程实际存活状态
+        if device_key in self.modbus_servers:
+            server_data = self.modbus_servers[device_key]
+            if 'thread' in server_data and server_data['thread'].is_alive():
+                return True
+        
+        # 保留原有的检查逻辑作为后备
         return device_key in self.running_services
     
     def get_service_count(self):
