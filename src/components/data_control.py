@@ -1169,7 +1169,7 @@ class DataControlManager:
                 p_mw = self.parent_window.sgen_power_spinbox.value()
                 
                 # 光伏设备的功率为负值（发电）
-                self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw'] = -abs(p_mw)
+                self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw'] = abs(p_mw)
                 
                 self.parent_window.statusBar().showMessage(f"已更新光伏设备 {component_idx} 的功率设置: P={p_mw:.2f}MW")
                 print(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW")
