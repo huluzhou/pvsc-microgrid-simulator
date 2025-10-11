@@ -699,10 +699,14 @@ class PropertiesPanel(QWidget):
                         ('load', '负载'),
                         ('gen', '发电机'),
                         ('sgen', '光伏'),
+                        ('ext_grid', '外部电网'),
+                        #
+                        ('storage', '储能设备'),
+                        ('charger', '充电设备'),
+                        #
                         ('shunt', '并联电抗器'),
                         ('ward', 'Ward等值'),
                         ('xward', '扩展Ward等值'),
-                        ('ext_grid', '外部电网')
                     ], 
                     'default': 'bus'
                 },

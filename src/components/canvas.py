@@ -503,89 +503,6 @@ class NetworkCanvas(QGraphicsView):
         connected_type = getattr(connected_item, 'component_type', None)
         connected_index = getattr(connected_item, 'component_index', 0)
         
-        # 获取网络模型中的实际索引
-        actual_index = connected_index
-        if network_model:
-            # 对于不同类型的组件，获取其在网络模型中的实际索引
-            if connected_type == 'static_generator':
-                # 检查静态发电机是否存在
-                if hasattr(network_model.net, 'sgen') and not network_model.net.sgen.empty:
-                    if connected_index < len(network_model.net.sgen)+1:
-                        actual_index = connected_index
-                    else:
-                        print(f"警告：静态发电机索引 {connected_index} 超出范围，使用索引 0")
-                        actual_index = 0
-                else:
-                    print("警告：网络中没有静态发电机，无法创建电表关联")
-                    return
-            elif connected_type == 'load':
-                # 检查负载是否存在
-                if hasattr(network_model.net, 'load') and not network_model.net.load.empty:
-                    if connected_index < len(network_model.net.load)+1:
-                        actual_index = connected_index
-                    else:
-                        print(f"警告：负载索引 {connected_index} 超出范围，使用索引 0")
-                        actual_index = 0
-                else:
-                    print("警告：网络中没有负载，无法创建电表关联")
-                    return
-            elif connected_type == 'gen':
-                # 检查发电机是否存在
-                if hasattr(network_model.net, 'gen') and not network_model.net.gen.empty:
-                    if connected_index < len(network_model.net.gen)+1:
-                        actual_index = connected_index
-                    else:
-                        print(f"警告：发电机索引 {connected_index} 超出范围，使用索引 0")
-                        actual_index = 0
-                else:
-                    print("警告：网络中没有发电机，无法创建电表关联")
-                    return
-            elif connected_type == 'bus':
-                # 检查母线是否存在
-                if hasattr(network_model.net, 'bus') and not network_model.net.bus.empty:
-                    if connected_index < len(network_model.net.bus)+1:
-                        actual_index = connected_index
-                    else:
-                        print(f"警告：母线索引 {connected_index} 超出范围，使用索引 0")
-                        actual_index = 0
-                else:
-                    print("警告：网络中没有母线，无法创建电表关联")
-                    return
-            elif connected_type == 'transformer':
-                # 检查变压器是否存在
-                if hasattr(network_model.net, 'trafo') and not network_model.net.trafo.empty:
-                    if connected_index < len(network_model.net.trafo)+1:
-                        actual_index = connected_index
-                    else:
-                        print(f"警告：变压器索引 {connected_index} 超出范围，使用索引 0")
-                        actual_index = 0
-                else:
-                    print("警告：网络中没有变压器，无法创建电表关联")
-                    return
-            elif connected_type == 'line':
-                # 检查线路是否存在
-                if hasattr(network_model.net, 'line') and not network_model.net.line.empty:
-                    if connected_index < len(network_model.net.line):
-                        actual_index = connected_index
-                    else:
-                        print(f"警告：线路索引 {connected_index} 超出范围，使用索引 0")
-                        actual_index = 0
-                else:
-                    print("警告：网络中没有线路，无法创建电表关联")
-                    return
-            elif connected_type == 'external_grid':
-                # 检查外部电网是否存在
-                if hasattr(network_model.net, 'ext_grid') and not network_model.net.ext_grid.empty:
-                    if connected_index < len(network_model.net.ext_grid) + 1:
-                        actual_index = connected_index
-                    else:
-                        print(f"警告：外部电网索引 {connected_index} 超出范围，使用索引 0")
-                        actual_index = 0
-                else:
-                    print("警告：网络中没有外部电网，无法创建电表关联")
-                    return
-        else:
-            actual_index = connected_index
         
         if not connected_type:
             return
@@ -594,15 +511,20 @@ class NetworkCanvas(QGraphicsView):
         type_mapping = {
             'transformer': 'trafo',
             'static_generator': 'sgen',
-            'external_grid': 'ext_grid'
+            'external_grid': 'ext_grid',
+            'charger':'charger',
+            'storage':'storage'
         }
         
         # 转换组件类型
         element_type = type_mapping.get(connected_type, connected_type)
         
+        # 充电桩是特殊的负载，需要特殊处理
+        if connected_type == 'charger':
+            connected_index -= 1000
         # 更新电表的测量属性
         meter_item.properties['element_type'] = element_type
-        meter_item.properties['element'] = actual_index
+        meter_item.properties['element'] = connected_index
         
         # 根据组件类型和连接点索引设置测量侧
         side = self._determine_measurement_side(connected_item, connected_point_index)
