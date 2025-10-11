@@ -5,8 +5,8 @@
 主窗口组件
 """
 
-from PySide6.QtWidgets import QMainWindow, QDockWidget, QMessageBox
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QMainWindow, QDockWidget, QMessageBox, QProgressDialog
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QAction
 
 from components.canvas import NetworkCanvas
@@ -27,6 +27,77 @@ if FEATURE_SIMULATION:
     from models.network_model import NetworkModel
     from components.globals import network_model 
 # 从globals.py导入全局变量
+
+class DiagnosticThread(QThread):
+    """网络诊断线程类，在后台执行耗时的网络诊断操作"""
+    progress_updated = Signal(int)  # 进度更新信号
+    diagnostic_completed = Signal(bool, str, list)  # 诊断完成信号 (success, error_message, diagnostic_results)
+    error_occurred = Signal(str)  # 错误发生信号
+    
+    def __init__(self, canvas, topology_manager):
+        super().__init__()
+        self.canvas = canvas
+        self.topology_manager = topology_manager
+        self.running = True
+    
+    def run(self):
+        """线程运行函数，执行网络诊断操作"""
+        global network_model
+        try:
+            # 初始化进度
+            self.progress_updated.emit(10)
+            
+            # 创建网络模型
+            network_model = NetworkModel()
+            self.progress_updated.emit(20)
+            
+            # 从网络项创建模型
+            if not network_model.create_from_network_items(self.canvas):
+                self.diagnostic_completed.emit(False, "创建网络模型失败，请检查电网组件。", None)
+                return
+            self.progress_updated.emit(40)
+            
+            # 验证IP和端口唯一性
+            is_valid, error_msg = self.topology_manager.validate_ip_port_uniqueness(self.canvas.scene, None)
+            if not is_valid:
+                self.diagnostic_completed.emit(False, f"IP和端口不唯一：{error_msg}", None)
+                return
+            self.progress_updated.emit(60)
+            
+            # 使用pandapower内置诊断函数
+            diagnostic_results = []
+            
+            try:
+                # 运行诊断检查
+                diag_report = pp.diagnostic(network_model.net)
+                
+                # 解析诊断报告
+                if diag_report:
+                    diagnostic_results.extend(diag_report)
+                    
+            except Exception as e:
+                # 如果pandapower诊断模块不可用或发生错误，添加错误信息
+                diagnostic_results.append(f"警告：诊断过程中发生错误：{str(e)}")
+            
+            self.progress_updated.emit(80)
+            
+            self.progress_updated.emit(90)
+            
+            self.progress_updated.emit(95)
+            
+            # 诊断完成
+            if self.running:
+                self.progress_updated.emit(100)
+                self.diagnostic_completed.emit(True, None, diagnostic_results)
+                
+        except Exception as e:
+            if self.running:
+                self.error_occurred.emit(str(e))
+    
+    def stop(self):
+        """停止诊断线程"""
+        self.running = False
+        self.wait(1000)  # 等待线程结束，最多等待1秒
 
 class MainWindow(QMainWindow):
     """主窗口类"""
@@ -266,22 +337,51 @@ class MainWindow(QMainWindow):
     
     @conditional_compile(FEATURE_SIMULATION)
     def diagnostic_network(self):
-        try:
-            global network_model
-            network_model = NetworkModel()
-            if not network_model.create_from_network_items(self.canvas):
-                QMessageBox.warning(self, "网络诊断", "创建网络模型失败，请检查电网组件。")
-                return
-            is_valid, error_msg = self.topology_manager.validate_ip_port_uniqueness(self.canvas.scene, self)
-            if not is_valid:
-                QMessageBox.warning(self, "网络诊断", f"IP和端口不唯一：{error_msg}")
-                return
-            validation_results = self.validate_network()
-            if not validation_results:
-                return
-        except Exception as e:
-            print(f"网络诊断时发生错误：{e}")
-            QMessageBox.critical(self, "错误", f"网络诊断时发生错误：{str(e)}")
+        """启动网络诊断线程"""
+        # 显示进度对话框
+        self.progress_dialog = QProgressDialog("正在进行网络诊断...", "取消", 0, 100, self)
+        self.progress_dialog.setWindowTitle("网络诊断")
+        self.progress_dialog.setWindowModality(Qt.WindowModal)
+        self.progress_dialog.setMinimumDuration(0)
+        self.progress_dialog.setValue(0)
+        
+        # 创建诊断线程
+        self.diagnostic_thread = DiagnosticThread(self.canvas, self.topology_manager)
+        
+        # 连接信号和槽
+        self.diagnostic_thread.progress_updated.connect(self.progress_dialog.setValue)
+        self.diagnostic_thread.diagnostic_completed.connect(self.on_diagnostic_completed)
+        self.diagnostic_thread.error_occurred.connect(self.on_diagnostic_error)
+        self.progress_dialog.canceled.connect(self.diagnostic_thread.stop)
+        
+        # 启动线程
+        self.diagnostic_thread.start()
+        
+        # 显示进度对话框
+        self.progress_dialog.exec_()
+    
+    def on_diagnostic_completed(self, success, error_message, diagnostic_results=None):
+        """处理诊断完成事件"""
+        self.progress_dialog.close()
+        
+        if not success:
+            QMessageBox.warning(self, "网络诊断", error_message)
+            return
+        
+        # 显示诊断结果
+        if diagnostic_results:
+            result_text = "\n".join(f"• {result}" for result in diagnostic_results)
+            QMessageBox.warning(self, "网络诊断", 
+                f"网络诊断发现以下问题：\n\n{result_text}\n\n建议修复后再进入仿真模式。")
+            self.network_is_valid = False
+        else:
+            self.network_is_valid = True
+            QMessageBox.information(self, "网络诊断", "网络诊断通过！")
+    
+    def on_diagnostic_error(self, error_message):
+        """处理诊断错误事件"""
+        self.progress_dialog.close()
+        QMessageBox.critical(self, "错误", f"网络诊断时发生错误：{error_message}")
         
     @conditional_compile(FEATURE_SIMULATION)    
     def validate_network(self):
