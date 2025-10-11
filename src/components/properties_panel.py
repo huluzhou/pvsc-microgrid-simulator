@@ -31,7 +31,7 @@ class PropertiesPanel(QWidget):
         layout.setSpacing(10)
         
         # 设置最小宽度，确保属性面板有足够的显示空间
-        self.setMinimumWidth(280)
+        self.setMinimumWidth(350)
         
         # 标题
         title_label = QLabel("组件属性")
@@ -756,7 +756,7 @@ class PropertiesPanel(QWidget):
         self.custom_fields_container = QWidget()
         self.custom_fields_layout = QVBoxLayout(self.custom_fields_container)
         self.custom_fields_layout.setAlignment(Qt.AlignTop)
-        self.custom_fields_layout.setSpacing(5)
+        self.custom_fields_layout.setSpacing(0)
         
         self.custom_fields_scroll.setWidget(self.custom_fields_container)
         config_layout.addWidget(self.custom_fields_scroll)
@@ -796,7 +796,9 @@ class PropertiesPanel(QWidget):
         """创建一个自定义字段的输入项"""
         # 创建水平布局来放置字段名、字段值和删除按钮
         field_layout = QHBoxLayout()
-        field_layout.setSpacing(5)
+        field_layout.setSpacing(0)
+        field_layout.setAlignment(Qt.AlignLeft)
+        field_layout.setContentsMargins(0, 0, 0, 0)  # 设置布局内容边距为0，使纵向更紧密
         
         # 字段名输入框
         name_edit = QLineEdit(field_name)
@@ -811,14 +813,15 @@ class PropertiesPanel(QWidget):
         field_layout.addWidget(value_edit, 1)  # 让值输入框占据剩余空间
         
         # 删除按钮
-        delete_button = QPushButton("-")
-        delete_button.setMaximumWidth(25)
+        delete_button = QPushButton("删除")
+        delete_button.setMinimumWidth(50)  # 增加最小宽度，确保文本显示完整
         delete_button.clicked.connect(lambda: self._remove_custom_field(field_layout))
         field_layout.addWidget(delete_button)
         
         # 创建一个容器部件来容纳这个布局
         field_widget = QWidget()
         field_widget.setLayout(field_layout)
+        field_widget.setStyleSheet("margin: 0px; padding: 0px;")  # 移除部件的外边距和内边距
         
         # 添加到自定义字段容器
         self.custom_fields_layout.addWidget(field_widget)
