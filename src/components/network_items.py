@@ -618,7 +618,8 @@ class StorageItem(BaseNetworkItem):
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
         # 动态生成名称
-        component_name = f"Storage {self.component_index}"
+        component_name = f"Storage_{self.component_index}"
+        component_sn = f"TESAR100230HT00CN23091300{self.component_index}"
         self.properties = {
             "name": component_name,  # 名称
             "index": self.component_index,  # 组件索引
@@ -628,7 +629,7 @@ class StorageItem(BaseNetworkItem):
             "max_e_mwh": 1.0,  # 最大储能容量
             "soc_percent": 50.0,  # 荷电状态百分比
             "bus": None,  # 连接的母线
-            "sn": component_name,  # 序列号
+            "sn": component_sn,  # 序列号
             "brand": "",  # 品牌
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{501 + self.component_index}",
@@ -710,7 +711,8 @@ class ChargerItem(BaseNetworkItem):
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
         # 动态生成名称
-        component_name = f"Charger {self.component_index}"
+        component_name = f"Charger_{self.component_index}"
+        component_sn = f"TCPWX1201K0DY20CN23091400{self.component_index}"
         self.properties = {
             "index": self.component_index + 1000,  # 组件索引
             "geodata": (0, 0),
@@ -719,7 +721,7 @@ class ChargerItem(BaseNetworkItem):
             "efficiency": 0.95,  # 充电效率
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
-            "sn": component_name,  # 序列号
+            "sn": component_sn,  # 序列号
             "brand": "",  # 品牌
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{701 + self.component_index}",
@@ -1008,7 +1010,8 @@ class StaticGeneratorItem(BaseNetworkItem):
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
         # 动态生成名称
-        component_name = f"Static Generator {self.component_index}"
+        component_name = f"Sgen_{self.component_index}"
+        component_sn = f"TH50KBT000A22080620{self.component_index}"
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
@@ -1030,7 +1033,7 @@ class StaticGeneratorItem(BaseNetworkItem):
             "in_service": True,  # 投入运行
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
-            "sn": component_name,  # 序列号
+            "sn": component_sn,  # 序列号
             "brand": "",  # 品牌
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{601 + self.component_index}",
@@ -1069,7 +1072,8 @@ class MeterItem(BaseNetworkItem):
         # 在设置component_type后分配索引
         self.component_index = self._get_next_index()
         # 动态生成名称
-        component_name = f"Meter {self.component_index}"
+        component_name = f"Meter_{self.component_index}"
+        component_sn = f"TMEAA380250EI00CN23091410{self.component_index}"
         
         # 初始化属性
         self.properties = {
@@ -1083,7 +1087,7 @@ class MeterItem(BaseNetworkItem):
             "side": None,  # 测量侧
             "in_service": True,  # 投入运行
             "name": component_name,  # 名称
-            "sn": component_name,  # 序列号
+            "sn": component_sn,  # 序列号
             "brand": "",  # 品牌
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{402 + self.component_index}",
