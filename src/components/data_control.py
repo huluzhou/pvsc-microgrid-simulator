@@ -8,8 +8,8 @@ from PySide6.QtWidgets import (
     QMessageBox, QComboBox
 )
 from PySide6.QtCore import Qt
-from pandas.core.frame import com
 from .data_generators import DataGeneratorManager
+from .globals import network_items
 
 
 class DataControlManager:
@@ -22,6 +22,120 @@ class DataControlManager:
         # 连接储能功率变化信号
         if hasattr(parent_window, 'storage_power_changed'):
             parent_window.storage_power_changed.connect(self.on_storage_power_updated)
+            
+    def on_device_power_on(self):
+        """控制当前设备上电"""
+        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+            QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
+            return
+            
+        device_type = self.parent_window.current_component_type
+        device_idx = self.parent_window.current_component_idx
+        
+        # 获取modbus_manager
+        modbus_manager = getattr(self.parent_window, 'modbus_manager', None)
+        if not modbus_manager:
+            QMessageBox.warning(self.parent_window, "警告", "Modbus管理器未初始化")
+            return
+            
+        # 从全局变量network_items获取设备信息
+        component_type_map = {
+            'sgen': 'static_generator',
+            'load': 'load',
+            'storage': 'storage',
+            'charger': 'charger'
+        }
+        
+        component_type_key = component_type_map.get(device_type)
+        if not component_type_key:
+            QMessageBox.warning(self.parent_window, "警告", f"不支持的设备类型: {device_type}")
+            return
+            
+        # 检查设备是否存在于network_items中
+        if component_type_key not in network_items or device_idx not in network_items[component_type_key]:
+            QMessageBox.warning(self.parent_window, "警告", f"设备 {device_type} {device_idx} 不存在")
+            return
+            
+        # 获取设备项
+        device_item = network_items[component_type_key][device_idx]
+        properties = getattr(device_item, 'properties', {})
+        
+        # 构建设备信息
+        device_info = {
+            'type': device_type,
+            'index': device_idx,
+            'name': properties.get('component_name', f"{device_type}_{device_idx}"),
+            'sn': properties.get('sn', None),
+            'ip': properties.get('ip', None),
+            'port': properties.get('port', 502 + device_idx),
+            'p_mw': properties.get('p_mw', 0.0),
+            'q_mvar': properties.get('q_mvar', 0.0),
+            'sn_mva': properties.get('sn_mva', 0.0),
+            'max_e_mwh': properties.get('max_e_mwh', 1.0)  # 对储能设备有意义
+        }
+            
+        # 检查IP是否存在
+        if not device_info['ip']:
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 缺少IP地址，上电失败")
+            return
+            
+        # 启动Modbus服务器（上电）
+        result = modbus_manager.start_modbus_server(device_info)
+        if result:
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            self.parent_window.statusBar().showMessage(f"已成功启动{device_type_name}设备 {device_idx} 的Modbus服务器")
+            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已上电")
+            
+        else:
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            self.parent_window.statusBar().showMessage(f"启动{device_type_name}设备 {device_idx} 的Modbus服务器失败")
+            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 上电失败")
+            
+    def on_device_power_off(self):
+        """控制当前设备下电"""
+        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+            QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
+            return
+            
+        device_type = self.parent_window.current_component_type
+        device_idx = self.parent_window.current_component_idx
+        
+        # 从全局变量network_items获取设备信息
+        component_type_map = {
+            'sgen': 'static_generator',
+            'load': 'load',
+            'storage': 'storage',
+            'charger': 'charger'
+        }
+        
+        component_type_key = component_type_map.get(device_type)
+        if not component_type_key:
+            QMessageBox.warning(self.parent_window, "警告", f"不支持的设备类型: {device_type}")
+            return
+            
+        # 检查设备是否存在于network_items中
+        if component_type_key not in network_items or device_idx not in network_items[component_type_key]:
+            QMessageBox.warning(self.parent_window, "警告", f"设备 {device_type} {device_idx} 不存在")
+            return
+        
+        # 获取modbus_manager
+        modbus_manager = getattr(self.parent_window, 'modbus_manager', None)
+        if not modbus_manager:
+            QMessageBox.warning(self.parent_window, "警告", "Modbus管理器未初始化")
+            return
+            
+        # 停止Modbus服务器（下电）
+        result = modbus_manager.stop_modbus_server(component_type_key, device_idx)
+        if result:
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            self.parent_window.statusBar().showMessage(f"已成功停止{device_type_name}设备 {device_idx} 的Modbus服务器")
+            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已下电")
+            self._toggle_device_data_generation(0, device_type)
+        else:
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            self.parent_window.statusBar().showMessage(f"停止{device_type_name}设备 {device_idx} 的Modbus服务器失败")
+            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 下电失败")
         
         
     def on_storage_power_updated(self, device_idx, new_power):
@@ -133,6 +247,18 @@ class DataControlManager:
         device_control_layout.addWidget(self.parent_window.sgen_enable_generation_checkbox)
         
         current_device_layout.addLayout(device_control_layout)
+        
+        # 设备上电/下电控制
+        power_control_layout = QHBoxLayout()
+        self.parent_window.sgen_power_on_button = QPushButton("设备上电")
+        self.parent_window.sgen_power_on_button.clicked.connect(self.on_device_power_on)
+        self.parent_window.sgen_power_off_button = QPushButton("设备下电")
+        self.parent_window.sgen_power_off_button.clicked.connect(self.on_device_power_off)
+        
+        power_control_layout.addWidget(self.parent_window.sgen_power_on_button)
+        power_control_layout.addWidget(self.parent_window.sgen_power_off_button)
+        current_device_layout.addLayout(power_control_layout)
+        
         layout.addWidget(current_device_group)
         # 光伏主要结果展示
         sgen_result_group = QGroupBox("光伏发电主要结果")
@@ -212,6 +338,18 @@ class DataControlManager:
         device_control_layout.addWidget(self.parent_window.load_enable_generation_checkbox)
         
         current_device_layout.addLayout(device_control_layout)
+        
+        # 设备上电/下电控制
+        power_control_layout = QHBoxLayout()
+        self.parent_window.load_power_on_button = QPushButton("设备上电")
+        self.parent_window.load_power_on_button.clicked.connect(self.on_device_power_on)
+        self.parent_window.load_power_off_button = QPushButton("设备下电")
+        self.parent_window.load_power_off_button.clicked.connect(self.on_device_power_off)
+        
+        power_control_layout.addWidget(self.parent_window.load_power_on_button)
+        power_control_layout.addWidget(self.parent_window.load_power_off_button)
+        current_device_layout.addLayout(power_control_layout)
+        
         layout.addWidget(current_device_group)
         
         # 负载主要结果展示
@@ -308,6 +446,17 @@ class DataControlManager:
         self.parent_window.storage_current_device_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
         current_device_layout.addWidget(self.parent_window.storage_current_device_label)
         
+        # 设备上电/下电控制
+        power_control_layout = QHBoxLayout()
+        self.parent_window.storage_power_on_button = QPushButton("设备上电")
+        self.parent_window.storage_power_on_button.clicked.connect(self.on_device_power_on)
+        self.parent_window.storage_power_off_button = QPushButton("设备下电")
+        self.parent_window.storage_power_off_button.clicked.connect(self.on_device_power_off)
+        
+        power_control_layout.addWidget(self.parent_window.storage_power_on_button)
+        power_control_layout.addWidget(self.parent_window.storage_power_off_button)
+        current_device_layout.addLayout(power_control_layout)
+        
         layout.addWidget(current_device_group)
         
         # 储能主要结果展示
@@ -398,6 +547,17 @@ class DataControlManager:
         self.parent_window.charger_current_device_label = QLabel("未选择充电桩设备")
         self.parent_window.charger_current_device_label.setStyleSheet("font-weight: bold; color: #9C27B0;")
         current_device_layout.addWidget(self.parent_window.charger_current_device_label)
+        
+        # 设备上电/下电控制
+        power_control_layout = QHBoxLayout()
+        self.parent_window.charger_power_on_button = QPushButton("设备上电")
+        self.parent_window.charger_power_on_button.clicked.connect(self.on_device_power_on)
+        self.parent_window.charger_power_off_button = QPushButton("设备下电")
+        self.parent_window.charger_power_off_button.clicked.connect(self.on_device_power_off)
+        
+        power_control_layout.addWidget(self.parent_window.charger_power_on_button)
+        power_control_layout.addWidget(self.parent_window.charger_power_off_button)
+        current_device_layout.addLayout(power_control_layout)
         
         layout.addWidget(current_device_group)
         
