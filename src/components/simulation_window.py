@@ -72,12 +72,13 @@ class SimulationWindow(QMainWindow):
         # Modbus服务器管理器
         self.modbus_manager = ModbusManager(self.network_model, self.scene)
         
-        # 初始化UI组件管理器
-        self.ui_manager = UIComponentManager(self)
-        
         # 初始化数据控制管理器
         from .data_control import DataControlManager
         self.data_control_manager = DataControlManager(self)
+
+        # 初始化UI组件管理器
+        self.ui_manager = UIComponentManager(self)
+        
         
         # 初始化功率监控管理器
         self.power_monitor = PowerMonitor(self)
@@ -107,7 +108,7 @@ class SimulationWindow(QMainWindow):
     def init_ui(self):
         """初始化用户界面"""
         self.setWindowTitle("仿真模式 - PandaPower 仿真工具")
-        self.setMinimumSize(1200, 800)
+        self.setMinimumSize(1500, 800)
         
         # 创建中央功率曲线区域
         self.central_chart_widget = QWidget()
@@ -125,21 +126,46 @@ class SimulationWindow(QMainWindow):
         self.device_tree_dock.setMinimumWidth(250)
         self.device_tree_dock.setMaximumWidth(400)
         self.ui_manager.create_device_tree_panel(self.device_tree_dock)
+        # 添加dock widget到主窗口
         self.addDockWidget(Qt.LeftDockWidgetArea, self.device_tree_dock)
         
-        # 创建右侧仿真结果dockwidget
-        self.simulation_results_dock = QDockWidget("仿真结果", self)
-        self.simulation_results_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
-        self.simulation_results_dock.setMinimumWidth(300)
-        self.simulation_results_dock.setMaximumWidth(500)
-        self.ui_manager.create_simulation_results_panel(self.simulation_results_dock)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.simulation_results_dock)
         
-        # 通过数据控制管理器创建数据生成选项卡
-        self.data_control_manager.create_sgen_data_generation_tab()
-        self.data_control_manager.create_load_data_generation_tab()
-        self.data_control_manager.create_storage_data_generation_tab()
-        self.data_control_manager.create_charger_data_generation_tab()
+        # 创建四个设备类型的dockwidget
+        # 创建光伏设备dockwidget
+        self.sgen_dock = QDockWidget("光伏设备数据", self)
+        self.sgen_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.sgen_dock.setMinimumWidth(300)
+        self.sgen_dock.setMaximumWidth(500)
+        self.ui_manager.create_sgen_data_panel(self.sgen_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.sgen_dock)
+        self.sgen_dock.hide()  # 初始隐藏
+        
+        # 负载设备dockwidget
+        self.load_dock = QDockWidget("负载设备数据", self)
+        self.load_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.load_dock.setMinimumWidth(300)
+        self.load_dock.setMaximumWidth(500)
+        self.ui_manager.create_load_data_panel(self.load_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.load_dock)
+        self.load_dock.hide()  # 初始隐藏
+        
+        # 储能设备dockwidget
+        self.storage_dock = QDockWidget("储能设备数据", self)
+        self.storage_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.storage_dock.setMinimumWidth(300)
+        self.storage_dock.setMaximumWidth(500)
+        self.ui_manager.create_storage_data_panel(self.storage_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.storage_dock)
+        self.storage_dock.hide()  # 初始隐藏
+        
+        # 充电桩设备dockwidget
+        self.charger_dock = QDockWidget("充电桩设备数据", self)
+        self.charger_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.charger_dock.setMinimumWidth(300)
+        self.charger_dock.setMaximumWidth(500)
+        self.ui_manager.create_charger_data_panel(self.charger_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.charger_dock)
+        self.charger_dock.hide()  # 初始隐藏
         
         # 创建状态栏
         self.statusBar().showMessage("仿真模式已就绪")
@@ -147,30 +173,6 @@ class SimulationWindow(QMainWindow):
         # 初始化功率监控的UI组件引用
         self.power_monitor.initialize_ui_components()
         
-    def remove_all_device_tabs(self):
-        """移除所有设备专用选项卡"""
-        # 移除光伏选项卡
-        sgen_tab_index = self.results_tabs.indexOf(self.sgen_data_tab)
-        if sgen_tab_index != -1:
-            self.results_tabs.removeTab(sgen_tab_index)
-            
-        # 移除负载选项卡
-        load_tab_index = self.results_tabs.indexOf(self.load_data_tab)
-        if load_tab_index != -1:
-            self.results_tabs.removeTab(load_tab_index)
-            
-        # 移除储能选项卡
-        storage_tab_index = self.results_tabs.indexOf(self.storage_data_tab)
-        if storage_tab_index != -1:
-            self.results_tabs.removeTab(storage_tab_index)
-            
-        # 移除充电桩选项卡
-        charger_tab_index = self.results_tabs.indexOf(self.charger_data_tab)
-        if charger_tab_index != -1:
-            self.results_tabs.removeTab(charger_tab_index)
-    
-    
-    # 删除潮流结果和短路结果选项卡创建方法
         
     def load_network_data(self):
         """加载网络数据到设备树"""
@@ -267,41 +269,49 @@ class SimulationWindow(QMainWindow):
         device_key = f"{self.selected_device_type}_{self.selected_device_id}"
         self.current_device_monitor.setChecked(device_key in self.power_monitor.monitored_devices)
         
+        # 隐藏所有设备类型的dockwidget
+        self.sgen_dock.hide()
+        self.load_dock.hide()
+        self.storage_dock.hide()
+        self.charger_dock.hide()
+        
+        # 根据设备类型显示对应的dockwidget
+        if component_type == 'sgen':
+            # 显示光伏数据生成面板dockwidget
+            self.sgen_dock.show()
+        elif component_type == 'load':  # 普通负载
+            self.load_dock.show()
+        elif component_type == 'charger' :  # 充电桩
+            self.charger_dock.show()
+        elif component_type == 'storage':
+            self.storage_dock.show()
+        
         # 显示组件详情
         self.show_component_details(component_type, component_idx)
+        
+        # 更新功率监控
+        # self.power_monitor.update_monitored_devices_list()
         
     def show_component_details(self, component_type, component_idx):
         """显示组件详细信息"""
         if not self.network_model:
             return
             
-        # 检查是否需要更新选项卡（只有在设备类型改变时才重新组织选项卡）
-        need_update_tabs = not hasattr(self, 'current_component_type') or self.current_component_type != component_type
-        
         # 记录当前显示的组件信息，用于自动更新
         self.current_component_type = component_type
         self.current_component_idx = component_idx
         
-        # 只有在设备类型改变时才重新组织选项卡
-        if need_update_tabs:
-            # 首先移除所有设备专用选项卡
-            self.remove_all_device_tabs()
         
-        # 根据设备类型添加对应的专用选项卡
+        # 根据设备类型更新设备信息
         if component_type == 'sgen':
-            self.results_tabs.addTab(self.sgen_data_tab, "光伏控制")
             self.data_control_manager.update_sgen_device_info(component_type, component_idx)
         elif component_type == 'load':
-            self.results_tabs.addTab(self.load_data_tab, "负载控制")
             self.data_control_manager.update_load_device_info(component_type, component_idx)
         elif component_type == 'charger':
-            self.results_tabs.addTab(self.charger_data_tab, "充电桩控制")
             #根据额定功率设置spinbox的范围
             self.data_control_manager.update_charger_manual_controls_from_device()
             self.data_control_manager.update_charger_device_info(component_type, component_idx)
-            
         elif component_type == 'storage':
-            self.results_tabs.addTab(self.storage_data_tab, "储能控制")
             self.data_control_manager.update_storage_manual_controls_from_device()
             self.data_control_manager.update_storage_device_info(component_type, component_idx)
             
@@ -1215,6 +1225,8 @@ class SimulationWindow(QMainWindow):
         if hasattr(self, '_meter_cache'):
             delattr(self, '_meter_cache')
 
+
+    
     def update_device_tree_status(self):
         """更新设备树状态"""
         try:
@@ -1310,7 +1322,6 @@ class SimulationWindow(QMainWindow):
             if hasattr(self, '_is_calculating') and self._is_calculating:
                 return
             self._is_calculating = True
-                
             # 缓存网络模型引用，减少重复访问
             network_model = self.network_model
             net = network_model.net
@@ -1329,7 +1340,6 @@ class SimulationWindow(QMainWindow):
             # 批量更新Modbus参数
             logger.info("批量更新Modbus参数")
             self._update_para_from_modbus_batch()
-            
             # 运行潮流计算
             try:
                 pp.runpp(net)

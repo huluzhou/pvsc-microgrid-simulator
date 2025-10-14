@@ -7,9 +7,24 @@ UI组件管理模块
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
-    QTreeWidget, QLabel, QGroupBox, QPushButton, 
-    QCheckBox, QSpinBox, QTabWidget, QTableWidget, QLineEdit, QComboBox, QSizePolicy
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QSplitter,
+    QTreeWidget,
+    QLabel,
+    QGroupBox,
+    QPushButton,
+    QCheckBox,
+    QSpinBox,
+    QTabWidget,
+    QTableWidget,
+    QLineEdit,
+    QComboBox,
+    QSizePolicy,
+    QFormLayout,
+    QDoubleSpinBox,
+    QSlider,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -202,35 +217,451 @@ class UIComponentManager:
         
         parent.addWidget(main_splitter)
         
-    def create_simulation_results_panel(self, parent):
-        """创建右侧仿真结果面板"""
-        # 创建结果面板容器
-        results_widget = QWidget()
-        results_layout = QVBoxLayout(results_widget)
+            
+    def create_sgen_data_panel(self, parent):
+        """创建光伏设备数据面板"""
+        # 使用data_control_manager创建设备数据生成面板
+        sgen_widget = QWidget()
+        sgen_layout = QVBoxLayout(sgen_widget)
+
+        sgen_title = QLabel("光伏设备数据")
+        sgen_title.setFont(QFont("Arial", 12, QFont.Bold))
+        sgen_layout.addWidget(sgen_title)
+
+        current_device_group = QGroupBox("当前设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+
+        sgen_current_device_label = QLabel("未选择光伏设备")
+        sgen_current_device_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        current_device_layout.addWidget(sgen_current_device_label)
+        self.parent_window.sgen_current_device_label = sgen_current_device_label
+        # 设备数据生成控制
+        device_control_layout = QHBoxLayout()
+        sgen_enable_generation_checkbox = QCheckBox("启用设备数据生成")
+        sgen_enable_generation_checkbox.stateChanged.connect(self.parent_window.data_control_manager.toggle_sgen_data_generation)
+        device_control_layout.addWidget(sgen_enable_generation_checkbox)
+        current_device_layout.addLayout(device_control_layout)
+        self.parent_window.sgen_enable_generation_checkbox = sgen_enable_generation_checkbox
+         # 设备上电/下电控制
+        power_control_layout = QHBoxLayout()
+        sgen_power_on_button = QPushButton("设备上电")
+        sgen_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
+        sgen_power_off_button = QPushButton("设备下电")
+        sgen_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
+        self.parent_window.sgen_power_on_button = sgen_power_on_button
+        self.parent_window.sgen_power_off_button = sgen_power_off_button
         
-        # 标题
-        results_title = QLabel("仿真结果")
-        results_title.setFont(QFont("Arial", 12, QFont.Bold))
-        results_layout.addWidget(results_title)
+        power_control_layout.addWidget(sgen_power_on_button)
+        power_control_layout.addWidget(sgen_power_off_button)
+        current_device_layout.addLayout(power_control_layout)
+
+        sgen_layout.addWidget(current_device_group)
+
+         # 光伏主要结果展示
+        sgen_result_group = QGroupBox("光伏发电主要结果")
+        sgen_result_layout = QFormLayout(sgen_result_group)
         
-        # 创建选项卡
-        self.parent_window.results_tabs = QTabWidget()
+        # 有功功率显示
+        sgen_active_power_label = QLabel("-- MW")
+        sgen_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        sgen_result_layout.addRow("有功功率:", sgen_active_power_label)
+        self.parent_window.sgen_active_power_label = sgen_active_power_label
+        # 添加到主布局
+        sgen_layout.addWidget(sgen_result_group)
+
+        # 光伏专用参数设置
+        sgen_params_group = QGroupBox("光伏发电参数设置")
+        sgen_params_layout = QFormLayout(sgen_params_group)
         
-        # # 组件详情选项卡
-        # self.parent_window.component_details_tab = QWidget()
-        # self.create_component_details_tab()
-        # self.parent_window.results_tabs.addTab(self.parent_window.component_details_tab, "组件详情")
+        # 变化幅度
+        sgen_variation_spinbox = QDoubleSpinBox()
+        sgen_variation_spinbox.setRange(0.0, 50.0)
+        sgen_variation_spinbox.setValue(15.0)
+        sgen_variation_spinbox.setSuffix("%")
+        sgen_variation_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_variation_changed)
+        sgen_params_layout.addRow("功率变化幅度:", sgen_variation_spinbox)
+        self.parent_window.sgen_variation_spinbox = sgen_variation_spinbox
+
+        sgen_layout.addWidget(sgen_params_group)
         
-        # 为不同设备类型创建独立的数据生成控制选项卡
-        self.parent_window.sgen_data_tab = QWidget()  # 光伏设备选项卡
-        self.parent_window.load_data_tab = QWidget()  # 负载设备选项卡
-        self.parent_window.storage_data_tab = QWidget()  # 储能设备选项卡
-        self.parent_window.charger_data_tab = QWidget()  # 充电桩设备选项卡
+        # 光伏手动控制面板
+        sgen_manual_group = QGroupBox("光伏发电手动控制面板")
+        sgen_manual_layout = QFormLayout(sgen_manual_group)
         
-        results_layout.addWidget(self.parent_window.results_tabs)
+        # 光伏功率控制
+        sgen_power_slider = QSlider(Qt.Horizontal)
+        sgen_power_slider.setRange(0, 100)  # 0-1MW
+        sgen_power_slider.setValue(50)
+        sgen_power_slider.setMinimumWidth(100)
+        sgen_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_power_changed)
+        self.parent_window.sgen_power_slider = sgen_power_slider
         
-        parent.setWidget(results_widget)
+        sgen_power_spinbox = QDoubleSpinBox()
+        sgen_power_spinbox.setRange(0.0, 1.0)
+        sgen_power_spinbox.setValue(0.5)
+        sgen_power_spinbox.setSuffix(" MW")
+        sgen_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_power_spinbox_changed)
+        self.parent_window.sgen_power_spinbox = sgen_power_spinbox
         
+        sgen_power_layout = QHBoxLayout()
+        sgen_power_layout.addWidget(sgen_power_slider)
+        sgen_power_layout.addWidget(sgen_power_spinbox)
+        sgen_manual_layout.addRow("发电功率:", sgen_power_layout)
+        
+        # 应用按钮
+        sgen_apply_button = QPushButton("应用光伏设置")
+        sgen_apply_button.clicked.connect(self.parent_window.data_control_manager.apply_sgen_settings)
+        sgen_manual_layout.addRow("", sgen_apply_button)
+        self.parent_window.sgen_apply_button = sgen_apply_button
+        
+        sgen_layout.addWidget(sgen_manual_group)
+        
+        sgen_layout.addStretch()
+
+
+        parent.setWidget(sgen_widget)
+        
+    def create_load_data_panel(self, parent):
+        """创建负载设备数据面板"""
+        load_widget = QWidget()
+        load_layout = QVBoxLayout(load_widget)
+
+        load_title = QLabel("负载设备数据")
+        load_title.setFont(QFont("Arial", 12, QFont.Bold))
+        load_layout.addWidget(load_title)
+
+        current_device_group = QGroupBox("当前设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+
+        load_current_device_label = QLabel("未选择负载设备")
+        load_current_device_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        current_device_layout.addWidget(load_current_device_label)
+        self.parent_window.load_current_device_label = load_current_device_label
+
+        # 设备数据生成控制
+        device_control_layout = QHBoxLayout()
+        load_enable_generation_checkbox = QCheckBox("启用设备数据生成")
+        load_enable_generation_checkbox.stateChanged.connect(self.parent_window.data_control_manager.toggle_load_data_generation)
+        device_control_layout.addWidget(load_enable_generation_checkbox)
+        self.parent_window.load_enable_generation_checkbox = load_enable_generation_checkbox
+        current_device_layout.addLayout(device_control_layout)
+
+        # 设备上电/下电控制
+        power_control_layout = QHBoxLayout()
+        load_power_on_button = QPushButton("设备上电")
+        load_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
+        load_power_off_button = QPushButton("设备下电")
+        load_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
+        self.parent_window.load_power_on_button = load_power_on_button
+        self.parent_window.load_power_off_button = load_power_off_button
+        
+        
+        power_control_layout.addWidget(load_power_on_button)
+        power_control_layout.addWidget(load_power_off_button)
+        current_device_layout.addLayout(power_control_layout)
+
+        load_layout.addWidget(current_device_group)
+
+        # 负载主要结果展示
+        load_result_group = QGroupBox("负载用电主要结果")
+        load_result_layout = QFormLayout(load_result_group)
+        
+        # 有功功率显示
+        load_active_power_label = QLabel("-- MW")
+        load_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        load_result_layout.addRow("有功功率:", load_active_power_label)
+        self.parent_window.load_active_power_label = load_active_power_label
+        
+        # 添加到主布局
+        load_layout.addWidget(load_result_group)
+
+        # 负载专用参数设置
+        load_params_group = QGroupBox("负载用电参数设置")
+        load_params_layout = QFormLayout(load_params_group)
+        
+        # 变化幅度
+        load_variation_spinbox = QDoubleSpinBox()
+        load_variation_spinbox.setRange(0.0, 50.0)
+        load_variation_spinbox.setValue(15.0)
+        load_variation_spinbox.setSuffix("%")
+        load_variation_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_variation_changed)
+        load_params_layout.addRow("功率变化幅度:", load_variation_spinbox)
+        self.parent_window.load_variation_spinbox = load_variation_spinbox
+        # 负载类型选择
+        load_type_combo = QComboBox()
+        load_type_combo.addItems(["住宅负载", "商业负载", "工业负载"])
+        load_type_combo.currentTextChanged.connect(self.parent_window.data_control_manager.on_load_type_changed)
+        load_params_layout.addRow("负载类型:", load_type_combo)
+        self.parent_window.load_type_combo = load_type_combo
+        
+        load_layout.addWidget(load_params_group)
+        
+        # 负载手动控制面板
+        load_manual_group = QGroupBox("负载用电手动控制面板")
+        load_manual_layout = QFormLayout(load_manual_group)
+        
+        # 负载功率控制
+        load_power_slider = QSlider(Qt.Horizontal)
+        load_power_slider.setRange(0, 100)  # 0-1MW
+        load_power_slider.setValue(50)
+        load_power_slider.setMinimumWidth(100)
+        load_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_load_power_changed)
+        self.parent_window.load_power_slider = load_power_slider
+        
+        load_power_spinbox = QDoubleSpinBox()
+        load_power_spinbox.setRange(0.0, 1.0)
+        load_power_spinbox.setValue(0.5)
+        load_power_spinbox.setSuffix(" MW")
+        load_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_load_power_spinbox_changed)
+        self.parent_window.load_power_spinbox = load_power_spinbox
+        
+        load_power_layout = QHBoxLayout()
+        load_power_layout.addWidget(load_power_slider)
+        load_power_layout.addWidget(load_power_spinbox)
+        load_manual_layout.addRow("有功功率:", load_power_layout)
+        
+        # 负载无功功率控制
+        load_reactive_power_slider = QSlider(Qt.Horizontal)
+        load_reactive_power_slider.setRange(0, 50)  # 0-0.5MVar
+        load_reactive_power_slider.setValue(25)
+        load_reactive_power_slider.setMinimumWidth(100)
+        load_reactive_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_load_reactive_power_changed)
+        self.parent_window.load_reactive_power_slider = load_reactive_power_slider
+        
+        load_reactive_power_spinbox = QDoubleSpinBox()
+        load_reactive_power_spinbox.setRange(0.0, 0.5)
+        load_reactive_power_spinbox.setValue(0.25)
+        load_reactive_power_spinbox.setSuffix(" MVar")
+        self.parent_window.load_reactive_power_spinbox = load_reactive_power_spinbox
+        load_reactive_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_load_reactive_power_spinbox_changed)
+        
+        load_reactive_power_layout = QHBoxLayout()
+        load_reactive_power_layout.addWidget(load_reactive_power_slider)
+        load_reactive_power_layout.addWidget(load_reactive_power_spinbox)
+        load_manual_layout.addRow("无功功率:", load_reactive_power_layout)
+        
+        # 应用按钮
+        load_apply_button = QPushButton("应用负载设置")
+        load_apply_button.clicked.connect(self.parent_window.data_control_manager.apply_load_settings)
+        load_manual_layout.addRow("", load_apply_button)
+        self.parent_window.load_apply_button = load_apply_button
+        
+        load_layout.addWidget(load_manual_group)
+        
+        load_layout.addStretch()
+
+        parent.setWidget(load_widget)
+        
+    def create_storage_data_panel(self, parent):
+        """创建储能设备数据面板"""
+        storage_widget = QWidget()
+        storage_layout = QVBoxLayout(storage_widget)
+
+        storage_title = QLabel("储能设备数据")
+        storage_title.setFont(QFont("Arial", 12, QFont.Bold))
+        storage_layout.addWidget(storage_title)
+
+        current_device_group = QGroupBox("当前设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+
+        storage_current_device_label = QLabel("未选择储能设备")
+        storage_current_device_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        current_device_layout.addWidget(storage_current_device_label)
+        self.parent_window.storage_current_device_label = storage_current_device_label
+        
+        # 设备上电/下电控制
+        power_control_layout = QHBoxLayout()
+        storage_power_on_button = QPushButton("设备上电")
+        storage_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
+        storage_power_off_button = QPushButton("设备下电")
+        storage_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
+        self.parent_window.storage_power_on_button = storage_power_on_button
+        self.parent_window.storage_power_off_button = storage_power_off_button
+        
+        
+        power_control_layout.addWidget(storage_power_on_button)
+        power_control_layout.addWidget(storage_power_off_button)
+        current_device_layout.addLayout(power_control_layout)
+
+        storage_layout.addWidget(current_device_group)
+
+        # 储能主要结果展示
+        storage_result_group = QGroupBox("储能运行主要结果")
+        storage_result_layout = QFormLayout(storage_result_group)
+        
+        # 有功功率显示
+        storage_active_power_label = QLabel("-- MW")
+        storage_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        storage_result_layout.addRow("有功功率:", storage_active_power_label)
+        self.parent_window.storage_active_power_label = storage_active_power_label
+
+        # 荷电状态显示
+        storage_soc_label = QLabel("--%")
+        storage_soc_label.setStyleSheet("font-weight: bold; color: #9C27B0;")
+        storage_result_layout.addRow("荷电状态:", storage_soc_label)
+        self.parent_window.storage_soc_label = storage_soc_label
+        
+        # 储能工作状态显示
+        storage_work_status_label = QLabel("--")
+        storage_work_status_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        storage_result_layout.addRow("工作状态:", storage_work_status_label)
+        self.parent_window.storage_work_status_label = storage_work_status_label
+        
+        # 添加到主布局
+        storage_layout.addWidget(storage_result_group)
+
+        # 储能手动控制
+        storage_mode_group = QGroupBox("控制模式切换")
+        storage_mode_layout = QVBoxLayout(storage_mode_group)
+
+        # 控制模式切换
+        control_mode_layout = QHBoxLayout()
+        control_mode_label = QLabel("控制模式：")
+        
+        # 使用复选框代替单选按钮，选中表示启用远程控制
+        storage_enable_remote = QCheckBox("启用远程控制")
+        storage_enable_remote.setChecked(True)  # 默认启用远程控制
+        storage_enable_remote.stateChanged.connect(self.parent_window.data_control_manager.on_storage_control_mode_changed)
+        self.parent_window.storage_enable_remote = storage_enable_remote
+
+        control_mode_layout.addWidget(control_mode_label)
+        control_mode_layout.addWidget(storage_enable_remote)
+        control_mode_layout.addStretch()
+        storage_mode_layout.addLayout(control_mode_layout)
+        
+        storage_layout.addWidget(storage_mode_group)
+        
+        # 手动控制面板
+        storage_manual_group = QGroupBox("储能手动控制")
+        storage_manual_panel_layout = QFormLayout(storage_manual_group)
+        
+        # 设置storage_manual_panel属性引用，确保控制模式切换功能正常工作
+        self.parent_window.storage_manual_panel = storage_manual_group
+        
+        # 有功功率控制（正值为放电，负值为充电）
+        storage_power_slider = QSlider(Qt.Horizontal)
+        storage_power_slider.setRange(-100, 100)  # 滑块范围：-100.0到100.0MW（乘以10）
+        storage_power_slider.setValue(0)
+        storage_power_slider.setMinimumWidth(100)
+        storage_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_storage_power_changed)
+        self.parent_window.storage_power_slider = storage_power_slider
+        
+        storage_power_spinbox = QDoubleSpinBox()
+        storage_power_spinbox.setRange(-1.0, 1.0)
+        storage_power_spinbox.setValue(0.0)
+        storage_power_spinbox.setSuffix(" MW")
+        storage_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_storage_power_spinbox_changed)
+        self.parent_window.storage_power_spinbox = storage_power_spinbox
+        
+        
+        storage_power_layout = QHBoxLayout()
+        storage_power_layout.addWidget(storage_power_slider)
+        storage_power_layout.addWidget(storage_power_spinbox)
+        storage_manual_panel_layout.addRow("功率控制:", storage_power_layout)
+        
+        # 功率说明标签
+        power_info_label = QLabel("提示：正值表示充电（从电网取电），负值表示放电（向电网供电）")
+        power_info_label.setStyleSheet("color: #666; font-size: 12px;")
+        storage_manual_panel_layout.addRow("", power_info_label)
+        
+        # 应用按钮
+        storage_apply_button = QPushButton("应用储能设置")
+        storage_apply_button.clicked.connect(self.parent_window.data_control_manager.apply_storage_settings)
+        storage_manual_panel_layout.addRow("", storage_apply_button)
+        
+        storage_layout.addWidget(storage_manual_group)
+        storage_layout.addStretch()
+        
+        parent.setWidget(storage_widget)
+        
+    def create_charger_data_panel(self, parent):
+        """创建充电桩设备数据面板"""
+        charger_widget = QWidget()
+        charger_layout = QVBoxLayout(charger_widget)
+
+        charger_title = QLabel("充电桩设备数据")
+        charger_title.setFont(QFont("Arial", 12, QFont.Bold))
+        charger_layout.addWidget(charger_title)
+
+        current_device_group = QGroupBox("当前设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+
+        charger_current_device_label = QLabel("未选择充电桩设备")
+        charger_current_device_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        current_device_layout.addWidget(charger_current_device_label)
+        self.parent_window.charger_current_device_label = charger_current_device_label
+
+        # 设备上电/下电控制
+        power_control_layout = QHBoxLayout()
+        charger_power_on_button = QPushButton("设备上电")
+        charger_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
+        charger_power_off_button = QPushButton("设备下电")
+        charger_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
+        self.parent_window.charger_power_on_button = charger_power_on_button
+        self.parent_window.charger_power_off_button = charger_power_off_button
+        
+        
+        power_control_layout.addWidget(charger_power_on_button)
+        power_control_layout.addWidget(charger_power_off_button)
+        current_device_layout.addLayout(power_control_layout)
+
+        charger_layout.addWidget(current_device_group)
+
+        # 充电桩主要结果展示
+        charger_result_group = QGroupBox("充电桩运行主要结果")
+        charger_result_layout = QFormLayout(charger_result_group)
+        
+        # 有功功率显示
+        charger_active_power_label = QLabel("-- kW")
+        charger_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        charger_result_layout.addRow("有功功率:", charger_active_power_label)
+        self.parent_window.charger_active_power_label = charger_active_power_label 
+        
+        
+        # 添加到主布局
+        charger_layout.addWidget(charger_result_group)
+
+        # 充电桩专用参数设置
+        charger_params_group = QGroupBox("充电桩运行参数设置")
+        charger_params_layout = QFormLayout(charger_params_group)
+        
+        # 需求功率设置
+        charger_required_power_slider = QSlider(Qt.Horizontal)
+        charger_required_power_slider.setRange(0, 200)
+        charger_required_power_slider.setValue(50)
+        charger_required_power_slider.setMinimumWidth(100)
+        charger_required_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_charger_required_power_changed)
+        
+        charger_required_power_spinbox = QDoubleSpinBox()
+        charger_required_power_spinbox.setRange(0.0, 200.0)
+        charger_required_power_spinbox.setValue(50.0)
+        charger_required_power_spinbox.setSuffix(" kW")
+        charger_required_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_charger_required_power_spinbox_changed)
+        self.parent_window.charger_required_power_slider = charger_required_power_slider
+        self.parent_window.charger_required_power_spinbox = charger_required_power_spinbox
+        
+        
+        charger_power_layout = QHBoxLayout()
+        charger_power_layout.addWidget(charger_required_power_slider)
+        charger_power_layout.addWidget(charger_required_power_spinbox)
+        charger_params_layout.addRow("需求功率:", charger_power_layout)
+        
+        # 功率限制显示
+        charger_power_limit_label = QLabel("-- kW")
+        charger_power_limit_label.setStyleSheet("background-color: #f0f0f0; color: #333;")
+        charger_params_layout.addRow("功率限制:", charger_power_limit_label)
+        self.parent_window.charger_power_limit_label = charger_power_limit_label 
+        # 应用按钮
+        charger_apply_button = QPushButton("应用充电桩设置")
+        charger_apply_button.clicked.connect(self.parent_window.data_control_manager.apply_charger_settings)
+        charger_params_layout.addRow("", charger_apply_button)
+        
+        charger_layout.addWidget(charger_params_group)
+        
+        charger_layout.addStretch()
+
+        parent.setWidget(charger_widget)
+
     def create_monitor_control_panel(self, parent_layout):
         """创建监控控制面板"""
         # 创建监控控制组
