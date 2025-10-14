@@ -252,7 +252,6 @@ class DataControlManager:
         device_type_map = {
             'load': '负载',
             'sgen': '光伏', 
-            'storage': '储能'
         }
         device_type_name = device_type_map.get(device_type, device_type)
         
@@ -260,14 +259,12 @@ class DataControlManager:
         panel_map = {
             'load': 'load_manual_panel',
             'sgen': 'sgen_manual_panel', 
-            'storage': 'storage_manual_panel'
         }
         
         # 更新方法映射
         update_method_map = {
             'load': self.update_load_manual_controls_from_device,
             'sgen': self.update_sgen_manual_controls_from_device,
-            'storage': self.update_storage_manual_controls_from_device,
             'charger': self.update_charger_manual_controls_from_device,  # 新增充电桩更新方法
         }
         
@@ -480,28 +477,6 @@ class DataControlManager:
         if is_manual:
             self.update_load_manual_controls_from_device()
     
-    def on_storage_mode_changed(self):
-        """储能设备数据生成模式改变时的回调"""
-        is_manual = self.parent_window.storage_manual_mode_radio.isChecked()
-        self.parent_window.storage_manual_panel.setVisible(is_manual)
-        
-        # 更新当前设备的功率值到滑块和输入框
-        if is_manual:
-            self.update_storage_manual_controls_from_device()
-    
-    def on_generation_mode_changed(self):
-        """数据生成模式改变时的回调（保留兼容性）"""
-        is_manual = self.parent_window.manual_mode_radio.isChecked()
-        self.parent_window.manual_control_panel.setVisible(is_manual)
-        
-        # 如果切换到手动模式，停止自动数据生成
-        if is_manual and hasattr(self.parent_window, 'enable_device_generation_checkbox'):
-            if self.parent_window.enable_device_generation_checkbox.isChecked():
-                self.parent_window.enable_device_generation_checkbox.setChecked(False)
-        
-        # 更新当前设备的功率值到滑块和输入框
-        if is_manual:
-            self.update_manual_controls_from_device()
     
     # 手动控制更新方法
     def update_sgen_manual_controls_from_device(self):
@@ -713,83 +688,6 @@ class DataControlManager:
                 
         except Exception as e:
             print(f"更新充电桩设备手动控制值时出错: {e}")
-    
-    def update_manual_controls_from_device(self):
-        """从当前设备更新手动控制组件的值（保留兼容性）"""
-        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
-            return
-            
-        if not self.parent_window.network_model or not hasattr(self.parent_window.network_model, 'net'):
-            return
-            
-        component_type = self.parent_window.current_component_type
-        component_idx = self.parent_window.current_component_idx
-        
-        try:
-            if component_type == 'load':
-                if component_idx < len(self.parent_window.network_model.net.load):
-                    p_mw = self.parent_window.network_model.net.load.loc[component_idx, 'p_mw']
-                    q_mvar = self.parent_window.network_model.net.load.loc[component_idx, 'q_mvar']
-                    
-                    # 获取额定功率，如果不存在则使用默认值1.0
-                    if 'p_mw_rated' in self.parent_window.network_model.net.load.columns:
-                        rated_power = self.parent_window.network_model.net.load.loc[component_idx, 'p_mw_rated']
-                        self.parent_window.base_power_value = abs(rated_power) if rated_power != 0 else 1.0
-                    else:
-                        self.parent_window.base_power_value = 1.0
-                    
-                    if 'q_mvar_rated' in self.parent_window.network_model.net.load.columns:
-                        rated_reactive = self.parent_window.network_model.net.load.loc[component_idx, 'q_mvar_rated']
-                        self.parent_window.base_reactive_power_value = abs(rated_reactive) if rated_reactive != 0 else 1.0
-                    else:
-                        self.parent_window.base_reactive_power_value = 0.0
-                    
-                    # 根据额定功率动态设置滑块和输入框范围（0-150%额定功率）
-                    max_power = self.parent_window.base_power_value * 1.5
-                    max_reactive = self.parent_window.base_reactive_power_value * 1.5
-                    
-                    # 更新专用负载控制组件
-                    if hasattr(self.parent_window, 'load_power_slider'):
-                        self.parent_window.load_power_slider.setRange(0, int(max_power * 100))  # 精确到0.01MW
-                        self.parent_window.load_power_slider.setValue(int(p_mw * 100))
-                    
-                    if hasattr(self.parent_window, 'load_power_spinbox'):
-                        self.parent_window.load_power_spinbox.setRange(0.0, max_power)
-                        self.parent_window.load_power_spinbox.setValue(p_mw)
-                    
-                    if hasattr(self.parent_window, 'load_reactive_power_slider'):
-                        self.parent_window.load_reactive_power_slider.setRange(0, int(max_reactive * 100))
-                        self.parent_window.load_reactive_power_slider.setValue(int(q_mvar * 100))
-                    
-                    if hasattr(self.parent_window, 'load_reactive_power_spinbox'):
-                        self.parent_window.load_reactive_power_spinbox.setRange(0.0, max_reactive)
-                        self.parent_window.load_reactive_power_spinbox.setValue(q_mvar)
-                        
-            elif component_type == 'sgen':
-                if component_idx < len(self.parent_window.network_model.net.sgen):
-                    p_mw = abs(self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw'])
-                    
-                    # 获取额定功率，如果不存在则使用默认值1.0
-                    if 'p_mw_rated' in self.parent_window.network_model.net.sgen.columns:
-                        rated_power = self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw_rated']
-                        self.parent_window.base_power_value = abs(rated_power) if rated_power != 0 else 1.0
-                    else:
-                        self.parent_window.base_power_value = 1.0
-                    
-                    # 根据额定功率动态设置滑块和输入框范围（0-150%额定功率）
-                    max_power = self.parent_window.base_power_value * 1.5
-                    
-                    # 更新专用光伏控制组件
-                    if hasattr(self.parent_window, 'sgen_power_slider'):
-                        self.parent_window.sgen_power_slider.setRange(0, int(max_power * 100))  # 精确到0.01MW
-                        self.parent_window.sgen_power_slider.setValue(int(p_mw * 100))
-                    
-                    if hasattr(self.parent_window, 'sgen_power_spinbox'):
-                        self.parent_window.sgen_power_spinbox.setRange(0.0, max_power)
-                        self.parent_window.sgen_power_spinbox.setValue(p_mw)
-                        
-        except Exception as e:
-            print(f"更新手动控制值时出错: {e}")
     
     
     def on_sgen_power_changed(self, value):

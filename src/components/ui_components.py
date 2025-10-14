@@ -287,6 +287,7 @@ class UIComponentManager:
         # 光伏手动控制面板
         sgen_manual_group = QGroupBox("光伏发电手动控制面板")
         sgen_manual_layout = QFormLayout(sgen_manual_group)
+        self.parent_window.sgen_manual_panel = sgen_manual_group
         
         # 光伏功率控制
         sgen_power_slider = QSlider(Qt.Horizontal)
@@ -399,7 +400,8 @@ class UIComponentManager:
         # 负载手动控制面板
         load_manual_group = QGroupBox("负载用电手动控制面板")
         load_manual_layout = QFormLayout(load_manual_group)
-        
+        self.parent_window.load_manual_panel = load_manual_group
+
         # 负载功率控制
         load_power_slider = QSlider(Qt.Horizontal)
         load_power_slider.setRange(0, 100)  # 0-1MW
@@ -560,7 +562,7 @@ class UIComponentManager:
         storage_manual_panel_layout.addRow("功率控制:", storage_power_layout)
         
         # 功率说明标签
-        power_info_label = QLabel("提示：正值表示充电（从电网取电），负值表示放电（向电网供电）")
+        power_info_label = QLabel("正值充电，负值放电")
         power_info_label.setStyleSheet("color: #666; font-size: 12px;")
         storage_manual_panel_layout.addRow("", power_info_label)
         
