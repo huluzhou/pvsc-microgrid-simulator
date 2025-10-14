@@ -67,17 +67,18 @@ class DiagnosticThread(QThread):
             # 使用pandapower内置诊断函数
             diagnostic_results = []
             
-            try:
-                # 运行诊断检查
-                diag_report = pp.diagnostic(network_model.net)
-                
-                # 解析诊断报告
-                if diag_report:
-                    diagnostic_results.extend(diag_report)
+            if not DEBUG_MODE:
+                try:
+                    # 运行诊断检查
+                    diag_report = pp.diagnostic(network_model.net)
                     
-            except Exception as e:
-                # 如果pandapower诊断模块不可用或发生错误，添加错误信息
-                diagnostic_results.append(f"警告：诊断过程中发生错误：{str(e)}")
+                    # 解析诊断报告
+                    if diag_report:
+                        diagnostic_results.extend(diag_report)
+                        
+                except Exception as e:
+                    # 如果pandapower诊断模块不可用或发生错误，添加错误信息
+                    diagnostic_results.append(f"警告：诊断过程中发生错误：{str(e)}")
             
             self.progress_updated.emit(80)
             
