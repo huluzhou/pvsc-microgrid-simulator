@@ -86,7 +86,7 @@ class UIComponentManager:
         # 自动计算控制面板
         self.create_auto_calculation_panel(tree_layout)
         
-        parent.addWidget(tree_widget)
+        parent.setWidget(tree_widget)
 
     def create_auto_calculation_panel(self, parent_layout):
         """创建自动计算控制面板"""
@@ -229,7 +229,7 @@ class UIComponentManager:
         
         results_layout.addWidget(self.parent_window.results_tabs)
         
-        parent.addWidget(results_widget)
+        parent.setWidget(results_widget)
         
     def create_monitor_control_panel(self, parent_layout):
         """创建监控控制面板"""

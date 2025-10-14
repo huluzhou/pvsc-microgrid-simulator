@@ -7,9 +7,9 @@
 
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QSplitter,
-    QTreeWidgetItem, QMessageBox, QTableWidgetItem
-)
+    QMainWindow, QWidget, QHBoxLayout, QSplitter,QVBoxLayout,
+    QTreeWidgetItem, QMessageBox, QTableWidgetItem, QDockWidget
+  )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 import pandapower as pp
@@ -109,39 +109,37 @@ class SimulationWindow(QMainWindow):
         self.setWindowTitle("仿真模式 - PandaPower 仿真工具")
         self.setMinimumSize(1200, 800)
         
-        # 创建中央部件
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        # 创建主布局
-        main_layout = QHBoxLayout(central_widget)
-        
-        # 创建分割器
-        splitter = QSplitter(Qt.Horizontal)
-        main_layout.addWidget(splitter)
-        
-        # 创建左侧设备树面板
-        self.ui_manager.create_device_tree_panel(splitter)
-        
         # 创建中央功率曲线区域
-        self.ui_manager.create_central_image_area(splitter)
+        self.central_chart_widget = QWidget()
+        layout = QHBoxLayout(self.central_chart_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        # 设置中央区域大小策略
+        self.central_chart_widget.setMinimumSize(600, 400)
+        self.ui_manager.create_central_image_area(layout)
+        self.setCentralWidget(self.central_chart_widget)
         
-        # 创建右侧仿真结果面板
-        self.ui_manager.create_simulation_results_panel(splitter)
+        
+        # 创建左侧设备树dockwidget
+        self.device_tree_dock = QDockWidget("网络设备", self)
+        self.device_tree_dock.setAllowedAreas(Qt.LeftDockWidgetArea|Qt.RightDockWidgetArea)
+        self.device_tree_dock.setMinimumWidth(250)
+        self.device_tree_dock.setMaximumWidth(400)
+        self.ui_manager.create_device_tree_panel(self.device_tree_dock)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.device_tree_dock)
+        
+        # 创建右侧仿真结果dockwidget
+        self.simulation_results_dock = QDockWidget("仿真结果", self)
+        self.simulation_results_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.simulation_results_dock.setMinimumWidth(300)
+        self.simulation_results_dock.setMaximumWidth(500)
+        self.ui_manager.create_simulation_results_panel(self.simulation_results_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.simulation_results_dock)
         
         # 通过数据控制管理器创建数据生成选项卡
         self.data_control_manager.create_sgen_data_generation_tab()
         self.data_control_manager.create_load_data_generation_tab()
         self.data_control_manager.create_storage_data_generation_tab()
         self.data_control_manager.create_charger_data_generation_tab()
-        
-        # 设置分割器比例，让中央区域有更大的权重
-        splitter.setSizes([250, 800, 300])
-        
-        # 设置分割器拉伸策略，让中央区域可以扩展
-        splitter.setStretchFactor(0, 0)   # 左侧不自动扩展
-        splitter.setStretchFactor(1, 1)   # 中央区域自动扩展
-        splitter.setStretchFactor(2, 0)   # 右侧不自动扩展
         
         # 创建状态栏
         self.statusBar().showMessage("仿真模式已就绪")
