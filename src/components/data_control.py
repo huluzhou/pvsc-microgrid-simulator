@@ -22,6 +22,45 @@ class DataControlManager:
         # 连接储能功率变化信号
         if hasattr(parent_window, 'storage_power_changed'):
             parent_window.storage_power_changed.connect(self.on_storage_power_updated)
+    
+    def on_storage_grid_on(self):
+        """控制储能设备并网"""
+        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+            QMessageBox.warning(self.parent_window, "警告", "请先选择一个储能设备")
+            return
+            
+        if self.parent_window.current_component_type != 'storage':
+            QMessageBox.warning(self.parent_window, "警告", "当前选择的不是储能设备")
+            return
+        device_type = self.parent_window.current_component_type
+        device_idx = self.parent_window.current_component_idx
+        
+        item = network_items[device_type][device_idx]
+        item.grid_connected = True
+        
+        # storage_grid_connection_status
+        if hasattr(self.parent_window, 'storage_grid_connection_status'):
+            self.parent_window.storage_grid_connection_status.setText("并网")
+            self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #4CAF50;")
+    
+    def on_storage_grid_off(self):
+        """控制储能设备离网"""
+        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+            QMessageBox.warning(self.parent_window, "警告", "请先选择一个储能设备")
+            return
+            
+        if self.parent_window.current_component_type != 'storage':
+            QMessageBox.warning(self.parent_window, "警告", "当前选择的不是储能设备")
+            return
+        device_type = self.parent_window.current_component_type
+        device_idx = self.parent_window.current_component_idx
+        item = network_items[device_type][device_idx]
+        item.grid_connected = False
+        
+        # storage_grid_connection_status
+        if hasattr(self.parent_window, 'storage_grid_connection_status'):
+            self.parent_window.storage_grid_connection_status.setText("离网")
+            self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
             
     def on_device_power_on(self):
         """控制当前设备上电"""

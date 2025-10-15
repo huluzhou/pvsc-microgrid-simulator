@@ -773,6 +773,15 @@ class ModbusManager:
             # if abs(active_power) > 0.001:
             #     print(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
             
+            # 更新并网/离网状态到保持寄存器5044
+            # 从storage_item获取grid_connected属性，如果不存在默认为1（并网状态）
+            grid_connected = getattr(storage_item, 'grid_connected', 6)
+            # 确保值为0或1
+            grid_connected_value = 1 if grid_connected else 6
+            # 写入保持寄存器5044
+            slave_context.setValues(3, 5044, [grid_connected_value])
+            logger.info(f"储能设备 {index} 并网/离网状态更新: {'并网' if grid_connected_value == 1 else '离网'}")
+            
         except KeyError as e:
             print(f"储能设备数据缺失: {e}")
         except ValueError as e:

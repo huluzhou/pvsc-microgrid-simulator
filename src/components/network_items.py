@@ -658,6 +658,7 @@ class StorageItem(BaseNetworkItem):
         self.state = 'power_off'  # 初始状态为halt
         self.is_manual_control = False  # 是否处于手动控制模式，默认关闭
         self.is_power_on = False
+        self.grid_connected = False
         
     def update_realtime_data(self, current_power_mw, time_delta_hours=1.0):
         """
