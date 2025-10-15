@@ -487,24 +487,12 @@ class UIComponentManager:
         storage_grid_connection_status = QLabel("--")
         storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #FFC107;")
         
-        # 创建并网/离网控制按钮
-        grid_operation_layout = QHBoxLayout()
-        storage_grid_on_button = QPushButton("并网")
-        storage_grid_on_button.clicked.connect(self.parent_window.data_control_manager.on_storage_grid_on)
-        storage_grid_off_button = QPushButton("离网")
-        storage_grid_off_button.clicked.connect(self.parent_window.data_control_manager.on_storage_grid_off)
-        
-        grid_operation_layout.addWidget(storage_grid_on_button)
-        grid_operation_layout.addWidget(storage_grid_off_button)
         
         storage_grid_connection_layout.addWidget(storage_grid_connection_label)
         storage_grid_connection_layout.addWidget(storage_grid_connection_status)
-        storage_grid_connection_layout.addLayout(grid_operation_layout)
         
         # 存储引用到parent_window
         self.parent_window.storage_grid_connection_status = storage_grid_connection_status
-        self.parent_window.storage_grid_on_button = storage_grid_on_button
-        self.parent_window.storage_grid_off_button = storage_grid_off_button
         self.parent_window.storage_connection_label = storage_grid_connection_label
         
         power_control_layout.addWidget(storage_power_on_button)
