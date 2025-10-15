@@ -37,11 +37,6 @@ class DataControlManager:
         
         item = network_items[device_type][device_idx]
         item.grid_connected = True
-        
-        # storage_grid_connection_status
-        if hasattr(self.parent_window, 'storage_grid_connection_status'):
-            self.parent_window.storage_grid_connection_status.setText("并网")
-            self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #4CAF50;")
     
     def on_storage_grid_off(self):
         """控制储能设备离网"""
@@ -56,11 +51,6 @@ class DataControlManager:
         device_idx = self.parent_window.current_component_idx
         item = network_items[device_type][device_idx]
         item.grid_connected = False
-        
-        # storage_grid_connection_status
-        if hasattr(self.parent_window, 'storage_grid_connection_status'):
-            self.parent_window.storage_grid_connection_status.setText("离网")
-            self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
             
     def on_device_power_on(self):
         """控制当前设备上电"""
@@ -458,6 +448,25 @@ class DataControlManager:
             except Exception as e:
                 print(f"更新储能工作状态失败: {str(e)}")
                 self.parent_window.storage_work_status_label.setText("未计算")
+        # 更新并网状态显示
+        if hasattr(self.parent_window, "storage_grid_connection_status"):
+            try:
+                if storage_item and hasattr(storage_item, 'grid_connected'):
+                    grid_connected = storage_item.grid_connected
+                    if grid_connected is True:
+                        self.parent_window.storage_grid_connection_status.setText("并网")
+                        self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #4CAF50;")
+                    else:
+                        self.parent_window.storage_grid_connection_status.setText("离网")
+                        self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
+                else:
+                        self.parent_window.storage_grid_connection_status.setText("离网")
+                        self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
+            except Exception as e:
+                print(f"更新储能并网状态失败: {str(e)}")
+                self.parent_window.storage_grid_connection_status.setText("离网")
+                self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
+        
 
     def update_realtime_data(self):
         # 根据当前设备类型只调用对应的更新方法
@@ -586,12 +595,10 @@ class DataControlManager:
             current_power = -self.parent_window.network_model.net.storage.at[self.parent_window.current_component_idx, 'p_mw']
             
             # 获取储能设备的额定功率
-            from .network_items import StorageItem
-            storage_item = None
-            for item in self.parent_window.canvas.scene.items():
-                if isinstance(item, StorageItem) and item.component_index == self.parent_window.current_component_idx:
-                    storage_item = item
-                    break
+            storage_item = network_items['storage'][self.parent_window.current_component_idx]
+                    
+            # 
+            self.update_storage_info(self.parent_window.current_component_idx)
             
             # 获取额定功率，默认为1.0 MW
             rated_power_mw = 1.0
