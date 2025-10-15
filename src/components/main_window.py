@@ -5,8 +5,9 @@
 主窗口组件
 """
 
+import threading
 from PySide6.QtWidgets import QMainWindow, QDockWidget, QMessageBox, QProgressDialog
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, Signal, QObject
 from PySide6.QtGui import QAction
 
 from components.canvas import NetworkCanvas
@@ -28,41 +29,23 @@ if FEATURE_SIMULATION:
     from components.globals import network_model 
 # 从globals.py导入全局变量
 
-class DiagnosticThread(QThread):
-    """网络诊断线程类，在后台执行耗时的网络诊断操作"""
+class DiagnosticThread(QObject):
+    """网络诊断线程类，使用Python原生threading模块实现"""
     progress_updated = Signal(int)  # 进度更新信号
-    diagnostic_completed = Signal(bool, str, list)  # 诊断完成信号 (success, error_message, diagnostic_results)
+    diagnostic_completed = Signal(bool, str, list)  # 诊断完成信号
     error_occurred = Signal(str)  # 错误发生信号
     
-    def __init__(self, canvas, topology_manager):
+    def __init__(self, network_model):
         super().__init__()
-        self.canvas = canvas
-        self.topology_manager = topology_manager
+        self.net = network_model.net
         self.running = True
+        self._thread = None
     
     def run(self):
-        """线程运行函数，执行网络诊断操作"""
-        global network_model
+        """线程运行函数，只执行网络诊断操作"""
         try:
             # 初始化进度
-            self.progress_updated.emit(10)
-            
-            # 创建网络模型
-            network_model = NetworkModel()
-            self.progress_updated.emit(20)
-            
-            # 从网络项创建模型
-            if not network_model.create_from_network_items(self.canvas):
-                self.diagnostic_completed.emit(False, "创建网络模型失败，请检查电网组件。", None)
-                return
-            self.progress_updated.emit(40)
-            
-            # 验证IP和端口唯一性
-            is_valid, error_msg = self.topology_manager.validate_ip_port_uniqueness(self.canvas.scene, None)
-            if not is_valid:
-                self.diagnostic_completed.emit(False, f"IP和端口不唯一：{error_msg}", None)
-                return
-            self.progress_updated.emit(60)
+            self.progress_updated.emit(30)
             
             # 使用pandapower内置诊断函数
             diagnostic_results = []
@@ -70,7 +53,7 @@ class DiagnosticThread(QThread):
             if not DEBUG_MODE:
                 try:
                     # 运行诊断检查
-                    diag_report = pp.diagnostic(network_model.net)
+                    diag_report = pp.diagnostic(self.net)
                     
                     # 解析诊断报告
                     if diag_report:
@@ -95,11 +78,24 @@ class DiagnosticThread(QThread):
             if self.running:
                 self.error_occurred.emit(str(e))
     
+    def start(self):
+        """启动线程"""
+        self.running = True
+        self._thread = threading.Thread(target=self.run)
+        self._thread.daemon = True  # 设置为守护线程，主线程结束时自动终止
+        self._thread.start()
+        
     def stop(self):
         """停止诊断线程"""
         self.running = False
-        self.wait(1000)  # 等待线程结束，最多等待1秒
-
+        if self._thread and self._thread.is_alive():
+            # 等待线程结束，但不阻塞主线程太长时间
+            self._thread.join(timeout=1.0)  # 最多等待1秒
+    
+    def is_alive(self):
+        """检查线程是否存活"""
+        return self._thread and self._thread.is_alive()
+    
 class MainWindow(QMainWindow):
     """主窗口类"""
 
@@ -198,7 +194,7 @@ class MainWindow(QMainWindow):
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-        
+
         # 编辑菜单
         edit_menu = self.menuBar().addMenu("编辑")
         edit_menu.addAction("撤销")
@@ -345,21 +341,62 @@ class MainWindow(QMainWindow):
         self.progress_dialog.setWindowModality(Qt.WindowModal)
         self.progress_dialog.setMinimumDuration(0)
         self.progress_dialog.setValue(0)
+        # 彻底禁用取消按钮
+        self.progress_dialog.setCancelButton(None)
         
-        # 创建诊断线程
-        self.diagnostic_thread = DiagnosticThread(self.canvas, self.topology_manager)
+        # 确保之前的线程已经结束
+        if hasattr(self, 'diagnostic_thread') and self.diagnostic_thread is not None:
+            self.diagnostic_thread.stop()
+            # 断开所有之前的信号连接
+            try:
+                self.diagnostic_thread.progress_updated.disconnect()
+                self.diagnostic_thread.diagnostic_completed.disconnect()
+                self.diagnostic_thread.error_occurred.disconnect()
+            except TypeError:
+                pass  # 忽略已断开连接的异常
+            
+            # 将线程引用设置为None，允许垃圾回收
+            self.diagnostic_thread = None
         
-        # 连接信号和槽
-        self.diagnostic_thread.progress_updated.connect(self.progress_dialog.setValue)
-        self.diagnostic_thread.diagnostic_completed.connect(self.on_diagnostic_completed)
-        self.diagnostic_thread.error_occurred.connect(self.on_diagnostic_error)
-        self.progress_dialog.canceled.connect(self.diagnostic_thread.stop)
-        
-        # 启动线程
-        self.diagnostic_thread.start()
-        
-        # 显示进度对话框
-        self.progress_dialog.exec_()
+        try:
+            # 在主线程中创建网络模型
+            self.progress_dialog.setValue(5)
+            
+            # 创建网络模型
+            global network_model
+            network_model = NetworkModel()
+            self.progress_dialog.setValue(10)
+            
+            # 从网络项创建模型
+            if not network_model.create_from_network_items(self.canvas):
+                self.progress_dialog.close()
+                QMessageBox.warning(self, "网络诊断", "创建网络模型失败，请检查电网组件。")
+                return
+            self.progress_dialog.setValue(20)
+            
+            # 验证IP和端口唯一性
+            is_valid, error_msg = self.topology_manager.validate_ip_port_uniqueness(self.canvas.scene, None)
+            if not is_valid:
+                self.progress_dialog.close()
+                QMessageBox.warning(self, "网络诊断", f"IP和端口不唯一：{error_msg}")
+                return
+            self.progress_dialog.setValue(30)
+            
+            # 创建诊断线程，并传入已创建好的网络模型
+            self.diagnostic_thread = DiagnosticThread(network_model)
+            
+            # 连接信号和槽
+            self.diagnostic_thread.progress_updated.connect(self.progress_dialog.setValue)
+            self.diagnostic_thread.diagnostic_completed.connect(self.on_diagnostic_completed)
+            self.diagnostic_thread.error_occurred.connect(self.on_diagnostic_error)
+            # 启动线程
+            self.diagnostic_thread.start()
+            
+            # 显示进度对话框
+            self.progress_dialog.exec_()
+        except Exception as e:
+            self.progress_dialog.close()
+            QMessageBox.critical(self, "错误", f"准备诊断时发生错误：{str(e)}")
     
     def on_diagnostic_completed(self, success, error_message, diagnostic_results=None):
         """处理诊断完成事件"""
@@ -378,11 +415,39 @@ class MainWindow(QMainWindow):
         else:
             self.network_is_valid = True
             QMessageBox.information(self, "网络诊断", "网络诊断通过！")
+        
+        # 停止诊断线程并清理资源
+        if hasattr(self, 'diagnostic_thread'):
+            self.diagnostic_thread.stop()
+            # 断开所有信号连接，避免内存泄漏
+            try:
+                self.diagnostic_thread.progress_updated.disconnect()
+                self.diagnostic_thread.diagnostic_completed.disconnect()
+                self.diagnostic_thread.error_occurred.disconnect()
+            except TypeError:
+                pass  # 忽略已断开连接的异常
+            
+            # 将线程引用设置为None，允许垃圾回收
+            self.diagnostic_thread = None
     
     def on_diagnostic_error(self, error_message):
         """处理诊断错误事件"""
         self.progress_dialog.close()
         QMessageBox.critical(self, "错误", f"网络诊断时发生错误：{error_message}")
+        
+        # 停止诊断线程并清理资源
+        if hasattr(self, 'diagnostic_thread'):
+            self.diagnostic_thread.stop()
+            # 断开所有信号连接，避免内存泄漏
+            try:
+                self.diagnostic_thread.progress_updated.disconnect()
+                self.diagnostic_thread.diagnostic_completed.disconnect()
+                self.diagnostic_thread.error_occurred.disconnect()
+            except TypeError:
+                pass  # 忽略已断开连接的异常
+            
+            # 将线程引用设置为None，允许垃圾回收
+            self.diagnostic_thread = None
         
     def show_about_dialog(self):
         """显示关于对话框"""
