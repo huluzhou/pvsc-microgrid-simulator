@@ -26,9 +26,8 @@ from .ui_components import UIComponentManager
 from .power_monitor import PowerMonitor
 from utils.logger import logger
 
-from .globals import network_model
+from .globals import network_model, network_items
 
-# TODO:将仿真界面改为独立窗口
 class SimulationWindow(QMainWindow):
     """仿真界面窗口"""
     # 定义信号，参数为设备索引和新的功率值
@@ -178,11 +177,6 @@ class SimulationWindow(QMainWindow):
         """加载网络数据到设备树"""
         if not self.network_model:
             return
-            
-        # 网络模型已变化，但不需要清除Modbus设备缓存，因为现在直接使用network_items
-            
-        # 使电表缓存失效，因为网络模型已变化
-        self.invalidate_meter_cache()
             
         self.device_tree.clear()
         
@@ -542,9 +536,8 @@ class SimulationWindow(QMainWindow):
                 delattr(self, attr)
     def _clear_all_caches(self):
         """清理所有缓存"""
-        # 清理各种缓存
+        # 清理可能存在的缓存
         cache_attrs = [
-            '_energy_cache', '_meter_cache', '_pv_cache', 
             '_storage_cache', 'generated_devices',
             'current_component_type', 'current_component_idx'
         ]
@@ -696,37 +689,14 @@ class SimulationWindow(QMainWindow):
             timer_interval_ms = self.auto_calc_timer.interval()
             time_interval_hours = timer_interval_ms / (1000.0 * 3600.0)  # 毫秒转小时
             
-            # 使用缓存机制避免重复遍历
-            if not hasattr(self, '_energy_cache'):
-                self._energy_cache = {
-                    'pv_items': {},
-                    'storage_items': {},
-                    'last_update': 0
-                }
-            
-            # 每5秒更新一次缓存
-            current_time = time.time()
-            if current_time - self._energy_cache['last_update'] > 5:
-                self._energy_cache['pv_items'].clear()
-                self._energy_cache['storage_items'].clear()
-                
-                for item in self.canvas.scene.items():
-                    if hasattr(item, 'component_type'):
-                        if item.component_type == 'static_generator':
-                            self._energy_cache['pv_items'][item.component_index] = item
-                        elif item.component_type == 'storage':
-                            self._energy_cache['storage_items'][item.component_index] = item
-                
-                self._energy_cache['last_update'] = current_time
-            
             # 批量更新光伏能量统计
-            if self._energy_cache['pv_items'] and hasattr(self.network_model, 'net'):
-                valid_pv_indices = [idx for idx in self._energy_cache['pv_items'].keys() 
+            if network_items['static_generator'] and hasattr(self.network_model, 'net'):
+                valid_pv_indices = [idx for idx in network_items['static_generator'].keys() 
                                   if idx in self.network_model.net.sgen.index]
                 
                 for device_idx in valid_pv_indices:
                     try:
-                        pv_item = self._energy_cache['pv_items'][device_idx]
+                        pv_item = network_items['static_generator'][device_idx]
                         current_power_mw = abs(self.network_model.net.sgen.at[device_idx, 'p_mw'])
                         
                         # 计算本次产生的能量（kWh）
@@ -740,13 +710,13 @@ class SimulationWindow(QMainWindow):
                         print(f"批量更新光伏设备 {device_idx} 能量统计时出错: {e}")
             
             # 批量更新储能能量统计
-            if self._energy_cache['storage_items'] and hasattr(self.network_model, 'net'):
-                valid_storage_indices = [idx for idx in self._energy_cache['storage_items'].keys() 
+            if network_items['storage'] and hasattr(self.network_model, 'net'):
+                valid_storage_indices = [idx for idx in network_items['storage'].keys() 
                                        if idx in self.network_model.net.storage.index]
                 
                 for device_idx in valid_storage_indices:
                     try:
-                        storage_item = self._energy_cache['storage_items'][device_idx]
+                        storage_item = network_items['storage'][device_idx]
                         current_power_mw = -self.network_model.net.storage.at[device_idx, 'p_mw']
                         
                         # 调用StorageItem的实时数据更新方法
@@ -973,21 +943,9 @@ class SimulationWindow(QMainWindow):
     def _apply_storage_updates_batch(self, storage_updates):
         """批量应用储能设备更新"""
         try:
-            # 预获取所有储能图形项，避免重复遍历
-            if not hasattr(self, '_storage_items_cache'):
-                self._storage_items_cache = {}
-            
-            # 更新缓存（如果需要）
-            if not self._storage_items_cache or self._storage_items_cache.get('_last_update', 0) < time.time() - 5:
-                self._storage_items_cache.clear()
-                for item in self.canvas.scene.items():
-                    if hasattr(item, 'component_type') and item.component_type == 'storage':
-                        self._storage_items_cache[item.component_index] = item
-                self._storage_items_cache['_last_update'] = time.time()
-            
             # 批量应用更新
             for device_idx, update_data in storage_updates:
-                storage_item = self._storage_items_cache.get(device_idx)
+                storage_item = network_items['storage'].get(device_idx)
                 if not storage_item:
                     continue
                     
@@ -1030,22 +988,9 @@ class SimulationWindow(QMainWindow):
     def _apply_charger_updates_batch(self, charger_updates):
         """批量应用充电桩设备功率限制更新"""
         try:
-            # 预获取所有充电桩图形项
-            if not hasattr(self, '_charger_items_cache'):
-                self._charger_items_cache = {}
-            
-            # 更新缓存
-            if not self._charger_items_cache or self._charger_items_cache.get('_last_update', 0) < time.time() - 5:
-                self._charger_items_cache.clear()
-                for item in self.canvas.scene.items():
-                    if hasattr(item, 'component_type') and item.component_type == 'charger':
-                        # 假设负荷类型中的充电桩有特殊标识
-                        self._charger_items_cache[item.component_index] = item
-                self._charger_items_cache['_last_update'] = time.time()
-            
             # 批量应用更新
             for device_idx, update_data in charger_updates:
-                charger_item = self._charger_items_cache.get(device_idx)
+                charger_item = network_items['charger'].get(device_idx)
                 if not charger_item:
                     continue
                 
@@ -1077,21 +1022,9 @@ class SimulationWindow(QMainWindow):
     def _apply_sgen_updates_batch(self, sgen_updates):
         """批量应用光伏系统更新"""
         try:
-            # 预获取所有光伏图形项
-            if not hasattr(self, '_sgen_items_cache'):
-                self._sgen_items_cache = {}
-            
-            # 更新缓存
-            if not self._sgen_items_cache or self._sgen_items_cache.get('_last_update', 0) < time.time() - 5:
-                self._sgen_items_cache.clear()
-                for item in self.canvas.scene.items():
-                    if hasattr(item, 'component_type') and item.component_type == 'static_generator':
-                        self._sgen_items_cache[item.component_index] = item
-                self._sgen_items_cache['_last_update'] = time.time()
-            
             # 批量应用更新
             for device_idx, update_data in sgen_updates:
-                sgen_item = self._sgen_items_cache.get(device_idx)
+                sgen_item = network_items['static_generator'].get(device_idx)
                 if not sgen_item:
                     continue
                 
@@ -1191,41 +1124,14 @@ class SimulationWindow(QMainWindow):
             object: 对应的电表图形项对象，如果未找到返回None
         """
         try:
-            if device_type != 'meter' or not hasattr(self, 'canvas') or not self.canvas:
+            if device_type != 'meter':
                 return None
                 
-            # 使用缓存避免重复遍历
-            if not hasattr(self, '_meter_cache'):
-                self._build_meter_cache()
-            
-            return self._meter_cache.get(device_id)
+            return network_items['meter'].get(device_id)
             
         except Exception as e:
             print(f"获取电表项失败: {str(e)}")
             return None
-    
-    def _build_meter_cache(self):
-        """构建电表项缓存，避免重复遍历画布"""
-        self._meter_cache = {}
-        if not hasattr(self, 'canvas') or not self.canvas or not self.canvas.scene:
-            return
-            
-        try:
-            for item in self.canvas.scene.items():
-                if (hasattr(item, 'component_type') and 
-                    item.component_type == 'meter' and 
-                    hasattr(item, 'component_index')):
-                    self._meter_cache[item.component_index] = item
-        except Exception as e:
-            print(f"构建电表缓存失败: {str(e)}")
-            self._meter_cache = {}
-    
-    def invalidate_meter_cache(self):
-        """使电表缓存失效，当画布内容变化时调用"""
-        if hasattr(self, '_meter_cache'):
-            delattr(self, '_meter_cache')
-
-
     
     def update_device_tree_status(self):
         """更新设备树状态"""
