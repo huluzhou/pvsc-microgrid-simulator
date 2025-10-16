@@ -730,7 +730,15 @@ class PropertiesPanel(QWidget):
                 'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
                 'port': {'type': 'str', 'label': '端口', 'default': ''},
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
-            }
+            },
+            'switch': {
+            'index': {'type': 'readonly', 'label': '组件索引'},
+            'geodata': {'type': 'readonly', 'label': '位置'},
+            'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''},
+            'name': {'type': 'str', 'label': '名称', 'default': ''},
+            'element': {'type': 'int', 'label': '元件索引', 'default': 0, 'min': 0, 'max': 999999},
+            'et': {'type': 'choice', 'label': '元件类型', 'choices': [('b', '母线'), ('l', '线路'), ('t', '变压器')], 'default': 'b'},
+            },
         }
         
         return properties.get(component_type, {})

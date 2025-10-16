@@ -364,8 +364,12 @@ class BaseNetworkItem(QGraphicsItem):
         # 保存旧的bus值以检测变化
         old_bus_values = {}
         
-        # 处理单个bus连接的组件
-        if hasattr(self, 'properties') and 'bus' in self.properties:
+        # 先检查组件类型，确保特殊类型组件使用专门的处理逻辑
+        # 如果是开关组件，先进行标记
+        is_switch = hasattr(self, 'component_type') and self.component_type == 'switch'
+        
+        # 如果不是开关且具有bus属性，才执行通用处理逻辑
+        if not is_switch and hasattr(self, 'properties') and 'bus' in self.properties:
             old_bus_values['bus'] = self.properties.get('bus')
             
             # 查找连接的bus组件
@@ -429,7 +433,66 @@ class BaseNetworkItem(QGraphicsItem):
             else:
                 self.properties['from_bus'] = None
                 self.properties['to_bus'] = None
-        
+        elif hasattr(self, 'component_type') and self.component_type == 'switch':
+            old_bus_values['bus'] = self.properties.get('bus')
+            old_bus_values['element'] = self.properties.get('element')
+            old_bus_values['et'] = self.properties.get('et')
+
+            # 获取当前连接的所有组件
+            connected_items = self.current_connections
+            connections_count = len(connected_items)
+
+            # 情况1: 开关连接到两个组件
+            if connections_count == 2:
+                first_item = connected_items[0]
+                second_item = connected_items[1]
+                
+                # 子情况1.1: 两个组件都是母线 (双母线连接)
+                if first_item.component_type == 'bus' and second_item.component_type == 'bus':
+                    self.properties['bus'] = first_item.properties.get('index', None)
+                    self.properties['element'] = second_item.properties.get('index', None)
+                    self.properties['et'] = 'b'  # et='b' 表示连接到母线
+                
+                # 子情况1.2: 一个母线和一个非母线组件
+                else:
+                    # 找出母线组件
+                    bus_item = first_item if first_item.component_type == 'bus' else second_item
+                    non_bus_item = second_item if first_item.component_type == 'bus' else first_item
+                    
+                    self.properties['bus'] = bus_item.properties.get('index', None)
+                    self.properties['element'] = non_bus_item.properties.get('index', None)
+                    
+                    # 根据非母线组件类型设置et属性
+                    if non_bus_item.component_type == 'line':
+                        self.properties['et'] = 'l'  # et='l' 表示连接到线路
+                    elif non_bus_item.component_type == 'transformer':
+                        self.properties['et'] = 't'  # et='t' 表示连接到变压器
+                    
+            # 情况2: 开关只连接到一个组件
+            elif connections_count == 1:
+                connected_item = connected_items[0]
+                
+                # 子情况2.1: 连接到母线
+                if connected_item.component_type == 'bus':
+                    self.properties['bus'] = connected_item.properties.get('index', None)
+                
+                # 子情况2.2: 连接到非母线组件
+                else:
+                    self.properties['element'] = connected_item.properties.get('index', None)
+                    
+                    # 根据组件类型设置et属性
+                    if connected_item.component_type == 'line':
+                        self.properties['et'] = 'l'
+                    elif connected_item.component_type == 'transformer':
+                        self.properties['et'] = 't'
+            
+            # 情况3: 开关没有连接或连接超过两个组件
+            else:
+                # 重置所有连接属性
+                self.properties['bus'] = None
+                self.properties['element'] = None
+                self.properties['et'] = None
+
         # 检查是否有变化，如果有则通知属性面板刷新
         has_changes = False
         for key, old_value in old_bus_values.items():
@@ -1105,5 +1168,40 @@ class MeterItem(BaseNetworkItem):
         # 定义连接点（相对于组件中心的位置）
         self.connection_points = [
             QPointF(0, 32)   # 底部连接点
+        ]
+        self.original_connection_points = self.connection_points.copy()
+
+    
+class SwitchItem(BaseNetworkItem):
+    def __init__(self, pos, parent=None):
+        super().__init__(pos, parent)
+        self.component_type = "switch"
+        self.component_name = "Switch"
+        # 在设置component_type后分配索引
+        self.component_index = self._get_next_index()
+        # 动态生成名称
+        component_name = f"Switch_{self.component_index}"
+        self.properties = {
+            "index": self.component_index,  # 组件索引
+            "geodata": (0, 0),
+            "bus": None,  # 连接的母线
+            "name": component_name,  # 名称
+            "element": 0,
+            "et": "b",
+            # "closed": True,  # 开关状态
+        }
+        self.idx_map = {}
+        self.label.setPlainText(self.properties["name"])
+        # 连接约束：开关可以连接到多个组件
+        self.max_connections =  2 # 允许连接多个组件
+        self.min_connections = 2   # 不强制要求连接
+
+        # 加载SVG图标
+        self.load_svg("switch.svg")
+        
+        # 定义连接点（相对于组件中心的位置）
+        self.connection_points = [
+            QPointF(-28, 0),  # 左端连接点
+            QPointF(28, 0)    # 右端连接点
         ]
         self.original_connection_points = self.connection_points.copy()

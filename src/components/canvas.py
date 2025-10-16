@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QMenu, QApplication
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
-from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem
+from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem, SwitchItem
 
 # 导入全局变量
 from components.globals import network_model, network_items
@@ -187,6 +187,8 @@ class NetworkCanvas(QGraphicsView):
             item = StaticGeneratorItem(pos)
         elif component_type == "meter":
             item = MeterItem(pos)
+        elif component_type == "switch":
+            item = SwitchItem(pos)
         
         # 将所有类型的组件添加到全局network_items中，使用嵌套字典结构
         if item and component_type in network_items:
@@ -288,6 +290,24 @@ class NetworkCanvas(QGraphicsView):
         if type1 == "meter" or type2 == "meter":
             return True
             
+        # 开关一端为母线,另外一端可以使母线\线路\变压器   
+        if type1 == "switch" or type2 == "switch":
+            # 确定哪个是开关，哪个是另一个组件
+            switch_item = item2 if type1 == "switch" else item1
+            other_item = item1 if type1 == "switch" else item2
+            other_type = type2 if type1 == "switch" else type1
+            
+            # 开关的另一端可以是母线、线路或变压器
+            if other_type in ["bus", "line", "transformer"]:
+                # 特殊检查：如果要连接的是母线，且开关已经连接到这个母线，则不允许连接
+                if other_type == "bus" and hasattr(switch_item, 'current_connections'):
+                    # 检查开关当前是否已经连接到这个母线
+                    # 确保比较的是同一个对象实例，而不是类型
+                    if switch_item.current_connections[0] == other_item:
+                        return False
+                return True
+            return False
+            
         # 变压器和线路必须连接到母线或电表
         if type1 in ["transformer", "line"] or type2 in ["transformer", "line"]:
             # 如果其中一个是母线或电表，则允许连接
@@ -301,8 +321,6 @@ class NetworkCanvas(QGraphicsView):
             if type1 in ["bus", "meter"] or type2 in ["bus", "meter"]:
                 return True
             return False
-            
-        # 开关可以连接到母线或电表（已在上面的规则中处理）
         return False
     
     def can_connect(self, item1, item2):
@@ -472,7 +490,6 @@ class NetworkCanvas(QGraphicsView):
         
         # 电表连接后自动获取测量元件信息
         self._update_meter_properties_on_connection(item1, item2, point_index1, point_index2)
-        
         # 连接关系发生改变，重置诊断标志位
         if hasattr(self, 'main_window') and self.main_window:
             self.main_window.network_is_valid = False
@@ -550,7 +567,7 @@ class NetworkCanvas(QGraphicsView):
                     properties_panel.update_properties(meter_item)
                 # 触发选择变化信号，确保属性面板能正确更新
                 self.selection_changed.emit(meter_item)
-        
+
     def _determine_measurement_side(self, connected_item, point_index):
         """根据连接的组件类型和连接点索引确定测量侧"""
         if not hasattr(connected_item, 'component_type'):

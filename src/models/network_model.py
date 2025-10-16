@@ -354,6 +354,26 @@ class NetworkModel:
         # self.component_map[item_id] = {"type": "static_generator", "idx": sgen_idx}
         return sgen_idx
 
+    def create_switch(self, item_id, bus, properties):
+        """创建开关设备
+        
+        Args:
+            item_id: 图形项ID
+            bus: 母线索引
+            properties: 开关属性
+        
+        Returns:
+            int: pandapower开关索引
+        """
+        switch_idx = pp.create_switch(
+            self.net,
+            bus=bus,
+            element=properties.get("element", 0),
+            et=properties.get("et", "b"),
+            name=properties.get("name", "Switch"),
+        )
+        return switch_idx
+
     def create_from_network_items(self, canvas):
         """从canvas中的组件创建pandapower网络模型
         
@@ -476,6 +496,17 @@ class NetworkModel:
                                 item.properties if hasattr(item, 'properties') else {}
                             )
                             print(f"创建线路: {item.component_name} -> 母线 {from_bus}-{to_bus}")
+                    
+                    elif item.component_type == 'switch':
+                        if connected_buses:
+                            bus_idx = connected_buses[0]
+                            switch_idx = self.create_switch(
+                                id(item),
+                                bus_idx,
+                                item.properties if hasattr(item, 'properties') else {}
+                            )
+                            item.idx_map[item.component_index] = switch_idx
+                            print(f"创建开关: {item.component_name} -> 母线 {bus_idx}")
                 
                 except Exception as e:
                     print(f"创建组件 {item.component_name} 时出错: {str(e)}")

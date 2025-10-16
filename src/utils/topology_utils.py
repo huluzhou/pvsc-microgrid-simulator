@@ -11,7 +11,7 @@ import os
 from typing import Dict, List, Any, Optional
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from PySide6.QtCore import QPointF
-from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem
+from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem, SwitchItem
 # 导入全局变量
 from components.globals import network_items
 
@@ -115,7 +115,8 @@ class TopologyManager:
             'Static_Generator': StaticGeneratorItem,
             'External_Grid': ExternalGridItem,
             'Measurement': MeterItem,
-            'Charger': ChargerItem
+            'Charger': ChargerItem,
+            'Switch': SwitchItem,
         },
         
         # 反向映射：内部名称 -> 显示名称
@@ -141,7 +142,8 @@ class TopologyManager:
             'static_generator': 'Static_Generator',
             'external_grid': 'External_Grid',
             'meter': 'Measurement',
-            'charger': 'Charger'
+            'charger': 'Charger',
+            'switch': 'Switch',
         },
         
         # 中文映射：内部名称 -> 中文名称
@@ -386,6 +388,8 @@ class TopologyManager:
                         pos = item_data.get('geodata', [400 + item_index * 50, 50])
                     elif item_type == 'Charger':
                         pos = item_data.get('geodata', [500 + item_index * 50, 800])
+                    elif item_type == 'Switch':
+                        pos = item_data.get('geodata', [150 + item_index * 50, 900])
                     else:
                         pos = item_data.get('geodata', [200 + item_index * 50, 200])
                     item = item_class(QPointF(pos[0], pos[1]))
@@ -518,6 +522,45 @@ class TopologyManager:
                     except (ValueError, TypeError):
                         pass
                         
+            elif item_type == 'Switch':
+                # 开关连接逻辑：先连接到bus
+                bus = properties.get('bus')
+                if bus is not None:
+                    try:
+                        bus_int = int(bus)
+                        bus_key = ('Bus', bus_int)
+                        
+                        if bus_key in created_items:
+                            canvas.connect_items(created_items[bus_key], item)
+                    except (ValueError, TypeError):
+                        pass
+                
+                # 再连接到element（可能是另一个母线、线路或变压器）
+                element = properties.get('element')
+                et = properties.get('et')  # element type
+                
+                if element is not None and et is not None:
+                    try:
+                        element_int = int(element)
+                        target_type = None
+                        
+                        # 根据et属性确定目标组件类型
+                        if et == 'b':  # 母线
+                            target_type = 'Bus'
+                        elif et == 'l':  # 线路
+                            target_type = 'Line'
+                        elif et == 't':  # 变压器
+                            target_type = 'Transformer'
+                        
+                        if target_type:
+                            target_key = (target_type, element_int)
+                            
+                            if target_key in created_items:
+                                # 开关连接到目标设备
+                                canvas.connect_items(created_items[target_key], item)
+                    except (ValueError, TypeError):
+                        pass
+            
             elif item_type == 'Measurement':
                 # 电表连接逻辑：优先通过bus连接，其次通过element/element_type连接
                 bus = properties.get('bus')
