@@ -1004,7 +1004,7 @@ class SimulationWindow(QMainWindow):
                 power_setpoint = update_data['power_setpoint']
                 # 更新开关机状态，根据实际功率判断充放电状态
                 if power_on:
-                    storage_item.state = 'ready'  # 默认状态
+                    storage_item.is_power_on = True
                     final_power = power_setpoint if power_setpoint is not None else 0.0
                     
                     # 检查SOC限制，SOC超过限制范围时禁止充放电
@@ -1016,7 +1016,7 @@ class SimulationWindow(QMainWindow):
                         elif storage_item.soc_percent <= 0.0 and final_power < 0:
                             final_power = 0.0
                 else:
-                    storage_item.state = 'halt'
+                    storage_item.is_power_on = False
                     final_power = 0.0
                     
                 # 更新功率设定值到网络模型
