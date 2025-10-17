@@ -618,7 +618,7 @@ class ModbusManager:
             slave_context.setValues(4, 0, [power_low, power_high])
 
             if abs(power_value) < 0.01:
-                slave_context.setValues(4, 2, [0])
+                slave_context.setValues(4, 2, [6])
             else:
                 slave_context.setValues(4, 2, [1])
             

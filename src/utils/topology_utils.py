@@ -451,6 +451,7 @@ class TopologyManager:
                     item.label.setPlainText(item_data['name'])
                 scene.addItem(item)
                 created_items[('Measurement', item_index)] = item
+                network_items['meter'][item.component_index] = item
                 if hasattr(canvas, 'handle_item_selected'):
                     item.signals.itemSelected.connect(canvas.handle_item_selected)
         # 恢复组件间的连接关系
