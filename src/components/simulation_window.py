@@ -905,10 +905,16 @@ class SimulationWindow(QMainWindow):
                 power_on = bool(power_on)
             except (IndexError, ValueError, AttributeError):
                 power_on = False
+            # 读取储能并网离网指令 寄存器暂定
+            try:
+                grid_connected = device_context.getValues(3, 56, 1)[0]
+            except (IndexError, ValueError, AttributeError):
+                grid_connected = 0
             
             return {
                 'power_on': power_on,
-                'power_setpoint': power_setpoint
+                'power_setpoint': power_setpoint,
+                'grid_connected': grid_connected
             }
             
         except Exception as e:
@@ -1029,9 +1035,15 @@ class SimulationWindow(QMainWindow):
                             self.network_model.net.storage.loc[device_idx, 'p_mw'] = -final_power
                             # 发射信号通知功率变化
                             self.storage_power_changed.emit(device_idx, final_power)
-                    
+                
                 except (KeyError, IndexError):
                     pass
+                # 更新并网离网状态
+                grid_connected = update_data['grid_connected']
+                if grid_connected == 1:
+                    storage_item.grid_connected = True
+                elif grid_connected == 6:
+                    storage_item.grid_connected = False
                         
         except Exception as e:
             print(f"批量应用储能更新失败: {e}")

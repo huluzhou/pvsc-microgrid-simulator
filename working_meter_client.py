@@ -48,6 +48,8 @@ class MultiMeterClient:
             try:
                 # 读取两个连续的16位寄存器（地址0和地址1）
                 result = client.read_input_registers(address=0, count=2, device_id=1)
+                is_connected = client.read_input_registers(address=2, count=1, device_id=1)
+                self.meter_data[meter_name]['is_connected'] = is_connected.registers[0] == 1
                 if not result.isError() and len(result.registers) >= 2:
                     # 组合高低位得到32位无符号整数
                     low_word = result.registers[0]
@@ -79,15 +81,17 @@ class MultiMeterClient:
             data = self.meter_data[meter_name]
             power = data['power']
             status = data['status']
+            is_connected = data['is_connected']
             
-            if status == 'ok':
+            if status == 'ok' and is_connected:
                 print(f"电表{i}:{power:6.2f}kW ", end="")
                 total_power += power
                 active_meters += 1
             else:
                 print(f"电表{i}: 离线   ", end="")
         
-        print(f"| 总功率:{total_power:7.2f}kW | 在线:{active_meters}/{self.meter_count}")
+        print(f"| 总功率:{total_power:7.2f}kW | 在线:{active_meters}/{self.meter_count} | 状态: {status} | 连接: {is_connected}")
+
     
     def close_all(self):
         """关闭所有连接"""

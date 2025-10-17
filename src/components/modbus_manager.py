@@ -151,6 +151,7 @@ class ModbusManager:
         # 当前功率: 0 (保持寄存器)
         meter_registers = [0] * 100
         meter_registers[0] = 0
+        meter_registers[2] = 1 #合闸分闸状态 1 合闸
         
         # 创建ModbusSequentialDataBlock实例
         input_regs = ModbusSequentialDataBlock(0, meter_registers)
@@ -166,12 +167,13 @@ class ModbusManager:
     def _create_storage_context(self, device_info):
         """创建储能设备专用上下文"""
         # 储能设备寄存器映射
-        storage_hold_registers = [0] * 200
+        storage_hold_registers = [0] * 100  # 扩大寄存器范围以包含所有需要的寄存器
         storage_hold_registers[4+1] = 0  # 设置功率
         storage_hold_registers[55+1] = 1  # 开关机
+        storage_hold_registers[56+1] = 1  # 并网离网
 
         # 将storage_input_registers字典转换为长度为1000的列表，用于ModbusSequentialDataBlock
-        storage_input_registers = [0] * 1000
+        storage_input_registers = [0] * 5100
         storage_input_registers[0+1] = 3  # state1
         storage_input_registers[2+1] = 288  # SOC
         storage_input_registers[8+1] = 10000  # 最大充电功率
@@ -210,6 +212,7 @@ class ModbusManager:
         storage_input_registers[910+1] = 14641   # SN_911 SN号
         storage_input_registers[911+1] = 13104   # SN_912 SN号
         storage_input_registers[912+1] = 12337   # SN_913 SN号
+        storage_input_registers[5044+1] = 1  # 并网/离网状态，默认1（并网）
 
         holding_regs = ModbusSequentialDataBlock(0, storage_hold_registers)   
         input_regs = ModbusSequentialDataBlock(0, storage_input_registers)
@@ -613,6 +616,11 @@ class ModbusManager:
             power_low = power_kw & 0xFFFF
             power_high = (power_kw >> 16) & 0xFFFF
             slave_context.setValues(4, 0, [power_low, power_high])
+
+            if abs(power_value) < 0.01:
+                slave_context.setValues(4, 2, [0])
+            else:
+                slave_context.setValues(4, 2, [1])
             
         except Exception as e:
             print(f"更新电表上下文失败: {e}")
@@ -779,7 +787,7 @@ class ModbusManager:
             # 确保值为0或1
             grid_connected_value = 1 if grid_connected else 6
             # 写入保持寄存器5044
-            slave_context.setValues(3, 5044, [grid_connected_value])
+            slave_context.setValues(4, 5044, [grid_connected_value])
             logger.info(f"储能设备 {index} 并网/离网状态更新: {'并网' if grid_connected_value == 1 else '离网'}")
             
         except KeyError as e:

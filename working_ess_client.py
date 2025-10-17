@@ -80,9 +80,12 @@ class MultiESSClient:
                 total_charge = client.read_input_registers(address=428, count=2, device_id=1)
                 total_discharge = client.read_input_registers(address=430, count=2, device_id=1)
                 sn = client.read_input_registers(address=900, count=16, device_id=1)  # 读取SN号 (地址900-915)
+                grid_connected = client.read_input_registers(address=5044, count=1, device_id=1)  # 读取并网/离网状态 (地址5044)
+
                 # 写入控制命令 (目前注释掉)
                 client.write_registers(address=4, values=[(-100*10)&0xFFFF], device_id=1)
                 client.write_registers(address=55, values=[1], device_id=1)
+                client.write_registers(address=56, values=[1], device_id=1)  # 并网
 
                 # 检查所有寄存器的读取结果
                 error_registers = []
@@ -116,6 +119,8 @@ class MultiESSClient:
                     error_registers.append("累计放电量(地址430-431)")
                 if sn.isError():
                     error_registers.append("SN号(地址900-915)")
+                if grid_connected.isError():
+                    error_registers.append("并网/离网状态(地址5044)")
                 
                 if not error_registers:
                     data = self.ess_data[ess_name]
@@ -175,6 +180,7 @@ class MultiESSClient:
                     # 根据状态4判断设备可用性
                     data['available'] = data['state4'] == 1
                     data['status'] = 'ok'
+                    data['grid_connected'] = grid_connected.registers[0] == 1  # 并网状态为1时表示并网
                 else:
                     self.ess_data[ess_name]['status'] = 'read_error'
                     error_msg = ", ".join(error_registers)
@@ -201,6 +207,7 @@ class MultiESSClient:
                 print(f"    今日充/放电: {data['today_charge']:6.1f}kWh / {data['today_discharge']:6.1f}kWh")
                 print(f"    累计充/放电: {data['total_charge']:6.1f}kWh / {data['total_discharge']:6.1f}kWh")
                 print(f"    SN号: {data['sn']}")  # 显示SN号
+                print(f"    并网状态: {'并网' if data['grid_connected'] else '离网'}")  # 显示并网状态
             elif data['status'] == 'read_error':
                 print(f"  储能{i} (端口{data['port']}): 数据读取错误")
             elif data['status'] == 'exception':
