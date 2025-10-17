@@ -1188,9 +1188,9 @@ class SwitchItem(BaseNetworkItem):
             "name": component_name,  # 名称
             "element": 0,
             "et": "b",
-            # "closed": True,  # 开关状态
+            "closed": True,  # 开关状态,
+            "in_ka": 1000.0,
         }
-        self.idx_map = {}
         self.label.setPlainText(self.properties["name"])
         # 连接约束：开关可以连接到多个组件
         self.max_connections =  2 # 允许连接多个组件

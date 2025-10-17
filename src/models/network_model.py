@@ -370,7 +370,10 @@ class NetworkModel:
             bus=bus,
             element=properties.get("element", 0),
             et=properties.get("et", "b"),
+            closed=properties.get("closed", True),
+            in_ka=properties.get("in_ka", 1000.0),
             name=properties.get("name", "Switch"),
+            index = properties.get("index", None),
         )
         return switch_idx
 
@@ -505,7 +508,7 @@ class NetworkModel:
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
                             )
-                            item.idx_map[item.component_index] = switch_idx
+                            item.model_index = switch_idx
                             print(f"创建开关: {item.component_name} -> 母线 {bus_idx}")
                 
                 except Exception as e:

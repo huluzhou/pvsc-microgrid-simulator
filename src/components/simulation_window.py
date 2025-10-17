@@ -166,6 +166,15 @@ class SimulationWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.charger_dock)
         self.charger_dock.hide()  # 初始隐藏
         
+        # 开关设备dockwidget
+        self.switch_dock = QDockWidget("开关设备数据", self)
+        self.switch_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.switch_dock.setMinimumWidth(300)
+        self.switch_dock.setMaximumWidth(500)
+        self.ui_manager.create_switch_data_panel(self.switch_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.switch_dock)
+        self.switch_dock.hide()  # 初始隐藏
+        
         # 创建状态栏
         self.statusBar().showMessage("仿真模式已就绪")
         
@@ -192,7 +201,8 @@ class SimulationWindow(QMainWindow):
             'gen': hasattr(net, 'res_gen') and not net.res_gen.empty,
             'sgen': hasattr(net, 'res_sgen') and not net.res_sgen.empty,
             'ext_grid': hasattr(net, 'res_ext_grid') and not net.res_ext_grid.empty,
-            'storage': hasattr(net, 'res_storage') and not net.res_storage.empty
+            'storage': hasattr(net, 'res_storage') and not net.res_storage.empty,
+            'switch': hasattr(net, 'res_switch') and not net.res_switch.empty
         }
         
         # 添加组件的通用函数，减少重复代码
@@ -231,6 +241,7 @@ class SimulationWindow(QMainWindow):
         add_components('sgen', '光伏')
         add_components('ext_grid', '外部电网')
         add_components('storage', '储能')
+        add_components('switch', '开关')
         
         # 添加电表
         if hasattr(net, 'measurement') and not net.measurement.empty:
@@ -268,6 +279,7 @@ class SimulationWindow(QMainWindow):
         self.load_dock.hide()
         self.storage_dock.hide()
         self.charger_dock.hide()
+        self.switch_dock.hide()
         
         # 根据设备类型显示对应的dockwidget
         if component_type == 'sgen':
@@ -275,10 +287,12 @@ class SimulationWindow(QMainWindow):
             self.sgen_dock.show()
         elif component_type == 'load':  # 普通负载
             self.load_dock.show()
-        elif component_type == 'charger' :  # 充电桩
+        elif component_type == 'charger':  # 充电桩
             self.charger_dock.show()
         elif component_type == 'storage':
             self.storage_dock.show()
+        elif component_type == 'switch':  # 开关
+            self.switch_dock.show()
         
         # 显示组件详情
         self.show_component_details(component_type, component_idx)
@@ -386,10 +400,47 @@ class SimulationWindow(QMainWindow):
                         result['side'] = side
             
             return result if result else {"error": "无法获取测量值"}
-                
         except Exception as e:
             return {"error": f"获取电表详情时出错: {str(e)}"}
-
+                        
+    def on_switch_close(self):
+        """开关合闸操作"""
+        if self.current_component_type == 'switch' and hasattr(self, 'current_component_idx'):
+            try:
+                # 更新network_items中的开关状态
+                if 'switch' in network_items and self.current_component_idx in network_items['switch']:
+                    switch_item = network_items['switch'][self.current_component_idx]
+                    switch_item.properties['closed'] = True
+                    
+                    # 更新UI显示
+                    if hasattr(self, 'switch_status_value'):
+                        self.switch_status_value.setText("合闸")
+                        self.switch_status_value.setStyleSheet("font-weight: bold; color: #4CAF50;")
+                    
+                    # 更新network_model中的开关状态会在自动计算前进行
+                    print(f"开关 {self.current_component_idx} 已合闸")
+            except Exception as e:
+                print(f"开关合闸操作失败: {e}")
+                
+    def on_switch_open(self):
+        """开关分闸操作"""
+        if self.current_component_type == 'switch' and hasattr(self, 'current_component_idx'):
+            try:
+                # 更新network_items中的开关状态
+                if 'switch' in network_items and self.current_component_idx in network_items['switch']:
+                    switch_item = network_items['switch'][self.current_component_idx]
+                    switch_item.properties['closed'] = False
+                    
+                    # 更新UI显示
+                    if hasattr(self, 'switch_status_value'):
+                        self.switch_status_value.setText("分闸")
+                        self.switch_status_value.setStyleSheet("font-weight: bold; color: #F44336;")
+                    
+                    # 更新network_model中的开关状态会在自动计算前进行
+                    print(f"开关 {self.current_component_idx} 已分闸")
+            except Exception as e:
+                print(f"开关分闸操作失败: {e}")
+            
     def get_component_type_chinese(self, component_type):
         """获取组件类型的中文名称"""
         type_map = {
@@ -1154,7 +1205,8 @@ class SimulationWindow(QMainWindow):
                 'gen': set(net.res_gen.index) if net.res_gen is not None else set(),
                 'sgen': set(net.res_sgen.index) if net.res_sgen is not None else set(),
                 'ext_grid': set(net.res_ext_grid.index) if net.res_ext_grid is not None else set(),
-                'storage': set(net.res_storage.index) if net.res_storage is not None else set()
+                'storage': set(net.res_storage.index) if net.res_storage is not None else set(),
+                'switch': set(net.res_switch.index) if net.res_switch is not None else set()
             }
             
             # 批量更新所有项目
@@ -1217,6 +1269,25 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             print(f"重置光伏日发电量失败: {str(e)}")
 
+    def _sync_switch_states(self, network_items, net):
+        """
+        将network_items中的开关状态同步到network_model中
+        
+        参数:
+            network_items: 包含所有网络项的字典
+            net: pandapower网络模型
+        """
+        if 'switch' in network_items and hasattr(net, 'switch'):
+            for switch_idx, switch_item in network_items['switch'].items():
+                if switch_idx in net.switch.index:
+                    try:
+                        # 获取switch_item中的closed状态并更新到network_model中
+                        closed_state = switch_item.properties.get('closed', True)
+                        net.switch.loc[switch_idx, 'closed'] = closed_state
+                        logger.debug(f"更新开关 {switch_idx} 状态为: {'闭合' if closed_state else '断开'}")
+                    except Exception as e:
+                        logger.error(f"更新开关 {switch_idx} 状态失败: {e}")
+
     def auto_power_flow_calculation(self):
         """自动潮流计算主方法"""
         try:
@@ -1246,6 +1317,11 @@ class SimulationWindow(QMainWindow):
             # 批量更新Modbus参数
             logger.info("批量更新Modbus参数")
             self._update_para_from_modbus_batch()
+            
+            # 更新开关状态：将network_items中的开关状态同步到network_model中
+            logger.info("更新开关状态")
+            self._sync_switch_states(network_items, net)
+            
             # 运行潮流计算
             try:
                 pp.runpp(net)
@@ -1293,3 +1369,4 @@ class SimulationWindow(QMainWindow):
             if hasattr(self, '_is_calculating'):
                 self._is_calculating = False
                 logger.info("计算周期结束")
+    

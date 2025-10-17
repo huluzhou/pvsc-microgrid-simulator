@@ -591,6 +591,56 @@ class UIComponentManager:
         
         parent.setWidget(storage_widget)
         
+    def create_switch_data_panel(self, parent):
+        """创建开关设备数据面板"""
+        switch_widget = QWidget()
+        switch_layout = QVBoxLayout(switch_widget)
+
+        switch_title = QLabel("开关设备数据")
+        switch_title.setFont(QFont("Arial", 12, QFont.Bold))
+        switch_layout.addWidget(switch_title)
+
+        current_device_group = QGroupBox("当前设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+
+        switch_current_device_label = QLabel("未选择开关设备")
+        switch_current_device_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        current_device_layout.addWidget(switch_current_device_label)
+        self.parent_window.switch_current_device_label = switch_current_device_label
+
+        # 开关状态显示
+        switch_status_label_layout = QHBoxLayout()
+        switch_status_label = QLabel("开关状态：")
+        switch_status_value = QLabel("合闸")
+        switch_status_value.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        self.parent_window.switch_status_value = switch_status_value
+        
+        switch_status_label_layout.addWidget(switch_status_label)
+        switch_status_label_layout.addWidget(switch_status_value)
+        switch_status_label_layout.addStretch()
+        current_device_layout.addLayout(switch_status_label_layout)
+        
+        # 合闸/分闸控制
+        switch_control_layout = QHBoxLayout()
+        switch_close_button = QPushButton("合闸")
+        switch_close_button.clicked.connect(self.parent_window.on_switch_close)
+        switch_open_button = QPushButton("分闸")
+        switch_open_button.clicked.connect(self.parent_window.on_switch_open)
+        self.parent_window.switch_close_button = switch_close_button
+        self.parent_window.switch_open_button = switch_open_button
+        
+        switch_control_layout.addWidget(switch_close_button)
+        switch_control_layout.addWidget(switch_open_button)
+        switch_control_layout.addStretch()
+        current_device_layout.addLayout(switch_control_layout)
+        
+        switch_layout.addWidget(current_device_group)
+        
+        switch_layout.addStretch()
+        
+        # 设置面板为parent的中央部件
+        parent.setWidget(switch_widget)
+    
     def create_charger_data_panel(self, parent):
         """创建充电桩设备数据面板"""
         charger_widget = QWidget()

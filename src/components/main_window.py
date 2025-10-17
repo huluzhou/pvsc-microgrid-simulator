@@ -32,7 +32,7 @@ if FEATURE_SIMULATION:
 class DiagnosticThread(QObject):
     """网络诊断线程类，使用Python原生threading模块实现"""
     progress_updated = Signal(int)  # 进度更新信号
-    diagnostic_completed = Signal(bool, str, list)  # 诊断完成信号
+    diagnostic_completed = Signal(bool, str, dict)  # 诊断完成信号
     error_occurred = Signal(str)  # 错误发生信号
     
     def __init__(self, network_model):
@@ -48,7 +48,7 @@ class DiagnosticThread(QObject):
             self.progress_updated.emit(30)
             
             # 使用pandapower内置诊断函数
-            diagnostic_results = []
+            diagnostic_results = {}
             
             if not DEBUG_MODE:
                 try:
@@ -57,11 +57,11 @@ class DiagnosticThread(QObject):
                     
                     # 解析诊断报告
                     if diag_report:
-                        diagnostic_results.extend(diag_report)
+                        diagnostic_results.update(diag_report)
                         
                 except Exception as e:
                     # 如果pandapower诊断模块不可用或发生错误，添加错误信息
-                    diagnostic_results.append(f"警告：诊断过程中发生错误：{str(e)}")
+                    diagnostic_results['error'] = f"警告：诊断过程中发生错误：{str(e)}"
             
             self.progress_updated.emit(80)
             
@@ -407,8 +407,8 @@ class MainWindow(QMainWindow):
             return
         
         # 显示诊断结果
-        if diagnostic_results:
-            result_text = "\n".join(f"• {result}" for result in diagnostic_results)
+        if diagnostic_results and 'error' not in diagnostic_results:
+            result_text = "\n".join(f"• [{key}]: {value}" for key, value in diagnostic_results.items())
             QMessageBox.warning(self, "网络诊断", 
                 f"网络诊断发现以下问题：\n\n{result_text}\n\n建议修复后再进入仿真模式。")
             self.network_is_valid = False
