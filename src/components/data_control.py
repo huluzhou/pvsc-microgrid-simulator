@@ -209,8 +209,6 @@ class DataControlManager:
                 device_name = f"储能_{component_idx}"
                 self.parent_window.storage_current_device_label.setText(f"当前设备: {device_name}")
                 
-                # 检查当前设备是否启用了数据生成
-                self.is_device_generation_enabled(component_type, component_idx)
             else:
                 self.parent_window.storage_current_device_label.setText("未选择储能设备")
                 
