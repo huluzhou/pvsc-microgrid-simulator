@@ -20,13 +20,13 @@ ASSETS_DIR = "assets"
 #       FEATURE_MODBUS = False表示禁用Modbus功能
 
 # 功能模块宏定义
-FEATURE_SIMULATION = False  # 仿真功能
+FEATURE_SIMULATION = True  # 仿真功能
 FEATURE_MODBUS = True      # Modbus通信功能
 FEATURE_REPORT = True      # 报告生成功能
 FEATURE_EXPORT = True      # 数据导出功能
 
 # 调试模式宏定义
-DEBUG_MODE = True          # 调试模式
+DEBUG_MODE = False          # 调试模式
 VERBOSE_LOGGING = True     # 详细日志
 
 # 性能优化宏定义

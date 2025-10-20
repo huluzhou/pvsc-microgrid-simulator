@@ -18,5 +18,6 @@ network_items = {
     'charger': {},
     'external_grid': {},
     'static_generator': {},
+    'switch': {},
     'meter': {}
 }
