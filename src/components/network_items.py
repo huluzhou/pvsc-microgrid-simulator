@@ -393,46 +393,62 @@ class BaseNetworkItem(QGraphicsItem):
             old_bus_values['hv_bus'] = self.properties.get('hv_bus')
             old_bus_values['lv_bus'] = self.properties.get('lv_bus')
             
-            # 获取连接的bus组件
+            # 获取连接的母线或通过开关连接的母线
             connected_buses = []
-            for connected_item in self.current_connections:
-                if hasattr(connected_item, 'component_type') and connected_item.component_type == 'bus':
-                    bus_index = str(connected_item.component_index) if hasattr(connected_item, 'component_index') else str(connected_item.properties.get('index', 'Unknown'))
-                    connected_buses.append(bus_index)
+            for i, connected_item in enumerate(self.current_connections):
+                if hasattr(connected_item, 'component_type'):
+                    if connected_item.component_type == 'bus':
+                        # 直接连接到母线
+                        bus_index = str(connected_item.component_index) if hasattr(connected_item, 'component_index') else str(connected_item.properties.get('index', 'Unknown'))
+                        connected_buses.append((i, bus_index))  # (连接点索引, 母线索引)
+                    elif connected_item.component_type == 'switch' and connected_item.properties.get('bus'):
+                        # 通过开关连接到母线
+                        connected_buses.append((i, connected_item.properties.get('bus')))
+            
+            # 根据连接点索引确定高压侧和低压侧
+            hv_bus = None
+            lv_bus = None
+            for point_idx, bus_idx in connected_buses:
+                if point_idx == 0:  # 第一个连接点为高压侧
+                    hv_bus = bus_idx
+                elif point_idx == 1:  # 第二个连接点为低压侧
+                    lv_bus = bus_idx
             
             # 更新hv_bus和lv_bus
-            if len(connected_buses) >= 2:
-                self.properties['hv_bus'] = connected_buses[0]  # 第一个连接点为高压侧
-                self.properties['lv_bus'] = connected_buses[1]  # 第二个连接点为低压侧
-            elif len(connected_buses) == 1:
-                self.properties['hv_bus'] = connected_buses[0]
-                self.properties['lv_bus'] = None
-            else:
-                self.properties['hv_bus'] = None
-                self.properties['lv_bus'] = None
+            self.properties['hv_bus'] = hv_bus
+            self.properties['lv_bus'] = lv_bus
         
         # 处理线路的from_bus和to_bus
         elif hasattr(self, 'component_type') and self.component_type == 'line':
             old_bus_values['from_bus'] = self.properties.get('from_bus')
             old_bus_values['to_bus'] = self.properties.get('to_bus')
             
-            # 获取连接的bus组件
+            # 获取连接的母线或通过开关连接的母线
             connected_buses = []
-            for connected_item in self.current_connections:
-                if hasattr(connected_item, 'component_type') and connected_item.component_type == 'bus':
-                    bus_index = str(connected_item.component_index) if hasattr(connected_item, 'component_index') else str(connected_item.properties.get('index', 'Unknown'))
-                    connected_buses.append(bus_index)
+            for i, connected_item in enumerate(self.current_connections):
+                if hasattr(connected_item, 'component_type'):
+                    if connected_item.component_type == 'bus':
+                        # 直接连接到母线
+                        bus_index = str(connected_item.component_index) if hasattr(connected_item, 'component_index') else str(connected_item.properties.get('index', 'Unknown'))
+                        connected_buses.append((i, bus_index))  # (连接点索引, 母线索引)
+                    elif connected_item.component_type == 'switch' and connected_item.properties.get('bus'):
+                        # 通过开关连接到母线
+                        connected_buses.append((i, connected_item.properties.get('bus')))
+            
+            # 根据连接点索引确定起始母线和终止母线
+            from_bus = None
+            to_bus = None
+            for point_idx, bus_idx in connected_buses:
+                if point_idx == 0:  # 第一个连接点为起始母线
+                    from_bus = bus_idx
+                elif point_idx == 1:  # 第二个连接点为终止母线
+                    to_bus = bus_idx
+            
+            # 处理可能只有一个连接的情况（代码逻辑已经在上面的循环中处理）
             
             # 更新from_bus和to_bus
-            if len(connected_buses) >= 2:
-                self.properties['from_bus'] = connected_buses[0]  # 第一个连接点为起始母线
-                self.properties['to_bus'] = connected_buses[1]    # 第二个连接点为终止母线
-            elif len(connected_buses) == 1:
-                self.properties['from_bus'] = connected_buses[0]
-                self.properties['to_bus'] = None
-            else:
-                self.properties['from_bus'] = None
-                self.properties['to_bus'] = None
+            self.properties['from_bus'] = from_bus
+            self.properties['to_bus'] = to_bus
         elif hasattr(self, 'component_type') and self.component_type == 'switch':
             old_bus_values['bus'] = self.properties.get('bus')
             old_bus_values['element'] = self.properties.get('element')
@@ -512,7 +528,16 @@ class BaseNetworkItem(QGraphicsItem):
                         if hasattr(main_window, 'properties_panel'):
                             # 延迟刷新以避免递归调用
                             QTimer.singleShot(10, lambda: main_window.properties_panel.update_properties(self))
-            except Exception :
+                
+                # 如果是开关，且bus属性已更新，通知所有连接的组件更新其母线参数
+                if is_switch and self.properties.get('bus') is not None:
+                    # 遍历所有连接到该开关的组件
+                    for connected_item in self.current_connections:
+                        # 找到连接的变压器和线路并更新其母线参数
+                        if hasattr(connected_item, 'component_type') and connected_item.component_type in ['transformer', 'line']:
+                            # 延迟执行以避免递归调用
+                            QTimer.singleShot(20, lambda item=connected_item: item.update_bus_parameter())
+            except Exception:
                 pass  # 忽略错误，避免影响主要功能
     
     def is_connection_point_available(self, point_index, connecting_item=None):
