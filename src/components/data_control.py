@@ -15,9 +15,14 @@ from .globals import network_items
 class DataControlManager:
     """数据生成器控制管理类"""
     
-    def __init__(self, parent_window):
+    def __init__(self, parent_window, data_generator_manager=None):
         self.parent_window = parent_window
-        self.data_generator_manager = DataGeneratorManager()
+        # 使用传入的数据生成器管理器实例，如果未传入则尝试从父窗口获取
+        if data_generator_manager is not None:
+            self.data_generator_manager = data_generator_manager
+        else:
+            # 作为降级方案，在没有可用实例时才创建新实例
+            self.data_generator_manager = DataGeneratorManager()
         
         # 连接储能功率变化信号
         if hasattr(parent_window, 'storage_power_changed'):
@@ -454,19 +459,36 @@ class DataControlManager:
 
     def on_sgen_variation_changed(self, value):
         """光伏变化幅度改变时的回调"""
-        self.data_generator_manager.set_variation('sgen', value)
-    
-    def on_sgen_interval_changed(self, value):
-        """光伏生成间隔改变时的回调"""
-        self.data_generator_manager.set_interval('sgen', value)
+        # 获取当前选中的设备索引
+        component_idx = getattr(self.parent_window, 'current_component_idx', None)
+        # 如果有选中的设备，则为该特定设备设置变化幅度
+        if component_idx is not None:
+            self.data_generator_manager.set_variation(value, 'sgen', component_idx)
+        # 否则只设置光伏设备类型的默认变化幅度
+        else:
+            self.data_generator_manager.set_variation(value, 'sgen')
     
     def on_load_variation_changed(self, value):
         """负载变化幅度改变时的回调"""
-        self.data_generator_manager.set_variation('load', value)
+        # 获取当前选中的设备索引
+        component_idx = getattr(self.parent_window, 'current_component_idx', None)
+        # 如果有选中的设备，则为该特定设备设置变化幅度
+        if component_idx is not None:
+            self.data_generator_manager.set_variation(value, 'load', component_idx)
+        # 否则只设置负载设备类型的默认变化幅度
+        else:
+            self.data_generator_manager.set_variation(value, 'load')
     
     def on_load_interval_changed(self, value):
         """负载生成间隔改变时的回调"""
-        self.data_generator_manager.set_interval('load', value)
+        # 获取当前选中的设备索引
+        component_idx = getattr(self.parent_window, 'current_component_idx', None)
+        # 如果有选中的设备，则为该特定设备设置间隔
+        if component_idx is not None:
+            self.data_generator_manager.set_interval(value, 'load', component_idx)
+        # 否则只设置负载设备类型的默认间隔
+        else:
+            self.data_generator_manager.set_interval(value, 'load')
     
     def on_load_type_changed(self, load_type_text):
         """负载类型改变时的回调"""
@@ -476,7 +498,15 @@ class DataControlManager:
             "工业负载": "industrial"
         }
         load_type = load_type_map.get(load_type_text, "residential")
-        self.data_generator_manager.set_load_type(load_type)
+        
+        # 获取当前选中的设备索引
+        component_idx = getattr(self.parent_window, 'current_component_idx', None)
+        # 如果有选中的设备，则为该特定设备设置负载类型
+        if component_idx is not None:
+            self.data_generator_manager.set_device_type('load', component_idx, load_type=load_type)
+        # 否则只设置负载设备类型的默认负载类型
+        else:
+            self.data_generator_manager.set_device_type('load', None, load_type=load_type)
     
     # 模式切换回调方法
     
@@ -983,10 +1013,7 @@ class DataControlManager:
         device_key = f"{component_type}_{component_idx}"
         if device_key not in self.parent_window.generated_devices:
             self.parent_window.generated_devices.add(device_key)
-            
-            # 启动对应的数据生成器
-            if component_type in ['load', 'sgen']:
-                self.data_generator_manager.start_generation(component_type)
+
             
             device_type_name = {
                 'load': '负载',

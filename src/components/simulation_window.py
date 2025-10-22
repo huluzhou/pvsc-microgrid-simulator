@@ -71,9 +71,9 @@ class SimulationWindow(QMainWindow):
         # Modbus服务器管理器
         self.modbus_manager = ModbusManager(self.network_model, self.scene)
         
-        # 初始化数据控制管理器
+        # 初始化数据控制管理器，传入已创建的数据生成器管理器实例
         from .data_control import DataControlManager
-        self.data_control_manager = DataControlManager(self)
+        self.data_control_manager = DataControlManager(self, self.data_generator_manager)
 
         # 初始化UI组件管理器
         self.ui_manager = UIComponentManager(self)

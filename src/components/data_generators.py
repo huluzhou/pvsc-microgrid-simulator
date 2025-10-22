@@ -11,16 +11,7 @@ class BaseDataGenerator(ABC):
     """数据生成基类 - 定义通用接口"""
     
     def __init__(self):
-        self.interval = 5  # 默认5秒
-        self.variation = 20  # 默认20%变化幅度
-    
-    def set_interval(self, interval):
-        """设置生成间隔
-        
-        Args:
-            interval: 生成间隔（秒）
-        """
-        self.interval = max(1, min(60, interval))
+        self.variation = 0 # 默认0%变化幅度
     
     def set_variation(self, variation):
         """设置变化幅度
@@ -28,7 +19,7 @@ class BaseDataGenerator(ABC):
         Args:
             variation: 变化幅度百分比（5-50%）
         """
-        self.variation = max(5, min(50, variation))
+        self.variation = max(0, min(50, variation))
     
     @abstractmethod
     def generate_data(self, index, network_model):
@@ -174,7 +165,7 @@ class PVDataGenerator(BaseDataGenerator):
     def __init__(self):
         super().__init__()
         self.weather_type = 'sunny'  # 默认晴天
-        self.season_factor = 'spring'  # 默认春季
+        self.season_factor = 'summer'  # 默认夏季
         self.cloud_cover = 0.0  # 默认无云
     
     def set_weather_type(self, weather_type):
@@ -317,29 +308,87 @@ class DataGeneratorManager:
     """数据生成器管理类 - 统一管理负载和光伏数据生成"""
     
     def __init__(self):
-        self.load_generator = LoadDataGenerator()
-        self.pv_generator = PVDataGenerator()
-        self.generators = {
-            'load': self.load_generator,
-            'sgen': self.pv_generator
+        # 全局默认生成器（用于未单独配置的设备）
+        self.default_load_generator = LoadDataGenerator()
+        self.default_pv_generator = PVDataGenerator()
+        
+        # 设备特定生成器映射 {device_type: {device_index: generator_instance}}
+        self.device_generators = {
+            'load': {},
+            'sgen': {}
+        }
+        
+        # 生成器类型映射
+        self.generator_types = {
+            'load': LoadDataGenerator,
+            'sgen': PVDataGenerator
         }
     
-    def set_device_type(self, device_type, **kwargs):
+    def set_device_type(self, device_type, device_index=None, **kwargs):
         """设置设备类型参数
         
         Args:
             device_type: 设备类型 ('load', 'sgen')
+            device_index: 设备索引，如果为None则设置默认生成器
             **kwargs: 设备特定参数
         """
-        if device_type == 'load' and 'load_type' in kwargs:
-            self.load_generator.set_load_type(kwargs['load_type'])
-        elif device_type == 'sgen':
-            if 'weather_type' in kwargs:
-                self.pv_generator.set_weather_type(kwargs['weather_type'])
-            if 'season_factor' in kwargs:
-                self.pv_generator.set_season_factor(kwargs['season_factor'])
-            if 'cloud_cover' in kwargs:
-                self.pv_generator.set_cloud_cover(kwargs['cloud_cover'])
+        if device_index is None:
+            # 设置默认生成器参数
+            if device_type == 'load' and 'load_type' in kwargs:
+                self.default_load_generator.set_load_type(kwargs['load_type'])
+            elif device_type == 'sgen':
+                if 'weather_type' in kwargs:
+                    self.default_pv_generator.set_weather_type(kwargs['weather_type'])
+                if 'season_factor' in kwargs:
+                    self.default_pv_generator.set_season_factor(kwargs['season_factor'])
+                if 'cloud_cover' in kwargs:
+                    self.default_pv_generator.set_cloud_cover(kwargs['cloud_cover'])
+        else:
+            # 确保设备生成器存在
+            generator = self._get_or_create_device_generator(device_type, device_index)
+            
+            # 设置特定设备的参数
+            if device_type == 'load' and 'load_type' in kwargs:
+                generator.set_load_type(kwargs['load_type'])
+            elif device_type == 'sgen':
+                if 'weather_type' in kwargs:
+                    generator.set_weather_type(kwargs['weather_type'])
+                if 'season_factor' in kwargs:
+                    generator.set_season_factor(kwargs['season_factor'])
+                if 'cloud_cover' in kwargs:
+                    generator.set_cloud_cover(kwargs['cloud_cover'])
+    
+    def _get_or_create_device_generator(self, device_type, device_index):
+        """获取或创建设备特定的生成器
+        
+        Args:
+            device_type: 设备类型
+            device_index: 设备索引
+            
+        Returns:
+            BaseDataGenerator: 设备的生成器实例
+        """
+        if device_type not in self.device_generators:
+            return None
+            
+        # 如果设备没有特定生成器，创建一个新的
+        if device_index not in self.device_generators[device_type]:
+            if device_type in self.generator_types:
+                # 创建新的生成器实例
+                generator = self.generator_types[device_type]()
+                # 复制默认生成器的参数
+                if device_type == 'load':
+                    generator.variation = self.default_load_generator.variation
+                    generator.load_type = self.default_load_generator.load_type
+                elif device_type == 'sgen':
+                    generator.variation = self.default_pv_generator.variation
+                    generator.weather_type = self.default_pv_generator.weather_type
+                    generator.season_factor = self.default_pv_generator.season_factor
+                    generator.cloud_cover = self.default_pv_generator.cloud_cover
+                
+                self.device_generators[device_type][device_index] = generator
+        
+        return self.device_generators[device_type][device_index]
     
     def generate_device_data(self, device_type, index, network_model):
         """实时生成指定设备类型的数据
@@ -352,66 +401,55 @@ class DataGeneratorManager:
         Returns:
             dict: 实时生成的数据字典
         """
-        # 实时生成数据，移除所有缓存机制
-        if device_type == 'load' and device_type in self.generators:
-            return self.generators[device_type].generate_load_data(index, network_model)
-        elif device_type == 'sgen' and device_type in self.generators:
-            return self.generators[device_type].generate_pv_data(index, network_model)
+        # 优先使用设备特定的生成器
+        generator = self._get_or_create_device_generator(device_type, index)
+        
+        if generator:
+            # 使用设备特定生成器
+            if device_type == 'load':
+                return generator.generate_load_data(index, network_model)
+            elif device_type == 'sgen':
+                return generator.generate_pv_data(index, network_model)
+        
+        # 回退到默认生成器
+        elif device_type == 'load':
+            return self.default_load_generator.generate_load_data(index, network_model)
+        elif device_type == 'sgen':
+            return self.default_pv_generator.generate_pv_data(index, network_model)
         
         return {}
     
-    def start_generation(self, device_type=None):
-        """开始数据生成
-        
-        Args:
-            device_type: 设备类型，如果为None则启动所有生成器
-        """
-        # 批量操作，避免重复遍历
-        if device_type is None:
-            # 使用列表推导式批量启动
-            [gen.start_generation() for gen in self.generators.values()]
-        elif device_type in self.generators:
-            self.generators[device_type].start_generation()
-    
-    def stop_generation(self, device_type=None):
-        """停止数据生成 - 优化版本
-        
-        Args:
-            device_type: 设备类型，如果为None则停止所有生成器
-        """
-        if device_type is None:
-            # 使用列表推导式批量停止
-            [gen.stop_generation() for gen in self.generators.values()]
-        elif device_type in self.generators:
-            self.generators[device_type].stop_generation()
-    
-    def set_interval(self, interval, device_type=None):
-        """设置生成间隔 - 优化版本
-        
-        Args:
-            interval: 生成间隔（秒）
-            device_type: 设备类型，如果为None则应用到所有生成器
-        """
-        if device_type is None:
-            # 批量设置，避免重复遍历
-            for generator in self.generators.values():
-                generator.set_interval(interval)
-        elif device_type in self.generators:
-            self.generators[device_type].set_interval(interval)
-    
-    def set_variation(self, variation, device_type=None):
-        """设置变化幅度 - 优化版本
+    def set_variation(self, variation, device_type=None, device_index=None):
+        """设置变化幅度
         
         Args:
             variation: 变化幅度百分比（5-50%）
             device_type: 设备类型，如果为None则应用到所有生成器
+            device_index: 设备索引，如果为None则应用到该类型的所有设备
         """
-        if device_type is None:
-            # 批量设置，避免重复遍历
-            for generator in self.generators.values():
+        if device_type is None and device_index is None:
+            # 设置所有默认生成器
+            self.default_load_generator.set_variation(variation)
+            self.default_pv_generator.set_variation(variation)
+            # 设置所有设备特定生成器
+            for type_generators in self.device_generators.values():
+                for generator in type_generators.values():
+                    generator.set_variation(variation)
+        elif device_type and device_index is None:
+            # 设置特定类型的默认生成器
+            if device_type == 'load':
+                self.default_load_generator.set_variation(variation)
+            elif device_type == 'sgen':
+                self.default_pv_generator.set_variation(variation)
+            # 设置该类型的所有设备特定生成器
+            if device_type in self.device_generators:
+                for generator in self.device_generators[device_type].values():
+                    generator.set_variation(variation)
+        elif device_type and device_index is not None:
+            # 设置特定设备的生成器
+            generator = self._get_or_create_device_generator(device_type, device_index)
+            if generator:
                 generator.set_variation(variation)
-        elif device_type in self.generators:
-            self.generators[device_type].set_variation(variation)
     
     def generate_batch_data(self, device_list, network_model):
         """批量生成多个设备的数据 - 新增优化方法
@@ -445,45 +483,3 @@ class DataGeneratorManager:
                         results[key] = data.get(index, {})
         
         return results
-    
-    def stop_all_generators(self):
-        """停止并清理所有生成器 - 防止内存泄漏"""
-        try:
-            # 停止所有生成器
-            for generator in self.generators.values():
-                if hasattr(generator, 'stop_generation'):
-                    generator.stop_generation()
-            
-            # 清理生成器实例
-            self.generators.clear()
-            
-            # 清理实例属性
-            self.load_generator = None
-            self.pv_generator = None
-            # self.clear_all_members()
-            
-        except Exception as e:
-            print(f"清理数据生成器时发生错误: {e}")
-
-    def clear_all_members(self):
-        """清空类中所有成员变量"""
-        # 保留基本属性，清空其他所有
-        keep_attrs = ['__class__', '__dict__', '__weakref__']
-        
-        for attr in list(self.__dict__.keys()):
-            if attr not in keep_attrs:
-                delattr(self, attr) 
-
-    def cleanup(self):
-        """完整清理资源"""
-        self.stop_all_generators()
-        
-        # 清理所有内部引用
-        if hasattr(self, 'generators'):
-            self.generators = {}
-        
-        if hasattr(self, 'load_generator'):
-            del self.load_generator
-        
-        if hasattr(self, 'pv_generator'):
-            del self.pv_generator

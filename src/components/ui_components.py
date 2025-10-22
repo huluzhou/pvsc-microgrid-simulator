@@ -276,7 +276,7 @@ class UIComponentManager:
         # 变化幅度
         sgen_variation_spinbox = QDoubleSpinBox()
         sgen_variation_spinbox.setRange(0.0, 50.0)
-        sgen_variation_spinbox.setValue(15.0)
+        sgen_variation_spinbox.setValue(0.0)
         sgen_variation_spinbox.setSuffix("%")
         sgen_variation_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_variation_changed)
         sgen_params_layout.addRow("功率变化幅度:", sgen_variation_spinbox)
