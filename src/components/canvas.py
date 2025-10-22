@@ -349,36 +349,30 @@ class NetworkCanvas(QGraphicsView):
         point_index_source = -1
         point_index_target = -1
         
-        # 特殊处理源组件是变压器且目标组件是母线的情况
-        if source_item.component_type == 'transformer' and target_item.component_type == 'bus':
+        available_points = source_item.get_available_connection_points(target_item)
+        # 当available_points为空列表时，表示没有可用的连接点
+        if not available_points:
+            return -1, -1
+        
+        # 根据组件类型组合进行特殊处理
+        if target_item.component_type == 'bus':
             # 获取要连接的总线ID
             bus_id = target_item.properties.get('index')
             
-            # 如果总线是高压侧母线，选择高压侧连接点（索引0）
-            if source_item.properties.get('hv_bus') == bus_id:
-                point_index_source = 0
-            # 如果总线是低压侧母线，选择低压侧连接点（索引1）
-            elif source_item.properties.get('lv_bus') == bus_id:
-                point_index_source = 1
-            # 如果都不是，使用最近的连接点
-            else:
-                _, point_index_source = self.find_nearest_connection_point(source_item, target_item)
-            
-        # 特殊处理源组件是线路且目标组件是母线的情况
-        elif source_item.component_type == 'line' and target_item.component_type == 'bus':
-            # 获取要连接的总线ID
-            bus_id = target_item.properties.get('index')
-            
-            # 如果总线是起始母线，选择起始端连接点（索引0）
-            if source_item.properties.get('from_bus') == bus_id:
-                point_index_source = 0
-            # 如果总线是终止母线，选择终止端连接点（索引1）
-            elif source_item.properties.get('to_bus') == bus_id:
-                point_index_source = 1
-            # 如果都不是，使用最近的连接点
-            else:
-                _, point_index_source = self.find_nearest_connection_point(source_item, target_item)
-        # 如果没有根据特殊规则选择连接点，使用最近的连接点
+            if source_item.component_type == 'transformer':
+                # 变压器连接到母线的情况
+                if source_item.properties.get('hv_bus') == bus_id:
+                    point_index_source = 0  # 高压侧连接点
+                elif source_item.properties.get('lv_bus') == bus_id:
+                    point_index_source = 1  # 低压侧连接点
+            elif source_item.component_type == 'line':
+                # 线路连接到母线的情况
+                if source_item.properties.get('from_bus') == bus_id:
+                    point_index_source = 0  # 起始端连接点
+                elif source_item.properties.get('to_bus') == bus_id:
+                    point_index_source = 1  # 终止端连接点
+        
+        # 如果没有通过特殊规则选择连接点，使用最近的连接点
         if point_index_source == -1:
             _, point_index_source = self.find_nearest_connection_point(source_item, target_item)
         
@@ -386,10 +380,7 @@ class NetworkCanvas(QGraphicsView):
         _, point_index_target = self.find_nearest_connection_point(target_item, source_item)
         
         # 根据source_is_first参数决定返回顺序
-        if source_is_first:
-            return point_index_source, point_index_target
-        else:
-            return point_index_target, point_index_source
+        return (point_index_source, point_index_target) if source_is_first else (point_index_target, point_index_source)
     
     def connect_items(self, item1, item2):
         """连接两个组件"""
@@ -421,7 +412,7 @@ class NetworkCanvas(QGraphicsView):
         point_index1 = -1
         point_index2 = -1
         
-        # 使用辅助方法选择连接点
+        # 特殊处理变压器和线路与母线的连接
         if (item1.component_type in ['transformer', 'line'] and item2.component_type == 'bus'):
             point_index1, point_index2 = self._select_connection_points(item1, item2)
         elif (item2.component_type in ['transformer', 'line'] and item1.component_type == 'bus'):
