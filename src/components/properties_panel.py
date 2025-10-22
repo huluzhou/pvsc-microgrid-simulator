@@ -302,7 +302,7 @@ class PropertiesPanel(QWidget):
         elif prop_type == 'note':
             widget = QLabel()
             widget.setText(prop_info.get('content', ''))
-            widget.setStyleSheet("QLabel { color: #666666; font-style: italic; }")
+            widget.setStyleSheet("QLabel { color: #E74C3C; font-weight: bold; font-style: italic; padding: 4px; }")
             return widget
             
         elif prop_type == 'readonly':
