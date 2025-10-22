@@ -211,7 +211,11 @@ class PropertiesPanel(QWidget):
             widget = self.create_property_widget(prop_name, prop_info, current_value)
             
             if widget:
-                props_layout.addRow(f"{prop_info.get('label', prop_name)}:", widget)
+                # 特殊处理note类型：不添加标签前缀，直接添加控件
+                if prop_info.get('type') == 'note':
+                    props_layout.addRow(widget)
+                else:
+                    props_layout.addRow(f"{prop_info.get('label', prop_name)}:", widget)
                 self.property_widgets[prop_name] = widget
         
         self.properties_layout.addWidget(props_group)
@@ -293,6 +297,12 @@ class PropertiesPanel(QWidget):
             widget.currentTextChanged.connect(
                 lambda text: self.on_property_changed(prop_name, choice_map.get(text, text))
             )
+            return widget
+            
+        elif prop_type == 'note':
+            widget = QLabel()
+            widget.setText(prop_info.get('content', ''))
+            widget.setStyleSheet("QLabel { color: #666666; font-style: italic; }")
             return widget
             
         elif prop_type == 'readonly':
@@ -519,6 +529,7 @@ class PropertiesPanel(QWidget):
                 'max_i_ka': {'type': 'float', 'label': '最大热电流 (kA)', 'default': 1.0, 'min': 0.001, 'decimals': 3, 'condition': {'use_standard_type': False}},
                 
                 # 连接属性（只读显示）
+                'line_bus_note': {'type': 'note', 'content': '说明: 先连接的母线作为起始母线'},
                 'from_bus': {'type': 'readonly', 'label': '起始母线'},
                 'to_bus': {'type': 'readonly', 'label': '终止母线'},
             },
@@ -564,6 +575,7 @@ class PropertiesPanel(QWidget):
                 'si0_hv_partial': {'type': 'float', 'label': '零序漏抗高压侧分配', 'default': 0.0, 'min': 0.0, 'max': 1.0, 'decimals': 3},
                 
                 # 连接属性（只读显示）
+                'transformer_bus_note': {'type': 'note', 'content': '说明: 先连接的母线作为高压侧'},
                 'hv_bus': {'type': 'readonly', 'label': '高压侧母线'},
                 'lv_bus': {'type': 'readonly', 'label': '低压侧母线'},
             },
