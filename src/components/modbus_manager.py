@@ -151,7 +151,6 @@ class ModbusManager:
         # 当前功率: 0 (保持寄存器)
         meter_registers = [0] * 100
         meter_registers[0] = 0
-        meter_registers[2] = 1 #合闸分闸状态 1 合闸
         
         # 创建ModbusSequentialDataBlock实例
         input_regs = ModbusSequentialDataBlock(0, meter_registers)
@@ -562,7 +561,6 @@ class ModbusManager:
         - 功率值实时获取，确保数据准确性
         """
         try:
-            from .network_items import MeterItem
             
             # 直接使用network_items[component_type][component_index]查找电表设备
             if 'meter' in network_items and index in network_items['meter']:
@@ -617,11 +615,6 @@ class ModbusManager:
             power_high = (power_kw >> 16) & 0xFFFF
             slave_context.setValues(4, 0, [power_low, power_high])
 
-            if abs(power_value) < 0.01:
-                slave_context.setValues(4, 2, [6])
-            else:
-                slave_context.setValues(4, 2, [1])
-            
         except Exception as e:
             print(f"更新电表上下文失败: {e}")
 
