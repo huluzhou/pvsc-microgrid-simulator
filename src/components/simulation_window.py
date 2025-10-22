@@ -839,19 +839,19 @@ class SimulationWindow(QMainWindow):
                 try:
                     if device_type == 'storage':
                         # 储能设备数据收集
-                        update_data = self._collect_storage_modbus_data(device_idx, slave_context)
+                        update_data = self.modbus_manager.collect_storage_modbus_data(device_idx, slave_context)
                         if update_data:
                             storage_updates.append((device_idx, update_data))
                     
                     elif device_type == 'charger':
                         # 充电桩设备数据收集（负荷类型中的充电桩）
-                        update_data = self._collect_charger_modbus_data(device_idx, slave_context)
+                        update_data = self.modbus_manager.collect_charger_modbus_data(device_idx, slave_context)
                         if update_data:
                             charger_updates.append((device_idx, update_data))
                     
                     elif device_type == 'static_generator':
                         # 光伏系统数据收集
-                        update_data = self._collect_sgen_modbus_data(device_idx, slave_context)
+                        update_data = self.modbus_manager.collect_sgen_modbus_data(device_idx, slave_context)
                         if update_data:
                             sgen_updates.append((device_idx, update_data))
                             
@@ -871,132 +871,7 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             print(f"Modbus参数批量更新失败: {str(e)}")
 
-    def _collect_storage_modbus_data(self, device_idx, slave_context):
-        """收集单个储能设备的Modbus数据
-        
-        储能设备保持寄存器功能：
-        - 寄存器0：功率设定值 (kW)
-        - 寄存器55：开关机控制 (布尔值)
-        """
-        try:
-            device_context = None
-            try:
-                # 直接通过索引1获取设备上下文
-                device_context = slave_context[1]
-            except (KeyError, IndexError, TypeError):
-                # 如果索引访问失败，保持device_context为None
-                pass
-            if not device_context:
-                return None  # 如果无法获取设备上下文，直接返回None
-            # 读取功率设定值（寄存器0）
-            try:
-                power_setpoint = device_context.getValues(3, 4, 1)[0]
-                
-                # 先将值转换为int16类型（处理负数）
-                if power_setpoint > 32767:  # 检查最高位是否为1（表示负数）
-                    power_setpoint = power_setpoint - 65536  # 转换为负数
-                
-                power_setpoint = power_setpoint / 10.0 / 1000.0  # kW -> MW
-            except (IndexError, ValueError, AttributeError):
-                power_setpoint = None
-                
-            # 读取开关机状态（寄存器55）
-            try:
-                power_on = device_context.getValues(3, 55, 1)[0]
-                power_on = bool(power_on)
-            except (IndexError, ValueError, AttributeError):
-                power_on = False
-            # 读取储能并网离网指令 寄存器暂定
-            try:
-                grid_connected = device_context.getValues(3, 56, 1)[0]
-            except (IndexError, ValueError, AttributeError):
-                grid_connected = 0
-            
-            return {
-                'power_on': power_on,
-                'power_setpoint': power_setpoint,
-                'grid_connected': grid_connected
-            }
-            
-        except Exception as e:
-            print(f"收集储能设备 {device_idx} 数据失败: {e}")
-            return None
-            
-    def _collect_charger_modbus_data(self, device_idx, slave_context):
-        """Collect power limit information from the holding register at address 0 for a single charging pile device"""
-        power_limit = None
-        
-        try:
-            # 尝试获取设备上下文的两种方式
-            device_context = None
-            try:
-                # 直接通过索引1获取设备上下文
-                device_context = slave_context[1]
-            except (KeyError, IndexError, TypeError):
-                # 如果索引访问失败，保持device_context为None
-                pass
-            
-            # 如果成功获取设备上下文，则读取功率限制
-            if device_context:
-                try:
-                    result = device_context.getValues(3, 0, 1)
-                    if isinstance(result, list) and len(result) > 0:
-                        power_limit = result[0] / 1000.0  # Convert kW to MW
-                except (TypeError, IndexError):
-                    pass
-        except Exception:
-            pass
-        
-        return {'power_limit': power_limit}
-            
-    def _collect_sgen_modbus_data(self, device_idx, slave_context):
-        """收集单个光伏系统的Modbus数据
-        
-        光伏系统保持寄存器功能：
-        - 寄存器5005：开关机控制 (0=关机, 1=开机)
-        - 寄存器5038：有功功率限制 (kW单位)
-        - 寄存器5007：有功功率百分比限制 (0-100%)
-        """
-        try:
-            device_context = None
-            try:
-                # 直接通过索引1获取设备上下文
-                device_context = slave_context[1]
-            except (KeyError, IndexError, TypeError):
-                # 如果索引访问失败，保持device_context为None
-                pass
-            if not device_context:
-                return None  # 如果无法获取设备上下文，直接返回None
-            # 读取开关机状态（寄存器5005）
-            try:
-                power_on = device_context.getValues(3, 5005, 1)[0]
-                power_on = bool(power_on)
-            except (IndexError, ValueError, AttributeError):
-                power_on = True  # 默认启用
-                
-            # 读取有功功率限制（寄存器5038）
-            try:
-                power_limit_kw = device_context.getValues(3, 5038, 1)[0]
-                power_limit_mw = power_limit_kw / 1000.0  # kW -> MW
-            except (IndexError, ValueError, AttributeError):
-                power_limit_mw = None
-                
-            # 读取有功功率百分比限制（寄存器5007）
-            try:
-                power_percent_limit = device_context.getValues(3, 5007, 1)[0]
-                power_percent_limit = min(100, max(0, power_percent_limit))  # 限制在0-100%
-            except (IndexError, ValueError, AttributeError):
-                power_percent_limit = None
-            
-            return {
-                'power_on': power_on,
-                'power_limit_mw': power_limit_mw,
-                'power_percent_limit': power_percent_limit
-            }
-            
-        except Exception as e:
-            print(f"收集光伏系统 {device_idx} 数据失败: {e}")
-            return None
+
 
     def _apply_storage_updates_batch(self, storage_updates):
         """批量应用储能设备更新"""
