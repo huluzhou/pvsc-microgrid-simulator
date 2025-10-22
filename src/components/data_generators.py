@@ -240,6 +240,9 @@ class PVDataGenerator(BaseDataGenerator):
                 weather_factor = 0.6 + np.random.uniform(-0.1, 0.1)
             elif self.weather_type == 'overcast':
                 weather_factor = 0.3 + np.random.uniform(-0.05, 0.05)
+            elif self.weather_type == 'rainy':
+                # 雨天发电效率更低，只有10-20%
+                weather_factor = 0.15 + np.random.uniform(-0.05, 0.05)
             
             # 根据季节调整
             season_factors = {
@@ -251,7 +254,7 @@ class PVDataGenerator(BaseDataGenerator):
             season_multiplier = season_factors.get(self.season_factor, 1.0)
             
             # 云层影响
-            cloud_factor = 1.0 - (self.cloud_cover * 0.5)
+            cloud_factor = 1.0 - (self.cloud_cover * 1.0)
             
             # 获取基础功率（当前时段的标准输出）
             base_power_mw = base_pv_curve[current_hour]

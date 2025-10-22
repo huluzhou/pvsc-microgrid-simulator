@@ -281,6 +281,33 @@ class UIComponentManager:
         sgen_variation_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_variation_changed)
         sgen_params_layout.addRow("功率变化幅度:", sgen_variation_spinbox)
         self.parent_window.sgen_variation_spinbox = sgen_variation_spinbox
+        
+        # 季节选择
+        season_combo = QComboBox()
+        season_combo.addItems(["春季", "夏季", "秋季", "冬季"])
+        season_combo.setCurrentText("夏季")
+        season_combo.currentTextChanged.connect(self.parent_window.data_control_manager.on_season_changed)
+        sgen_params_layout.addRow("季节:", season_combo)
+        self.parent_window.season_combo = season_combo
+        
+        # 天气选择
+        weather_combo = QComboBox()
+        weather_combo.addItems(["晴朗", "多云", "阴天", "雨天"])
+        weather_combo.setCurrentText("晴朗")
+        # 连接到天气变化的回调（需要在data_control.py中实现on_weather_changed方法）
+        weather_combo.currentTextChanged.connect(self.parent_window.data_control_manager.on_weather_changed)
+        sgen_params_layout.addRow("天气:", weather_combo)
+        self.parent_window.weather_combo = weather_combo
+        
+        # 云层覆盖度（只保留doublespin）
+        cloud_cover_spinbox = QDoubleSpinBox()
+        cloud_cover_spinbox.setRange(0.0, 1.0)
+        cloud_cover_spinbox.setValue(0.0)
+        cloud_cover_spinbox.setSingleStep(0.1)
+        # 直接连接到on_cloud_cover_changed方法
+        cloud_cover_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_cloud_cover_changed)
+        self.parent_window.cloud_cover_spinbox = cloud_cover_spinbox
+        sgen_params_layout.addRow("云层覆盖度:", cloud_cover_spinbox)
 
         sgen_layout.addWidget(sgen_params_group)
         

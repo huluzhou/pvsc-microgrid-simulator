@@ -553,10 +553,6 @@ class SimulationWindow(QMainWindow):
             if hasattr(self, 'modbus_manager'):
                 self.modbus_manager.stop_all_modbus_servers()
             
-            # 清理数据生成器
-            if hasattr(self, 'data_generator_manager'):
-                self.data_generator_manager.stop_all_generators()
-            
             # 清理功率监控
             if hasattr(self, 'power_monitor'):
                 self.power_monitor.cleanup()

@@ -467,7 +467,50 @@ class DataControlManager:
         # 否则只设置光伏设备类型的默认变化幅度
         else:
             self.data_generator_manager.set_variation(value, 'sgen')
-    
+            
+    def on_season_changed(self, season):
+        """季节改变时的回调"""
+        season_map = {
+            "春季": "spring",
+            "夏季": "summer",
+            "秋季": "autumn",
+            "冬季": "winter"
+        }
+        season = season_map.get(season, "spring")
+        component_idx = getattr(self.parent_window, 'current_component_idx', None)
+        if component_idx is not None:
+            self.data_generator_manager.set_device_type('sgen', component_idx, season_factor=season)
+        else:
+            self.data_generator_manager.set_device_type('sgen', season_factor=season)
+            
+    def on_weather_changed(self, weather_text):
+        """天气改变时的回调"""
+        # 将中文天气转换为英文表示
+        weather_map = {
+            "晴朗": "sunny",
+            "多云": "cloudy",
+            "阴天": "overcast",
+            "雨天": "rainy"
+        }
+        weather_en = weather_map.get(weather_text, "sunny")
+        component_idx = getattr(self.parent_window, 'current_component_idx', None)
+        if component_idx is not None:
+            self.data_generator_manager.set_device_type('sgen', component_idx, weather_type=weather_en)
+        else:
+            self.data_generator_manager.set_device_type('sgen', weather_type=weather_en)
+            # 显示状态消息
+            self.parent_window.statusBar().showMessage(f"已设置天气为: {weather_text}")
+            
+    def on_cloud_cover_changed(self, cloud_cover):
+        """云层覆盖度改变时的回调"""
+        component_idx = getattr(self.parent_window, 'current_component_idx', None)
+        if component_idx is not None:
+            self.data_generator_manager.set_device_type('sgen', component_idx, cloud_cover=cloud_cover)
+        else:
+            self.data_generator_manager.set_device_type('sgen', cloud_cover=cloud_cover)
+            # 显示状态消息
+            self.parent_window.statusBar().showMessage(f"已设置云层覆盖度: {cloud_cover:.1f}")
+
     def on_load_variation_changed(self, value):
         """负载变化幅度改变时的回调"""
         # 获取当前选中的设备索引
@@ -546,6 +589,67 @@ class DataControlManager:
                 self.parent_window.sgen_power_slider.setValue(int(abs(current_power) * 10))  # 转换为滑块值
             if hasattr(self.parent_window, 'sgen_power_spinbox'):
                 self.parent_window.sgen_power_spinbox.setValue(abs(current_power))
+            
+            # 更新变化幅度控件
+            if hasattr(self.parent_window, 'sgen_variation_spinbox') and hasattr(self, 'data_generator_manager'):
+                # 获取当前设备的数据生成器参数
+                generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                    self.parent_window.current_component_idx, self.data_generator_manager.default_pv_generator
+                )
+                if hasattr(generator, 'variation'):
+                    # 避免触发信号循环
+                    self.parent_window.sgen_variation_spinbox.blockSignals(True)
+                    self.parent_window.sgen_variation_spinbox.setValue(generator.variation)
+                    self.parent_window.sgen_variation_spinbox.blockSignals(False)
+            
+            # 更新季节选择控件
+            if hasattr(self.parent_window, 'season_combo') and hasattr(self, 'data_generator_manager'):
+                generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                    self.parent_window.current_component_idx, self.data_generator_manager.default_pv_generator
+                )
+                if hasattr(generator, 'season_factor'):
+                    # 季节中英文映射
+                    season_map = {
+                        'spring': '春季',
+                        'summer': '夏季',
+                        'autumn': '秋季',
+                        'winter': '冬季'
+                    }
+                    season_text = season_map.get(generator.season_factor, '夏季')
+                    # 避免触发信号循环
+                    self.parent_window.season_combo.blockSignals(True)
+                    self.parent_window.season_combo.setCurrentText(season_text)
+                    self.parent_window.season_combo.blockSignals(False)
+            
+            # 更新天气选择控件
+            if hasattr(self.parent_window, 'weather_combo') and hasattr(self, 'data_generator_manager'):
+                generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                    self.parent_window.current_component_idx, self.data_generator_manager.default_pv_generator
+                )
+                if hasattr(generator, 'weather_type'):
+                    # 天气中英文映射
+                    weather_map = {
+                        'sunny': '晴朗',
+                        'cloudy': '多云',
+                        'overcast': '阴天',
+                        'rainy': '雨天'
+                    }
+                    weather_text = weather_map.get(generator.weather_type, '晴朗')
+                    # 避免触发信号循环
+                    self.parent_window.weather_combo.blockSignals(True)
+                    self.parent_window.weather_combo.setCurrentText(weather_text)
+                    self.parent_window.weather_combo.blockSignals(False)
+            # 更新云层覆盖控件
+            if hasattr(self.parent_window, 'cloud_cover_spinbox') and hasattr(self, 'data_generator_manager'):
+                generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                    self.parent_window.current_component_idx, self.data_generator_manager.default_pv_generator
+                )
+                if hasattr(generator, 'cloud_cover'):
+                    # 避免触发信号循环
+                    self.parent_window.cloud_cover_spinbox.blockSignals(True)
+                    self.parent_window.cloud_cover_spinbox.setValue(generator.cloud_cover)
+                    self.parent_window.cloud_cover_spinbox.blockSignals(False)
+            
         except Exception as e:
             print(f"更新光伏设备手动控制值时出错: {e}")
     
