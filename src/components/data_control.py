@@ -172,25 +172,6 @@ class DataControlManager:
                 self.parent_window.storage_power_spinbox.setValue(safe_value)
                 self.parent_window.storage_power_spinbox.blockSignals(False)
                 
-    def update_sgen_device_info(self, component_type, component_idx):
-        """更新光伏设备信息"""
-        if hasattr(self.parent_window, 'sgen_current_device_label') and hasattr(self.parent_window, 'sgen_enable_generation_checkbox'):
-            if component_type and component_idx is not None:
-                device_name = f"光伏_{component_idx}"
-                self.parent_window.sgen_current_device_label.setText(f"当前设备: {device_name}")
-                
-                # 检查当前设备是否启用了数据生成
-                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
-                self.parent_window.sgen_enable_generation_checkbox.setChecked(is_enabled)
-                self.parent_window.sgen_enable_generation_checkbox.setEnabled(True)
-                
-                # 更新有功功率显示
-                self.update_sgen_active_power(component_idx)
-            else:
-                self.parent_window.sgen_current_device_label.setText("未选择光伏设备")
-                self.parent_window.sgen_enable_generation_checkbox.setChecked(False)
-                self.parent_window.sgen_enable_generation_checkbox.setEnabled(False)
-                
     def update_load_device_info(self, component_type, component_idx):
         """更新负载设备信息"""
         if hasattr(self.parent_window, 'load_current_device_label') and hasattr(self.parent_window, 'load_enable_generation_checkbox'):
@@ -264,16 +245,8 @@ class DataControlManager:
             'sgen': 'sgen_manual_panel', 
         }
         
-        # 更新方法映射
-        update_method_map = {
-            'load': self.update_load_manual_controls_from_device,
-            'sgen': self.update_sgen_manual_controls_from_device,
-            'charger': self.update_charger_manual_controls_from_device,  # 新增充电桩更新方法
-        }
-        
         # 获取当前设备类型对应的面板和方法
         current_panel_name = panel_map.get(device_type)
-        current_update_method = update_method_map.get(device_type)
         
         if state == 2:  # 选中状态 - 启用数据生成
             if device_key not in self.parent_window.generated_devices:
@@ -295,10 +268,6 @@ class DataControlManager:
                 if current_panel_name and hasattr(self.parent_window, current_panel_name):
                     getattr(self.parent_window, current_panel_name).setVisible(True)
                 
-                # 只更新当前设备类型的手动控制
-                if current_update_method:
-                    current_update_method()
-                
                 self.parent_window.statusBar().showMessage(f"已禁用{device_type_name}设备 {self.parent_window.current_component_idx} 的数据生成")
                 print(f"禁用设备 {device_name} 的数据生成")
             else:
@@ -310,11 +279,6 @@ class DataControlManager:
         self.data_generator_manager.set_variation('load', value)
         self.data_generator_manager.set_variation('sgen', value)
     
-    def on_interval_changed(self, value):
-        """生成间隔改变时的回调"""
-        self.data_generator_manager.set_interval('load', value)
-        self.data_generator_manager.set_interval('sgen', value)
-
     def update_sgen_active_power(self, component_idx):
         """更新光伏设备的有功功率显示"""
         if hasattr(self.parent_window, "sgen_active_power_label") and hasattr(
@@ -569,89 +533,103 @@ class DataControlManager:
     
     
     # 手动控制更新方法
-    def update_sgen_manual_controls_from_device(self):
-        """从当前光伏设备更新手动控制组件的值"""
-        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
-            return
-            
-        if not self.parent_window.network_model or not hasattr(self.parent_window.network_model, 'net'):
-            return
-            
-        if self.parent_window.current_component_type != 'sgen':
-            return
-            
-        try:
-            # 获取光伏设备的当前功率值
-            current_power = self.parent_window.network_model.net.sgen.at[self.parent_window.current_component_idx, 'p_mw']
-            
-            # 更新滑块和输入框的值
-            if hasattr(self.parent_window, 'sgen_power_slider'):
-                self.parent_window.sgen_power_slider.setValue(int(abs(current_power) * 10))  # 转换为滑块值
-            if hasattr(self.parent_window, 'sgen_power_spinbox'):
-                self.parent_window.sgen_power_spinbox.setValue(abs(current_power))
-            
-            # 更新变化幅度控件
-            if hasattr(self.parent_window, 'sgen_variation_spinbox') and hasattr(self, 'data_generator_manager'):
-                # 获取当前设备的数据生成器参数
-                generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
-                    self.parent_window.current_component_idx, self.data_generator_manager.default_pv_generator
-                )
-                if hasattr(generator, 'variation'):
-                    # 避免触发信号循环
-                    self.parent_window.sgen_variation_spinbox.blockSignals(True)
-                    self.parent_window.sgen_variation_spinbox.setValue(generator.variation)
-                    self.parent_window.sgen_variation_spinbox.blockSignals(False)
-            
-            # 更新季节选择控件
-            if hasattr(self.parent_window, 'season_combo') and hasattr(self, 'data_generator_manager'):
-                generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
-                    self.parent_window.current_component_idx, self.data_generator_manager.default_pv_generator
-                )
-                if hasattr(generator, 'season_factor'):
-                    # 季节中英文映射
-                    season_map = {
-                        'spring': '春季',
-                        'summer': '夏季',
-                        'autumn': '秋季',
-                        'winter': '冬季'
-                    }
-                    season_text = season_map.get(generator.season_factor, '夏季')
-                    # 避免触发信号循环
-                    self.parent_window.season_combo.blockSignals(True)
-                    self.parent_window.season_combo.setCurrentText(season_text)
-                    self.parent_window.season_combo.blockSignals(False)
-            
-            # 更新天气选择控件
-            if hasattr(self.parent_window, 'weather_combo') and hasattr(self, 'data_generator_manager'):
-                generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
-                    self.parent_window.current_component_idx, self.data_generator_manager.default_pv_generator
-                )
-                if hasattr(generator, 'weather_type'):
-                    # 天气中英文映射
-                    weather_map = {
-                        'sunny': '晴朗',
-                        'cloudy': '多云',
-                        'overcast': '阴天',
-                        'rainy': '雨天'
-                    }
-                    weather_text = weather_map.get(generator.weather_type, '晴朗')
-                    # 避免触发信号循环
-                    self.parent_window.weather_combo.blockSignals(True)
-                    self.parent_window.weather_combo.setCurrentText(weather_text)
-                    self.parent_window.weather_combo.blockSignals(False)
-            # 更新云层覆盖控件
-            if hasattr(self.parent_window, 'cloud_cover_spinbox') and hasattr(self, 'data_generator_manager'):
-                generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
-                    self.parent_window.current_component_idx, self.data_generator_manager.default_pv_generator
-                )
-                if hasattr(generator, 'cloud_cover'):
-                    # 避免触发信号循环
-                    self.parent_window.cloud_cover_spinbox.blockSignals(True)
-                    self.parent_window.cloud_cover_spinbox.setValue(generator.cloud_cover)
-                    self.parent_window.cloud_cover_spinbox.blockSignals(False)
-            
-        except Exception as e:
-            print(f"更新光伏设备手动控制值时出错: {e}")
+    def update_sgen_device(self, component_type, component_idx):
+        """更新光伏设备信息和手动控制组件的值"""
+        # 1. 更新手动控制组件的值
+        if component_type == 'sgen' and hasattr(self.parent_window, 'network_model') and hasattr(self.parent_window.network_model, 'net'):
+            try:
+                # 获取光伏设备的当前功率值
+                if component_idx in self.parent_window.network_model.net.sgen.index:
+                    current_power = self.parent_window.network_model.net.sgen.at[component_idx, 'p_mw']
+                    
+                    # 更新滑块和输入框的值
+                    if hasattr(self.parent_window, 'sgen_power_slider'):
+                        self.parent_window.sgen_power_slider.setValue(int(abs(current_power) * 10))  # 转换为滑块值
+                    if hasattr(self.parent_window, 'sgen_power_spinbox'):
+                        self.parent_window.sgen_power_spinbox.setValue(abs(current_power))
+                    
+                    # 更新变化幅度控件
+                    if hasattr(self.parent_window, 'sgen_variation_spinbox') and hasattr(self, 'data_generator_manager'):
+                        # 获取当前设备的数据生成器参数
+                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                            component_idx, self.data_generator_manager.default_pv_generator
+                        )
+                        if hasattr(generator, 'variation'):
+                            # 避免触发信号循环
+                            self.parent_window.sgen_variation_spinbox.blockSignals(True)
+                            self.parent_window.sgen_variation_spinbox.setValue(generator.variation)
+                            self.parent_window.sgen_variation_spinbox.blockSignals(False)
+                    
+                    # 更新季节选择控件
+                    if hasattr(self.parent_window, 'season_combo') and hasattr(self, 'data_generator_manager'):
+                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                            component_idx, self.data_generator_manager.default_pv_generator
+                        )
+                        if hasattr(generator, 'season_factor'):
+                            # 季节中英文映射
+                            season_map = {
+                                'spring': '春季',
+                                'summer': '夏季',
+                                'autumn': '秋季',
+                                'winter': '冬季'
+                            }
+                            season_text = season_map.get(generator.season_factor, '夏季')
+                            # 避免触发信号循环
+                            self.parent_window.season_combo.blockSignals(True)
+                            self.parent_window.season_combo.setCurrentText(season_text)
+                            self.parent_window.season_combo.blockSignals(False)
+                    
+                    # 更新天气选择控件
+                    if hasattr(self.parent_window, 'weather_combo') and hasattr(self, 'data_generator_manager'):
+                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                            component_idx, self.data_generator_manager.default_pv_generator
+                        )
+                        if hasattr(generator, 'weather_type'):
+                            # 天气中英文映射
+                            weather_map = {
+                                'sunny': '晴朗',
+                                'cloudy': '多云',
+                                'overcast': '阴天',
+                                'rainy': '雨天'
+                            }
+                            weather_text = weather_map.get(generator.weather_type, '晴朗')
+                            # 避免触发信号循环
+                            self.parent_window.weather_combo.blockSignals(True)
+                            self.parent_window.weather_combo.setCurrentText(weather_text)
+                            self.parent_window.weather_combo.blockSignals(False)
+                    # 更新云层覆盖控件
+                    if hasattr(self.parent_window, 'cloud_cover_spinbox') and hasattr(self, 'data_generator_manager'):
+                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                            component_idx, self.data_generator_manager.default_pv_generator
+                        )
+                        if hasattr(generator, 'cloud_cover'):
+                            # 避免触发信号循环
+                            self.parent_window.cloud_cover_spinbox.blockSignals(True)
+                            self.parent_window.cloud_cover_spinbox.setValue(generator.cloud_cover)
+                            self.parent_window.cloud_cover_spinbox.blockSignals(False)
+            except Exception as e:
+                print(f"更新光伏设备手动控制值时出错: {e}")
+        
+        # 2. 更新设备信息
+        if hasattr(self.parent_window, 'sgen_current_device_label') and hasattr(self.parent_window, 'sgen_enable_generation_checkbox'):
+            if component_type and component_idx is not None:
+                device_name = f"光伏_{component_idx}"
+                self.parent_window.sgen_current_device_label.setText(f"当前设备: {device_name}")
+                
+                # 检查当前设备是否启用了数据生成
+                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+                self.parent_window.sgen_enable_generation_checkbox.setChecked(is_enabled)
+                self.parent_window.sgen_enable_generation_checkbox.setEnabled(True)
+                # 根据数据生成状态控制手动控制面板可见性
+                if hasattr(self.parent_window, 'sgen_manual_panel'):
+                    self.parent_window.sgen_manual_panel.setVisible(not is_enabled)
+                
+                # 更新有功功率显示
+                self.update_sgen_active_power(component_idx)
+            else:
+                self.parent_window.sgen_current_device_label.setText("未选择光伏设备")
+                self.parent_window.sgen_enable_generation_checkbox.setChecked(False)
+                self.parent_window.sgen_enable_generation_checkbox.setEnabled(False)
     
     def update_load_manual_controls_from_device(self):
         """从当前负载设备更新手动控制组件的值"""
