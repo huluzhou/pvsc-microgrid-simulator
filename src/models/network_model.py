@@ -7,7 +7,7 @@
 
 import pandapower as pp
 import pandas as pd
-from components.globals import network_model, network_items
+from components.globals import  network_items
 import os
 class NetworkModel:
     """电网模型类，用于处理pandapower网络模型"""
@@ -15,8 +15,6 @@ class NetworkModel:
     def __init__(self):
         """初始化电网模型"""
         self.net = pp.create_empty_network()
-        import components.globals
-        components.globals.network_model = self
 
     def create_bus(self, item_id, properties):
         """创建母线

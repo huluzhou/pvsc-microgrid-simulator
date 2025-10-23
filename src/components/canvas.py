@@ -12,7 +12,7 @@ from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem, SwitchItem
 
 # 导入全局变量
-from components.globals import network_model, network_items
+from components.globals import network_items
 
 
 class NetworkCanvas(QGraphicsView):
@@ -787,7 +787,7 @@ class NetworkCanvas(QGraphicsView):
             self.fit_in_view()
 
     def delete_selected_items(self):
-        """删除选中的项目"""
+        """删除选中的项目，同时从network_items中移除对应的设备"""
         selected_items = self.scene.selectedItems()
         
         # 删除与选中项目相关的连接
@@ -799,6 +799,19 @@ class NetworkCanvas(QGraphicsView):
         
         # 删除选中的项目，调用组件的delete_component方法
         for item in selected_items:
+            # 从network_items中移除对应的设备
+            if hasattr(item, 'component_type') and hasattr(item, 'component_index'):
+                try:
+                    # 检查组件类型是否存在于network_items中
+                    if item.component_type in network_items:
+                        # 检查该类型下是否有对应的索引
+                        if item.component_index in network_items[item.component_type]:
+                            # 从network_items中删除设备
+                            del network_items[item.component_type][item.component_index]
+                except Exception as e:
+                    print(f"从network_items中删除设备时出错: {e}")
+            
+            # 从画布上删除项目
             if hasattr(item, 'delete_component'):
                 item.delete_component()
             else:

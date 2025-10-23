@@ -26,7 +26,7 @@ from config import (
 if FEATURE_SIMULATION:
     import pandapower as pp
     from models.network_model import NetworkModel
-    from components.globals import network_model 
+    from components.globals import network_items
 # 从globals.py导入全局变量
 
 class DiagnosticThread(QObject):
@@ -103,6 +103,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.network_is_valid = False  # 网络状态标志位 
         self.topology_manager = TopologyManager()
+        self.network_model = NetworkModel()
         self.init_ui()
 
     def init_ui(self):
@@ -362,13 +363,18 @@ class MainWindow(QMainWindow):
             # 在主线程中创建网络模型
             self.progress_dialog.setValue(5)
             
-            # 创建网络模型
-            global network_model
-            network_model = NetworkModel()
             self.progress_dialog.setValue(10)
             
+            # 显式清理旧的网络模型资源（如果有）
+            if hasattr(self.network_model, 'net'):
+                # 将net设置为None，帮助垃圾回收
+                self.network_model.net = None
+            
+            # 重新实例化NetworkModel类以完全清空现有结构
+            self.network_model = NetworkModel()
+            
             # 从网络项创建模型
-            if not network_model.create_from_network_items(self.canvas):
+            if not self.network_model.create_from_network_items(self.canvas):
                 self.progress_dialog.close()
                 QMessageBox.warning(self, "网络诊断", "创建网络模型失败，请检查电网组件。")
                 return
@@ -383,7 +389,7 @@ class MainWindow(QMainWindow):
             self.progress_dialog.setValue(30)
             
             # 创建诊断线程，并传入已创建好的网络模型
-            self.diagnostic_thread = DiagnosticThread(network_model)
+            self.diagnostic_thread = DiagnosticThread(self.network_model)
             
             # 连接信号和槽
             self.diagnostic_thread.progress_updated.connect(self.progress_dialog.setValue)

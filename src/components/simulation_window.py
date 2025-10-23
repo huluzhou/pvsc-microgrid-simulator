@@ -26,7 +26,7 @@ from .ui_components import UIComponentManager
 from .power_monitor import PowerMonitor
 from utils.logger import logger
 
-from .globals import network_model, network_items
+from .globals import network_items
 
 class SimulationWindow(QMainWindow):
     """仿真界面窗口"""
@@ -40,8 +40,7 @@ class SimulationWindow(QMainWindow):
         
         self.canvas = canvas
         self.parent_window = parent
-        # 直接使用从.globals导入的network_model，无需重新声明global
-        self.network_model = network_model
+        self.network_model = self.parent_window.network_model
         # 从canvas获取scene引用
         self.scene = canvas.scene if hasattr(canvas, 'scene') else None
         
