@@ -410,9 +410,9 @@ class UIComponentManager:
         # 变化幅度
         load_variation_spinbox = QDoubleSpinBox()
         load_variation_spinbox.setRange(0.0, 50.0)
-        load_variation_spinbox.setValue(15.0)
+        load_variation_spinbox.setValue(0.0)
         load_variation_spinbox.setSuffix("%")
-        load_variation_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_variation_changed)
+        load_variation_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_load_variation_changed)
         load_params_layout.addRow("功率变化幅度:", load_variation_spinbox)
         self.parent_window.load_variation_spinbox = load_variation_spinbox
         # 负载类型选择

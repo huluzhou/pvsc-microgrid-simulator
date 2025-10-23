@@ -313,7 +313,7 @@ class SimulationWindow(QMainWindow):
         if component_type == 'sgen':
             self.data_control_manager.update_sgen_device(component_type, component_idx)
         elif component_type == 'load':
-            self.data_control_manager.update_load_device_info(component_type, component_idx)
+            self.data_control_manager.update_load_device(component_type, component_idx)
         elif component_type == 'charger':
             #根据额定功率设置spinbox的范围
             self.data_control_manager.update_charger_manual_controls_from_device()

@@ -172,22 +172,6 @@ class DataControlManager:
                 self.parent_window.storage_power_spinbox.setValue(safe_value)
                 self.parent_window.storage_power_spinbox.blockSignals(False)
                 
-    def update_load_device_info(self, component_type, component_idx):
-        """更新负载设备信息"""
-        if hasattr(self.parent_window, 'load_current_device_label') and hasattr(self.parent_window, 'load_enable_generation_checkbox'):
-            if component_type and component_idx is not None:
-                device_name = f"负载_{component_idx}"
-                self.parent_window.load_current_device_label.setText(f"当前设备: {device_name}")
-                
-                # 检查当前设备是否启用了数据生成
-                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
-                self.parent_window.load_enable_generation_checkbox.setChecked(is_enabled)
-                self.parent_window.load_enable_generation_checkbox.setEnabled(True)
-            else:
-                self.parent_window.load_current_device_label.setText("未选择负载设备")
-                self.parent_window.load_enable_generation_checkbox.setChecked(False)
-                self.parent_window.load_enable_generation_checkbox.setEnabled(False)
-                
     def update_storage_device_info(self, component_type, component_idx):
         """更新储能设备信息"""
         if hasattr(self.parent_window, 'storage_current_device_label'):
@@ -273,12 +257,6 @@ class DataControlManager:
             else:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
     
-    # 参数变化回调方法
-    def on_variation_changed(self, value):
-        """变化幅度改变时的回调"""
-        self.data_generator_manager.set_variation('load', value)
-        self.data_generator_manager.set_variation('sgen', value)
-    
     def update_sgen_active_power(self, component_idx):
         """更新光伏设备的有功功率显示"""
         if hasattr(self.parent_window, "sgen_active_power_label") and hasattr(
@@ -348,7 +326,7 @@ class DataControlManager:
             else:
                 self.parent_window.charger_active_power_label.setText("未计算")
 
-    def update_storage_info(self, component_idx):
+    def update_storage_realtime_info(self, component_idx):
         """更新储能设备的状态量显示"""
         # 查找储能设备
         storage_item = None
@@ -415,7 +393,7 @@ class DataControlManager:
             self.update_sgen_active_power(component_idx)
         elif component_type == 'storage':
             self.update_storage_active_power(component_idx)
-            self.update_storage_info(component_idx)
+            self.update_storage_realtime_info(component_idx)
         elif component_type == 'load':
             self.update_load_active_power(component_idx)
         elif component_type == 'charger':
@@ -486,16 +464,6 @@ class DataControlManager:
         else:
             self.data_generator_manager.set_variation(value, 'load')
     
-    def on_load_interval_changed(self, value):
-        """负载生成间隔改变时的回调"""
-        # 获取当前选中的设备索引
-        component_idx = getattr(self.parent_window, 'current_component_idx', None)
-        # 如果有选中的设备，则为该特定设备设置间隔
-        if component_idx is not None:
-            self.data_generator_manager.set_interval(value, 'load', component_idx)
-        # 否则只设置负载设备类型的默认间隔
-        else:
-            self.data_generator_manager.set_interval(value, 'load')
     
     def on_load_type_changed(self, load_type_text):
         """负载类型改变时的回调"""
@@ -514,23 +482,6 @@ class DataControlManager:
         # 否则只设置负载设备类型的默认负载类型
         else:
             self.data_generator_manager.set_device_type('load', None, load_type=load_type)
-    
-    # 模式切换回调方法
-    
-    def on_load_mode_changed(self):
-        """负载设备数据生成模式改变时的回调"""
-        is_manual = self.parent_window.load_manual_mode_radio.isChecked()
-        self.parent_window.load_manual_panel.setVisible(is_manual)
-        
-        # 如果切换到手动模式，停止自动数据生成
-        if is_manual and hasattr(self.parent_window, 'load_enable_generation_checkbox'):
-            if self.parent_window.load_enable_generation_checkbox.isChecked():
-                self.parent_window.load_enable_generation_checkbox.setChecked(False)
-        
-        # 更新当前设备的功率值到滑块和输入框
-        if is_manual:
-            self.update_load_manual_controls_from_device()
-    
     
     # 手动控制更新方法
     def update_sgen_device(self, component_type, component_idx):
@@ -624,41 +575,85 @@ class DataControlManager:
                 if hasattr(self.parent_window, 'sgen_manual_panel'):
                     self.parent_window.sgen_manual_panel.setVisible(not is_enabled)
                 
-                # 更新有功功率显示
-                self.update_sgen_active_power(component_idx)
             else:
                 self.parent_window.sgen_current_device_label.setText("未选择光伏设备")
                 self.parent_window.sgen_enable_generation_checkbox.setChecked(False)
                 self.parent_window.sgen_enable_generation_checkbox.setEnabled(False)
     
-    def update_load_manual_controls_from_device(self):
-        """从当前负载设备更新手动控制组件的值"""
-        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
-            return
-            
-        if not self.parent_window.network_model or not hasattr(self.parent_window.network_model, 'net'):
-            return
-            
-        if self.parent_window.current_component_type != 'load':
-            return
-            
-        try:
-            # 获取负载设备的当前功率值
-            current_p = self.parent_window.network_model.net.load.at[self.parent_window.current_component_idx, 'p_mw']
-            current_q = self.parent_window.network_model.net.load.at[self.parent_window.current_component_idx, 'q_mvar']
-            
-            # 更新滑块和输入框的值
-            if hasattr(self.parent_window, 'load_power_slider'):
-                self.parent_window.load_power_slider.setValue(int(current_p * 2))  # 转换为滑块值
-            if hasattr(self.parent_window, 'load_power_spinbox'):
-                self.parent_window.load_power_spinbox.setValue(current_p)
-            if hasattr(self.parent_window, 'load_reactive_power_slider'):
-                self.parent_window.load_reactive_power_slider.setValue(int(current_q * 4))  # 转换为滑块值
-            if hasattr(self.parent_window, 'load_reactive_power_spinbox'):
-                self.parent_window.load_reactive_power_spinbox.setValue(current_q)
-        except Exception as e:
-            print(f"更新负载设备手动控制值时出错: {e}")
-    
+    def update_load_device(self, component_type, component_idx):
+        """更新负载设备信息和手动控制组件的值"""
+        # 1. 更新手动控制组件的值
+        if component_type == 'load' and hasattr(self.parent_window, 'network_model') and hasattr(self.parent_window.network_model, 'net'):
+            try:
+                # 获取负载设备的当前功率值
+                if component_idx in self.parent_window.network_model.net.load.index:
+                    current_p = self.parent_window.network_model.net.load.at[component_idx, 'p_mw']
+                    current_q = self.parent_window.network_model.net.load.at[component_idx, 'q_mvar']
+                    
+                    # 更新有功功率滑块和输入框的值
+                    if hasattr(self.parent_window, 'load_power_slider'):
+                        self.parent_window.load_power_slider.setValue(int(current_p * 2))  # 转换为滑块值
+                    if hasattr(self.parent_window, 'load_power_spinbox'):
+                        self.parent_window.load_power_spinbox.setValue(current_p)
+                    
+                    # 更新无功功率滑块和输入框的值
+                    if hasattr(self.parent_window, 'load_reactive_power_slider'):
+                        self.parent_window.load_reactive_power_slider.setValue(int(current_q * 4))  # 转换为滑块值
+                    if hasattr(self.parent_window, 'load_reactive_power_spinbox'):
+                        self.parent_window.load_reactive_power_spinbox.setValue(current_q)
+                    
+                    # 更新变化幅度控件
+                    if hasattr(self.parent_window, 'load_variation_spinbox') and hasattr(self, 'data_generator_manager'):
+                        # 获取当前设备的数据生成器参数
+                        generator = self.data_generator_manager.device_generators.get('load', {}).get(
+                            component_idx, self.data_generator_manager.default_load_generator
+                        )
+                        if hasattr(generator, 'variation'):
+                            # 避免触发信号循环
+                            self.parent_window.load_variation_spinbox.blockSignals(True)
+                            self.parent_window.load_variation_spinbox.setValue(generator.variation)
+                            self.parent_window.load_variation_spinbox.blockSignals(False)
+                    
+                    # 更新负载类型控件
+                    if hasattr(self.parent_window, 'load_type_combo') and hasattr(self, 'data_generator_manager'):
+                        # 获取当前设备的数据生成器参数
+                        generator = self.data_generator_manager.device_generators.get('load', {}).get(
+                            component_idx, self.data_generator_manager.default_load_generator
+                        )
+                        if hasattr(generator, 'load_type'):
+                            # 负载类型中英文映射
+                            load_type_map = {
+                                'residential': '住宅负载',
+                                'commercial': '商业负载',
+                                'industrial': '工业负载'
+                            }
+                            load_type_text = load_type_map.get(generator.load_type, '住宅负载')
+                            # 避免触发信号循环
+                            self.parent_window.load_type_combo.blockSignals(True)
+                            self.parent_window.load_type_combo.setCurrentText(load_type_text)
+                            self.parent_window.load_type_combo.blockSignals(False)
+            except Exception as e:
+                print(f"更新负载设备手动控制值时出错: {e}")
+        
+        # 2. 更新设备信息
+        if hasattr(self.parent_window, 'load_current_device_label') and hasattr(self.parent_window, 'load_enable_generation_checkbox'):
+            if component_type and component_idx is not None:
+                device_name = f"负载_{component_idx}"
+                self.parent_window.load_current_device_label.setText(f"当前设备: {device_name}")
+                
+                # 检查当前设备是否启用了数据生成
+                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+                self.parent_window.load_enable_generation_checkbox.setChecked(is_enabled)
+                self.parent_window.load_enable_generation_checkbox.setEnabled(True)
+                # 根据数据生成状态控制手动控制面板可见性
+                if hasattr(self.parent_window, 'load_manual_panel'):
+                    self.parent_window.load_manual_panel.setVisible(not is_enabled)
+                
+            else:
+                self.parent_window.load_current_device_label.setText("未选择负载设备")
+                self.parent_window.load_enable_generation_checkbox.setChecked(False)
+                self.parent_window.load_enable_generation_checkbox.setEnabled(False)
+
     def update_storage_manual_controls_from_device(self):
         """从当前储能设备更新手动控制组件的值"""
         if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
@@ -678,8 +673,8 @@ class DataControlManager:
             # 获取储能设备的额定功率
             storage_item = self.network_items['storage'][self.parent_window.current_component_idx]
                     
-            # 
-            self.update_storage_info(self.parent_window.current_component_idx)
+            # 更新储能设备的状态量显示
+            self.update_storage_realtime_info(self.parent_window.current_component_idx)
             
             # 获取额定功率，默认为1.0 MW
             rated_power_mw = 1.0
@@ -725,43 +720,6 @@ class DataControlManager:
                 self.parent_window.storage_power_spinbox.setEnabled(is_manual_mode)
         except Exception as e:
             print(f"更新储能设备手动控制值时出错: {e}")
-            
-    def on_storage_control_mode_changed(self, state):
-        """处理储能设备控制模式切换（手动控制/远程控制）"""
-        # 确保对象和属性存在
-        if not hasattr(self.parent_window, 'storage_manual_panel'):
-            return
-            
-        # 检查是否启用了远程控制
-        is_remote_enabled = False
-        if hasattr(self.parent_window, 'storage_enable_remote'):
-            is_remote_enabled = self.parent_window.storage_enable_remote.isChecked()
-            
-        # 根据选择的模式启用或禁用手动控制面板
-        # 如果启用了远程控制，则禁用手动控制面板；否则启用手动控制面板
-        self.parent_window.storage_manual_panel.setEnabled(not is_remote_enabled)
-        
-        # 在远程模式下特别禁用功率控制滑块和输入框
-        if hasattr(self.parent_window, 'storage_power_slider'):
-            self.parent_window.storage_power_slider.setEnabled(not is_remote_enabled)
-        if hasattr(self.parent_window, 'storage_power_spinbox'):
-            self.parent_window.storage_power_spinbox.setEnabled(not is_remote_enabled)
-        
-        # 如果切换到远程控制模式，可以在这里添加远程控制的初始化逻辑
-        if is_remote_enabled:
-            pass  # 远程控制模式的初始化逻辑可以在这里添加
-        
-        # 更新StorageItem的手动控制模式状态
-        if hasattr(self.parent_window, 'current_component_type') and hasattr(self.parent_window, 'current_component_idx'):
-            if self.parent_window.current_component_type == 'storage' and hasattr(self.parent_window, 'canvas'):
-                component_idx = self.parent_window.current_component_idx
-                # 查找对应的StorageItem
-                from .network_items import StorageItem
-                for item in self.parent_window.canvas.scene.items():
-                    if isinstance(item, StorageItem) and item.component_index == component_idx:
-                        # 更新手动控制模式状态
-                        item.is_manual_control = not is_remote_enabled
-                        break
 
     def update_charger_manual_controls_from_device(self):
         """从当前充电桩设备更新手动控制组件的值"""
@@ -815,8 +773,44 @@ class DataControlManager:
                 
         except Exception as e:
             print(f"更新充电桩设备手动控制值时出错: {e}")
-    
-    
+                
+    def on_storage_control_mode_changed(self, state):
+        """处理储能设备控制模式切换（手动控制/远程控制）"""
+        # 确保对象和属性存在
+        if not hasattr(self.parent_window, 'storage_manual_panel'):
+            return
+            
+        # 检查是否启用了远程控制
+        is_remote_enabled = False
+        if hasattr(self.parent_window, 'storage_enable_remote'):
+            is_remote_enabled = self.parent_window.storage_enable_remote.isChecked()
+            
+        # 根据选择的模式启用或禁用手动控制面板
+        # 如果启用了远程控制，则禁用手动控制面板；否则启用手动控制面板
+        self.parent_window.storage_manual_panel.setEnabled(not is_remote_enabled)
+        
+        # 在远程模式下特别禁用功率控制滑块和输入框
+        if hasattr(self.parent_window, 'storage_power_slider'):
+            self.parent_window.storage_power_slider.setEnabled(not is_remote_enabled)
+        if hasattr(self.parent_window, 'storage_power_spinbox'):
+            self.parent_window.storage_power_spinbox.setEnabled(not is_remote_enabled)
+        
+        # 如果切换到远程控制模式，可以在这里添加远程控制的初始化逻辑
+        if is_remote_enabled:
+            pass  # 远程控制模式的初始化逻辑可以在这里添加
+        
+        # 更新StorageItem的手动控制模式状态
+        if hasattr(self.parent_window, 'current_component_type') and hasattr(self.parent_window, 'current_component_idx'):
+            if self.parent_window.current_component_type == 'storage' and hasattr(self.parent_window, 'canvas'):
+                component_idx = self.parent_window.current_component_idx
+                # 查找对应的StorageItem
+                from .network_items import StorageItem
+                for item in self.parent_window.canvas.scene.items():
+                    if isinstance(item, StorageItem) and item.component_index == component_idx:
+                        # 更新手动控制模式状态
+                        item.is_manual_control = not is_remote_enabled
+                        break
+
     def on_sgen_power_changed(self, value):
         """光伏功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'sgen_power_spinbox'):
