@@ -7,14 +7,14 @@
 
 import pandapower as pp
 import pandas as pd
-from components.globals import  network_items
 import os
 class NetworkModel:
     """电网模型类，用于处理pandapower网络模型"""
 
-    def __init__(self):
+    def __init__(self, network_items):
         """初始化电网模型"""
         self.net = pp.create_empty_network()
+        self.network_items = network_items
 
     def create_bus(self, item_id, properties):
         """创建母线
@@ -386,16 +386,16 @@ class NetworkModel:
         """
         try:
             # 检查是否有组件
-            if not network_items or not any(network_items.values()):
+            if not self.network_items or not any(self.network_items.values()):
                 print("没有组件，无法创建网络模型")
                 return False
             
             # 第一步：创建所有母线
             bus_map = {}  # 存储图形项到pandapower母线索引的映射
             
-            if 'bus' in network_items:
+            if 'bus' in self.network_items:
                 # 遍历嵌套字典中的所有母线（每个索引直接对应一个BusItem对象）
-                for idx, bus_item in network_items['bus'].items():
+                for idx, bus_item in self.network_items['bus'].items():
                     try:
                         bus_idx = self.create_bus(
                             id(bus_item),  # 使用对象ID作为唯一标识
@@ -413,7 +413,7 @@ class NetworkModel:
             
             # 第二步：创建连接到母线的组件（负载、发电机等，但不包括电表）
             non_meter_items = []
-            for comp_type, comp_dict in network_items.items():
+            for comp_type, comp_dict in self.network_items.items():
                 if comp_type != 'bus' and comp_type != 'meter':
                     # 遍历嵌套字典中的所有组件（每个索引直接对应一个组件对象）
                     for idx, item in comp_dict.items():
@@ -515,9 +515,9 @@ class NetworkModel:
 
             # 第三步：最后创建电表设备（确保所有其他设备已创建）
             meter_items = []
-            if 'meter' in network_items:
+            if 'meter' in self.network_items:
                 # 遍历嵌套字典中的所有电表（每个索引直接对应一个电表对象）
-                for idx, item in network_items['meter'].items():
+                for idx, item in self.network_items['meter'].items():
                     meter_items.append(item)
             
             for item in meter_items:

@@ -12,8 +12,6 @@ from typing import Dict, List, Any, Optional
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from PySide6.QtCore import QPointF
 from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem, SwitchItem
-# 导入全局变量
-from components.globals import network_items
 
 class TopologyManager:
     """拓扑结构管理器，处理network_item的导入导出"""
@@ -185,10 +183,11 @@ class TopologyManager:
         ]
     }
     
-    def __init__(self):
+    def __init__(self, network_items):
         # 使用统一的映射配置
         self.type_mapping = self.COMPONENT_MAPPINGS['class_mapping']
         self.reverse_mapping = self.COMPONENT_MAPPINGS['reverse_mapping']
+        self.network_items = network_items
     
     def export_topology(self, scene, parent_window=None) -> bool:
         """导出整个场景的拓扑结构到JSON文件"""
@@ -347,9 +346,9 @@ class TopologyManager:
                 created_items[('Bus', old_index)] = bus_item
                 
                 # 更新全局network_items字典
-                if 'bus' in network_items:
+                if 'bus' in self.network_items:
                     # 直接将组件赋值给对应索引
-                    network_items['bus'][bus_item.component_index] = bus_item
+                    self.network_items['bus'][bus_item.component_index] = bus_item
                 
                 # 连接信号到画布
                 if hasattr(scene, 'parent') and scene.parent():
@@ -416,12 +415,11 @@ class TopologyManager:
                     scene.addItem(item)
                     created_items[(item_type, item_index)] = item
                     
-                    # 更新全局network_items字典
                     # 将类型名称转换为小写（与network_items中的键匹配）
                     component_type_key = item_type.lower()
-                    if component_type_key in network_items:
+                    if component_type_key in self.network_items:
                         # 直接将组件赋值给对应索引
-                        network_items[component_type_key][item.component_index] = item
+                        self.network_items[component_type_key][item.component_index] = item
                     
                     # 连接信号到画布
                     if hasattr(scene, 'parent') and scene.parent():
@@ -451,7 +449,7 @@ class TopologyManager:
                     item.label.setPlainText(item_data['name'])
                 scene.addItem(item)
                 created_items[('Measurement', item_index)] = item
-                network_items['meter'][item.component_index] = item
+                self.network_items['meter'][item.component_index] = item
                 if hasattr(canvas, 'handle_item_selected'):
                     item.signals.itemSelected.connect(canvas.handle_item_selected)
         # 恢复组件间的连接关系

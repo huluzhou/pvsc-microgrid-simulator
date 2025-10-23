@@ -11,9 +11,6 @@ from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
 from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem, SwitchItem
 
-# 导入全局变量
-from components.globals import network_items
-
 
 class NetworkCanvas(QGraphicsView):
     """电网画布类，用于绘制和编辑电网拓扑图"""
@@ -25,6 +22,7 @@ class NetworkCanvas(QGraphicsView):
         super().__init__(parent)
         # 保存父窗口引用用于更新状态栏
         self.main_window = parent
+        self.network_items = parent.network_items
         # 初始化UI
         self.init_ui()
 
@@ -191,10 +189,10 @@ class NetworkCanvas(QGraphicsView):
             item = SwitchItem(pos)
         
         # 将所有类型的组件添加到全局network_items中，使用嵌套字典结构
-        if item and component_type in network_items:
+        if item and component_type in self.network_items:
             # 确保当前索引的键存在
-            if item.component_index not in network_items[component_type]:
-                network_items[component_type][item.component_index] = item
+            if item.component_index not in self.network_items[component_type]:
+                self.network_items[component_type][item.component_index] = item
         
         # 添加到场景
         if item:
@@ -803,11 +801,11 @@ class NetworkCanvas(QGraphicsView):
             if hasattr(item, 'component_type') and hasattr(item, 'component_index'):
                 try:
                     # 检查组件类型是否存在于network_items中
-                    if item.component_type in network_items:
+                    if item.component_type in self.network_items:
                         # 检查该类型下是否有对应的索引
-                        if item.component_index in network_items[item.component_type]:
+                        if item.component_index in self.network_items[item.component_type]:
                             # 从network_items中删除设备
-                            del network_items[item.component_type][item.component_index]
+                            del self.network_items[item.component_type][item.component_index]
                 except Exception as e:
                     print(f"从network_items中删除设备时出错: {e}")
             
@@ -1092,8 +1090,8 @@ class NetworkCanvas(QGraphicsView):
         # 场景已被清空，但不需要清除Modbus设备缓存，因为现在直接使用network_items
             
         # 清空全局network_items字典
-        for key in network_items:
-            network_items[key].clear()
+        for key in self.network_items:
+            self.network_items[key].clear()
             
         self.scene.clear()
         self.draw_grid()
@@ -1101,16 +1099,16 @@ class NetworkCanvas(QGraphicsView):
     def fit_in_view(self):
         """适应视图，根据已使用的画布面积自动调整视图范围"""
         # 获取所有非背景项目（z值大于-1的项目，排除网格线等背景元素）
-        network_items = [item for item in self.scene.items() if item.zValue() > -1]
+        visible_items = [item for item in self.scene.items() if item.zValue() > -1]
         
-        if not network_items:
+        if not visible_items:
             # 如果没有网络组件，重置到默认视图
             self.resetTransform()
             return
         
         # 计算所有网络组件的边界矩形
-        rect = network_items[0].sceneBoundingRect()
-        for item in network_items[1:]:
+        rect = visible_items[0].sceneBoundingRect()
+        for item in visible_items[1:]:
             rect = rect.united(item.sceneBoundingRect())
         
         # 添加边距以获得更好的视觉效果（边界矩形扩大20%）

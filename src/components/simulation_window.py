@@ -26,7 +26,6 @@ from .ui_components import UIComponentManager
 from .power_monitor import PowerMonitor
 from utils.logger import logger
 
-from .globals import network_items
 
 class SimulationWindow(QMainWindow):
     """仿真界面窗口"""
@@ -41,6 +40,7 @@ class SimulationWindow(QMainWindow):
         self.canvas = canvas
         self.parent_window = parent
         self.network_model = self.parent_window.network_model
+        self.network_items = self.parent_window.network_items
         # 从canvas获取scene引用
         self.scene = canvas.scene if hasattr(canvas, 'scene') else None
         
@@ -68,7 +68,7 @@ class SimulationWindow(QMainWindow):
         self.last_storage_update_time = None
         
         # Modbus服务器管理器
-        self.modbus_manager = ModbusManager(self.network_model, self.scene)
+        self.modbus_manager = ModbusManager(self.network_model, self.network_items, self.scene)
         
         # 初始化数据控制管理器，传入已创建的数据生成器管理器实例
         from .data_control import DataControlManager
@@ -407,8 +407,8 @@ class SimulationWindow(QMainWindow):
         if self.current_component_type == 'switch' and hasattr(self, 'current_component_idx'):
             try:
                 # 更新network_items中的开关状态
-                if 'switch' in network_items and self.current_component_idx in network_items['switch']:
-                    switch_item = network_items['switch'][self.current_component_idx]
+                if 'switch' in self.network_items and self.current_component_idx in self.network_items['switch']:
+                    switch_item = self.network_items['switch'][self.current_component_idx]
                     switch_item.properties['closed'] = True
                     
                     # 更新UI显示
@@ -426,8 +426,8 @@ class SimulationWindow(QMainWindow):
         if self.current_component_type == 'switch' and hasattr(self, 'current_component_idx'):
             try:
                 # 更新network_items中的开关状态
-                if 'switch' in network_items and self.current_component_idx in network_items['switch']:
-                    switch_item = network_items['switch'][self.current_component_idx]
+                if 'switch' in self.network_items and self.current_component_idx in self.network_items['switch']:
+                    switch_item = self.network_items['switch'][self.current_component_idx]
                     switch_item.properties['closed'] = False
                     
                     # 更新UI显示
@@ -736,13 +736,13 @@ class SimulationWindow(QMainWindow):
             time_interval_hours = timer_interval_ms / (1000.0 * 3600.0)  # 毫秒转小时
             
             # 批量更新光伏能量统计
-            if network_items['static_generator'] and hasattr(self.network_model, 'net'):
-                valid_pv_indices = [idx for idx in network_items['static_generator'].keys() 
+            if self.network_items['static_generator'] and hasattr(self.network_model, 'net'):
+                valid_pv_indices = [idx for idx in self.network_items['static_generator'].keys() 
                                   if idx in self.network_model.net.sgen.index]
                 
                 for device_idx in valid_pv_indices:
                     try:
-                        pv_item = network_items['static_generator'][device_idx]
+                        pv_item = self.network_items['static_generator'][device_idx]
                         current_power_mw = abs(self.network_model.net.sgen.at[device_idx, 'p_mw'])
                         
                         # 计算本次产生的能量（kWh）
@@ -756,13 +756,13 @@ class SimulationWindow(QMainWindow):
                         print(f"批量更新光伏设备 {device_idx} 能量统计时出错: {e}")
             
             # 批量更新储能能量统计
-            if network_items['storage'] and hasattr(self.network_model, 'net'):
-                valid_storage_indices = [idx for idx in network_items['storage'].keys() 
+            if self.network_items['storage'] and hasattr(self.network_model, 'net'):
+                valid_storage_indices = [idx for idx in self.network_items['storage'].keys() 
                                        if idx in self.network_model.net.storage.index]
                 
                 for device_idx in valid_storage_indices:
                     try:
-                        storage_item = network_items['storage'][device_idx]
+                        storage_item = self.network_items['storage'][device_idx]
                         current_power_mw = -self.network_model.net.storage.at[device_idx, 'p_mw']
                         
                         # 调用StorageItem的实时数据更新方法
@@ -872,7 +872,7 @@ class SimulationWindow(QMainWindow):
         try:
             # 批量应用更新
             for device_idx, update_data in storage_updates:
-                storage_item = network_items['storage'].get(device_idx)
+                storage_item = self.network_items['storage'].get(device_idx)
                 if not storage_item:
                     continue
                     
@@ -923,7 +923,7 @@ class SimulationWindow(QMainWindow):
         try:
             # 批量应用更新
             for device_idx, update_data in charger_updates:
-                charger_item = network_items['charger'].get(device_idx)
+                charger_item = self.network_items['charger'].get(device_idx)
                 if not charger_item:
                     continue
                 
@@ -957,7 +957,7 @@ class SimulationWindow(QMainWindow):
         try:
             # 批量应用更新
             for device_idx, update_data in sgen_updates:
-                sgen_item = network_items['static_generator'].get(device_idx)
+                sgen_item = self.network_items['static_generator'].get(device_idx)
                 if not sgen_item:
                     continue
                 
@@ -1060,7 +1060,7 @@ class SimulationWindow(QMainWindow):
             if device_type != 'meter':
                 return None
                 
-            return network_items['meter'].get(device_id)
+            return self.network_items['meter'].get(device_id)
             
         except Exception as e:
             print(f"获取电表项失败: {str(e)}")
@@ -1202,7 +1202,7 @@ class SimulationWindow(QMainWindow):
             
             # 更新开关状态：将network_items中的开关状态同步到network_model中
             logger.info("更新开关状态")
-            self._sync_switch_states(network_items, net)
+            self._sync_switch_states(self.network_items, net)
             
             # 运行潮流计算
             try:

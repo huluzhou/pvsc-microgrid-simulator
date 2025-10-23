@@ -13,15 +13,14 @@ from pymodbus import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock, ModbusSequentialDataBlock
 import asyncio
 from pymodbus.server import ModbusTcpServer
-# 导入全局网络项字典
-from .globals import network_items
 
 
 class ModbusManager:
     """Modbus服务器管理器"""
     
-    def __init__(self, network_model, scene=None):
+    def __init__(self, network_model, network_items, scene=None):
         self.network_model = network_model
+        self.network_items = network_items
         self.modbus_servers = {}  # 存储服务器实例
         self.modbus_contexts = {}  # 存储Modbus上下文
         self.running_services = set()  # 跟踪运行中的服务
@@ -33,7 +32,7 @@ class ModbusManager:
         self.ip_devices.clear()
 
         # 使用全局network_items遍历所有网络项
-        for component_type, items_dict in network_items.items():
+        for component_type, items_dict in self.network_items.items():
             for component_index, item in items_dict.items():
                 if (
                     hasattr(item, "properties")
@@ -563,8 +562,8 @@ class ModbusManager:
         try:
             
             # 直接使用network_items[component_type][component_index]查找电表设备
-            if 'meter' in network_items and index in network_items['meter']:
-                meter_item = network_items['meter'][index]
+            if 'meter' in self.network_items and index in self.network_items['meter']:
+                meter_item = self.network_items['meter'][index]
    
             if not meter_item:
                 print(f"未找到电表图形项: {index}")
@@ -642,8 +641,8 @@ class ModbusManager:
             
             # 使用缓存机制提高性能
             # 直接使用network_items[component_type][component_index]查找光伏设备
-            if 'static_generator' in network_items and index in network_items['static_generator']:
-                pv_item = network_items['static_generator'][index]
+            if 'static_generator' in self.network_items and index in self.network_items['static_generator']:
+                pv_item = self.network_items['static_generator'][index]
             
             if pv_item is None:
                 raise RuntimeError(f"未找到光伏设备 {index} 的图形项")
@@ -682,8 +681,8 @@ class ModbusManager:
         """更新储能设备特定上下文数据"""
         try:
             # 直接使用network_items[component_type][component_index]查找储能设备
-            if 'storage' in network_items and index in network_items['storage']:
-                storage_item = network_items['storage'][index]
+            if 'storage' in self.network_items and index in self.network_items['storage']:
+                storage_item = self.network_items['storage'][index]
             
             if storage_item is None:
                 raise RuntimeError(f"未找到储能设备 {index} 的图形项")
@@ -808,8 +807,8 @@ class ModbusManager:
             power_mw = self.network_model.net.res_load.loc[index, "p_mw"]
             
             # 直接使用network_items[component_type][component_index]查找充电桩设备
-            if 'charger' in network_items and index in network_items['charger']:
-                charger_item = network_items['charger'][index]
+            if 'charger' in self.network_items and index in self.network_items['charger']:
+                charger_item = self.network_items['charger'][index]
             
             if charger_item is None:
                 raise RuntimeError(f"未找到充电桩设备 {index} 的图形项")

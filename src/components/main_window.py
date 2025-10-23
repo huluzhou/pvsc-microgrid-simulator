@@ -26,7 +26,6 @@ from config import (
 if FEATURE_SIMULATION:
     import pandapower as pp
     from models.network_model import NetworkModel
-    from components.globals import network_items
 # 从globals.py导入全局变量
 
 class DiagnosticThread(QObject):
@@ -102,8 +101,20 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.network_is_valid = False  # 网络状态标志位 
-        self.topology_manager = TopologyManager()
-        self.network_model = NetworkModel()
+        self.network_items = {
+            "bus": {},
+            "line": {},
+            "transformer": {},
+            "load": {},
+            "storage": {},
+            "charger": {},
+            "external_grid": {},
+            "static_generator": {},
+            "switch": {},
+            "meter": {},
+        }
+        self.network_model = NetworkModel(self.network_items)
+        self.topology_manager = TopologyManager(self.network_items)
         self.init_ui()
 
     def init_ui(self):
@@ -371,7 +382,7 @@ class MainWindow(QMainWindow):
                 self.network_model.net = None
             
             # 重新实例化NetworkModel类以完全清空现有结构
-            self.network_model = NetworkModel()
+            self.network_model = NetworkModel(self.network_items)
             
             # 从网络项创建模型
             if not self.network_model.create_from_network_items(self.canvas):

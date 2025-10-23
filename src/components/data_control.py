@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from .data_generators import DataGeneratorManager
-from .globals import network_items
 
 
 class DataControlManager:
@@ -17,6 +16,7 @@ class DataControlManager:
     
     def __init__(self, parent_window, data_generator_manager=None):
         self.parent_window = parent_window
+        self.network_items = parent_window.network_items
         # 使用传入的数据生成器管理器实例，如果未传入则尝试从父窗口获取
         if data_generator_manager is not None:
             self.data_generator_manager = data_generator_manager
@@ -57,12 +57,12 @@ class DataControlManager:
             return
             
         # 检查设备是否存在于network_items中
-        if component_type_key not in network_items or device_idx not in network_items[component_type_key]:
+        if component_type_key not in self.network_items or device_idx not in self.network_items[component_type_key]:
             QMessageBox.warning(self.parent_window, "警告", f"设备 {device_type} {device_idx} 不存在")
             return
             
         # 获取设备项
-        device_item = network_items[component_type_key][device_idx]
+        device_item = self.network_items[component_type_key][device_idx]
         properties = getattr(device_item, 'properties', {})
         
         # 构建设备信息
@@ -120,7 +120,7 @@ class DataControlManager:
             return
             
         # 检查设备是否存在于network_items中
-        if component_type_key not in network_items or device_idx not in network_items[component_type_key]:
+        if component_type_key not in self.network_items or device_idx not in self.network_items[component_type_key]:
             QMessageBox.warning(self.parent_window, "警告", f"设备 {device_type} {device_idx} 不存在")
             return
         
@@ -676,7 +676,7 @@ class DataControlManager:
             current_power = -self.parent_window.network_model.net.storage.at[self.parent_window.current_component_idx, 'p_mw']
             
             # 获取储能设备的额定功率
-            storage_item = network_items['storage'][self.parent_window.current_component_idx]
+            storage_item = self.network_items['storage'][self.parent_window.current_component_idx]
                     
             # 
             self.update_storage_info(self.parent_window.current_component_idx)
