@@ -264,7 +264,7 @@ class DataControlManager:
         ):
             net = self.parent_window.network_model.net
             if hasattr(net, "res_sgen") and component_idx in net.res_sgen.index:
-                active_power = net.res_sgen.loc[component_idx, "p_mw"]
+                active_power = net.res_sgen.at[component_idx, "p_mw"]
                 self.parent_window.sgen_active_power_label.setText(
                     f"{active_power:.4f} MW"
                 )
@@ -278,7 +278,7 @@ class DataControlManager:
         ):
             net = self.parent_window.network_model.net
             if hasattr(net, "res_storage") and component_idx in net.res_storage.index:
-                active_power = -net.res_storage.loc[component_idx, "p_mw"]
+                active_power = -net.res_storage.at[component_idx, "p_mw"]
                 self.parent_window.storage_active_power_label.setText(
                     f"{active_power:.4f} MW"
                 )
@@ -297,7 +297,7 @@ class DataControlManager:
                 return
             
             if hasattr(net, "res_load") and component_idx in net.res_load.index:
-                active_power = net.res_load.loc[component_idx, "p_mw"]
+                active_power = net.res_load.at[component_idx, "p_mw"]
                 self.parent_window.load_active_power_label.setText(
                     f"{active_power:.4f} MW"
                 )
@@ -317,7 +317,7 @@ class DataControlManager:
             
             # 充电桩在模型中作为负载处理，索引有+1000的偏移
             if hasattr(net, "res_load") and component_idx in net.res_load.index:
-                active_power = net.res_load.loc[component_idx, "p_mw"]
+                active_power = net.res_load.at[component_idx, "p_mw"]
                 # 转换为kW显示
                 active_power_kw = active_power * 1000
                 self.parent_window.charger_active_power_label.setText(
@@ -946,7 +946,7 @@ class DataControlManager:
                 p_mw = self.parent_window.sgen_power_spinbox.value()
                 
                 # 光伏设备的功率为负值（发电）
-                self.parent_window.network_model.net.sgen.loc[component_idx, 'p_mw'] = abs(p_mw)
+                self.parent_window.network_model.net.sgen.at[component_idx, 'p_mw'] = abs(p_mw)
                 
                 self.parent_window.statusBar().showMessage(f"已更新光伏设备 {component_idx} 的功率设置: P={p_mw:.2f}MW")
                 print(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW")
@@ -978,8 +978,8 @@ class DataControlManager:
                 p_mw = self.parent_window.load_power_spinbox.value()
                 q_mvar = self.parent_window.load_reactive_power_spinbox.value()
                 
-                self.parent_window.network_model.net.load.loc[component_idx, 'p_mw'] = p_mw
-                self.parent_window.network_model.net.load.loc[component_idx, 'q_mvar'] = q_mvar
+                self.parent_window.network_model.net.load.at[component_idx, 'p_mw'] = p_mw
+                self.parent_window.network_model.net.load.at[component_idx, 'q_mvar'] = q_mvar
                 
                 self.parent_window.statusBar().showMessage(f"已更新负载设备 {component_idx} 的功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
                 print(f"应用负载设备 {component_idx} 功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
@@ -1010,7 +1010,7 @@ class DataControlManager:
             if component_idx in self.parent_window.network_model.net.storage.index:
                 p_mw = self.parent_window.storage_power_spinbox.value()
                 
-                self.parent_window.network_model.net.storage.loc[component_idx, 'p_mw'] = -p_mw
+                self.parent_window.network_model.net.storage.at[component_idx, 'p_mw'] = -p_mw
                 
                 power_status = "放电" if p_mw > 0 else "充电" if p_mw < 0 else "待机"
                 self.parent_window.statusBar().showMessage(f"已更新储能设备 {component_idx} 的功率设置: P={p_mw:.2f}MW ({power_status})")
@@ -1067,7 +1067,7 @@ class DataControlManager:
                 final_power_mw = final_power_kw / 1000.0  # 转换为MW
                 
                 # 设置充电桩的有功功率
-                self.parent_window.network_model.net.load.loc[component_idx, 'p_mw'] = final_power_mw
+                self.parent_window.network_model.net.load.at[component_idx, 'p_mw'] = final_power_mw
                 
                 self.parent_window.statusBar().showMessage(f"已更新充电桩设备 {component_idx} 的功率设置: {final_power_kw:.1f}kW (需求功率: {demand_power_kw:.1f}kW, 功率限制: {power_limit_kw:.1f}kW)")
                 print(f"应用充电桩设备 {component_idx} 功率设置: {final_power_kw:.1f}kW (max({demand_power_kw:.1f}kW, {power_limit_kw:.1f}kW))")

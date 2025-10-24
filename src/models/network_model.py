@@ -572,7 +572,7 @@ class NetworkModel:
         """
         if hasattr(self.net, 'res_bus') and not self.net.res_bus.empty:
             if bus_idx in self.net.res_bus.index:
-                return self.net.res_bus.loc[bus_idx, 'vm_pu']
+                return self.net.res_bus.at[bus_idx, 'vm_pu']
         return None
 
     def get_line_power(self, line_idx):
@@ -586,8 +586,8 @@ class NetworkModel:
         """
         if hasattr(self.net, 'res_line') and not self.net.res_line.empty:
             if line_idx in self.net.res_line.index:
-                p_from = self.net.res_line.loc[line_idx, 'p_from_mw']
-                q_from = self.net.res_line.loc[line_idx, 'q_from_mvar']
+                p_from = self.net.res_line.at[line_idx, 'p_from_mw']
+                q_from = self.net.res_line.at[line_idx, 'q_from_mvar']
                 return (p_from, q_from)
         return (None, None)
 
@@ -602,10 +602,10 @@ class NetworkModel:
         """
         if hasattr(self.net, 'res_trafo') and not self.net.res_trafo.empty:
             if trafo_idx in self.net.res_trafo.index:
-                p_hv = self.net.res_trafo.loc[trafo_idx, 'p_hv_mw']
-                q_hv = self.net.res_trafo.loc[trafo_idx, 'q_hv_mvar']
-                p_lv = self.net.res_trafo.loc[trafo_idx, 'p_lv_mw']
-                q_lv = self.net.res_trafo.loc[trafo_idx, 'q_lv_mvar']
+                p_hv = self.net.res_trafo.at[trafo_idx, 'p_hv_mw']
+                q_hv = self.net.res_trafo.at[trafo_idx, 'q_hv_mvar']
+                p_lv = self.net.res_trafo.at[trafo_idx, 'p_lv_mw']
+                q_lv = self.net.res_trafo.at[trafo_idx, 'q_lv_mvar']
                 return (p_hv, q_hv, p_lv, q_lv)
         return (None, None, None, None)
 
@@ -620,8 +620,8 @@ class NetworkModel:
         """
         if hasattr(self.net, 'res_load') and not self.net.res_load.empty:
             if load_idx in self.net.res_load.index:
-                p_mw = self.net.res_load.loc[load_idx, 'p_mw']
-                q_mvar = self.net.res_load.loc[load_idx, 'q_mvar']
+                p_mw = self.net.res_load.at[load_idx, 'p_mw']
+                q_mvar = self.net.res_load.at[load_idx, 'q_mvar']
                 return (p_mw, q_mvar)
         return (None, None)
 
@@ -636,8 +636,8 @@ class NetworkModel:
         """
         if hasattr(self.net, 'res_gen') and not self.net.res_gen.empty:
             if gen_idx in self.net.res_gen.index:
-                p_mw = self.net.res_gen.loc[gen_idx, 'p_mw']
-                q_mvar = self.net.res_gen.loc[gen_idx, 'q_mvar']
+                p_mw = self.net.res_gen.at[gen_idx, 'p_mw']
+                q_mvar = self.net.res_gen.at[gen_idx, 'q_mvar']
                 return (p_mw, q_mvar)
         return (None, None)
 

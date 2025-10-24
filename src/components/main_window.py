@@ -113,7 +113,8 @@ class MainWindow(QMainWindow):
             "switch": {},
             "meter": {},
         }
-        self.network_model = NetworkModel(self.network_items)
+        if FEATURE_SIMULATION:
+            self.network_model = NetworkModel(self.network_items)
         self.topology_manager = TopologyManager(self.network_items)
         self.init_ui()
 

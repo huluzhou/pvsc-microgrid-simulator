@@ -379,13 +379,13 @@ class SimulationWindow(QMainWindow):
                     if 'params' in mapping and 'side' in mapping:
                         side_param = mapping.get('params', {}).get(mapping.get('side'))
                         if side_param:
-                            measurement_value = res_data.loc[element_idx, side_param]
+                            measurement_value = res_data.at[element_idx, side_param]
                             result[side_param] = measurement_value
                             result_set = True
                     # 处理普通组件
                     elif 'param' in mapping:
                         param = mapping.get('param')
-                        measurement_value = res_data.loc[element_idx, param]
+                        measurement_value = res_data.at[element_idx, param]
                         # 应用可选的转换因子
                         if 'factor' in mapping:
                             measurement_value *= mapping.get('factor')
@@ -900,9 +900,9 @@ class SimulationWindow(QMainWindow):
                     # 只有在非手动模式下才执行更新操作
                     if hasattr(storage_item, 'is_manual_control') and not storage_item.is_manual_control:
                         # 检查功率值是否发生变化
-                        current_power = -self.network_model.net.storage.loc[device_idx, 'p_mw']
+                        current_power = -self.network_model.net.storage.at[device_idx, 'p_mw']
                         if final_power != current_power:
-                            self.network_model.net.storage.loc[device_idx, 'p_mw'] = -final_power
+                            self.network_model.net.storage.at[device_idx, 'p_mw'] = -final_power
                             # 发射信号通知功率变化
                             self.storage_power_changed.emit(device_idx, final_power)
                 
@@ -967,7 +967,7 @@ class SimulationWindow(QMainWindow):
                 rated_power = sgen_item.properties.get('sn_mva', 0.0)  # 从属性中获取额定功率，默认0.0
                 # 获取光伏设备的实际功率
                 try:
-                    active_power_mw = self.network_model.net.sgen.loc[device_idx, 'p_mw']
+                    active_power_mw = self.network_model.net.sgen.at[device_idx, 'p_mw']
                 except (KeyError, IndexError):
                     active_power_mw = 0.0
                 
@@ -987,7 +987,7 @@ class SimulationWindow(QMainWindow):
                 
                 # 更新光伏功率到网络模型
                 try:
-                    self.network_model.net.sgen.loc[device_idx, 'p_mw'] = final_power
+                    self.network_model.net.sgen.at[device_idx, 'p_mw'] = final_power
                 except (KeyError, IndexError):
                     pass
                     
@@ -1031,14 +1031,14 @@ class SimulationWindow(QMainWindow):
             # 批量更新负载数据
             if load_updates:
                 for device_idx, values in load_updates.items():
-                    network_model.net.load.loc[device_idx, 'p_mw'] = values['p_mw']
-                    network_model.net.load.loc[device_idx, 'q_mvar'] = values['q_mvar']
+                    network_model.net.load.at[device_idx, 'p_mw'] = values['p_mw']
+                    network_model.net.load.at[device_idx, 'q_mvar'] = values['q_mvar']
             
             # 批量更新光伏数据
             if sgen_updates:
                 for device_idx, values in sgen_updates.items():
-                    network_model.net.sgen.loc[device_idx, 'p_mw'] = values['p_mw']
-                    network_model.net.sgen.loc[device_idx, 'q_mvar'] = values['q_mvar']
+                    network_model.net.sgen.at[device_idx, 'p_mw'] = values['p_mw']
+                    network_model.net.sgen.at[device_idx, 'q_mvar'] = values['q_mvar']
             
             return True
             
@@ -1165,7 +1165,7 @@ class SimulationWindow(QMainWindow):
                     try:
                         # 获取switch_item中的closed状态并更新到network_model中
                         closed_state = switch_item.properties.get('closed', True)
-                        net.switch.loc[switch_idx, 'closed'] = closed_state
+                        net.switch.at[switch_idx, 'closed'] = closed_state
                         logger.debug(f"更新开关 {switch_idx} 状态为: {'闭合' if closed_state else '断开'}")
                     except Exception as e:
                         logger.error(f"更新开关 {switch_idx} 状态失败: {e}")

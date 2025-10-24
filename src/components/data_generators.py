@@ -220,7 +220,6 @@ class PVDataGenerator(BaseDataGenerator):
         pv_data = {}
         
         try:
-            network_model.net.sgen.loc[index]
             
             # 获取当前时间
             from datetime import datetime

@@ -579,29 +579,29 @@ class ModbusManager:
             power_value = 0.0
             try:
                 if element_type == "load" and element in self.network_model.net.load.index:
-                    power_value = self.network_model.net.res_load.loc[element, "p_mw"]
+                    power_value = self.network_model.net.res_load.at[element, "p_mw"]
                 elif element_type == "bus" and element in self.network_model.net.bus.index:
-                    power_value = self.network_model.net.res_bus.loc[element, "p_mw"]
+                    power_value = self.network_model.net.res_bus.at[element, "p_mw"]
                 elif element_type == "sgen" and element in self.network_model.net.sgen.index:
-                    power_value = self.network_model.net.res_sgen.loc[element, "p_mw"]
+                    power_value = self.network_model.net.res_sgen.at[element, "p_mw"]
                 elif element_type == 'storage' and element in self.network_model.net.storage.index:
-                    power_value = -self.network_model.net.res_storage.loc[element, 'p_mw']
+                    power_value = -self.network_model.net.res_storage.at[element, 'p_mw']
                 elif element_type == 'line' and element in self.network_model.net.line.index:
                     if side == 'from':
-                        power_value = self.network_model.net.res_line.loc[element, 'p_from_mw']
+                        power_value = self.network_model.net.res_line.at[element, 'p_from_mw']
                     elif side == 'to':
-                        power_value = self.network_model.net.res_line.loc[element, 'p_to_mw']
+                        power_value = self.network_model.net.res_line.at[element, 'p_to_mw']
                     else:
-                        power_value = self.network_model.net.res_line.loc[element, 'p_from_mw']
+                        power_value = self.network_model.net.res_line.at[element, 'p_from_mw']
                 elif element_type == 'trafo' and element in self.network_model.net.trafo.index:
                     if side == 'hv':
-                        power_value = self.network_model.net.res_trafo.loc[element, 'p_hv_mw']
+                        power_value = self.network_model.net.res_trafo.at[element, 'p_hv_mw']
                     elif side == 'lv':
-                        power_value = self.network_model.net.res_trafo.loc[element, 'p_lv_mw']
+                        power_value = self.network_model.net.res_trafo.at[element, 'p_lv_mw']
                     else:
-                        power_value = self.network_model.net.res_trafo.loc[element, 'p_hv_mw']
+                        power_value = self.network_model.net.res_trafo.at[element, 'p_hv_mw']
                 elif element_type == 'ext_grid' and element in self.network_model.net.ext_grid.index:
-                    power_value = self.network_model.net.res_ext_grid.loc[element, 'p_mw']
+                    power_value = self.network_model.net.res_ext_grid.at[element, 'p_mw']
                         
             except (KeyError, AttributeError):
                 power_value = 0.0
@@ -637,7 +637,7 @@ class ModbusManager:
 
         try:
             # 获取功率数据
-            power_mw = self.network_model.net.res_sgen.loc[index, "p_mw"]
+            power_mw = self.network_model.net.res_sgen.at[index, "p_mw"]
             
             # 使用缓存机制提高性能
             # 直接使用network_items[component_type][component_index]查找光伏设备
@@ -697,7 +697,7 @@ class ModbusManager:
             remaining_capacity = max(0, min(65535, int(remaining_kwh * 10)))
             #
             active_power_raw = float(
-                -self.network_model.net.res_storage.loc[index, "p_mw"]
+                -self.network_model.net.res_storage.at[index, "p_mw"]
             )
             active_power = int(active_power_raw * 1000 * 10)
             # 计算电流 - 修正单相220V计算逻辑
@@ -804,7 +804,7 @@ class ModbusManager:
 
         try:
             # 获取充电桩功率数据
-            power_mw = self.network_model.net.res_load.loc[index, "p_mw"]
+            power_mw = self.network_model.net.res_load.at[index, "p_mw"]
             
             # 直接使用network_items[component_type][component_index]查找充电桩设备
             if 'charger' in self.network_items and index in self.network_items['charger']:
