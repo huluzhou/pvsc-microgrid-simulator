@@ -7,13 +7,13 @@
 
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QSplitter,QVBoxLayout,
-    QTreeWidgetItem, QMessageBox, QTableWidgetItem, QDockWidget
+    QMainWindow, QWidget, QHBoxLayout, QTreeWidgetItem, QMessageBox, QDockWidget, QFileDialog
   )
+import threading
+import time
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 import pandapower as pp
-import time
 from datetime import datetime
 
 from .data_generators import DataGeneratorManager
@@ -36,6 +36,12 @@ class SimulationWindow(QMainWindow):
         super().__init__(parent)
         # 先进行内存清理，确保之前仿真不会遗留内存
         self._cleanup_previous_simulation()
+        
+        # 数据记录相关属性
+        self.is_recording = False
+        self.recording_thread = None
+        self.recording_lock = threading.Lock()
+        self.db_path = None  # 数据库文件路径
         
         self.canvas = canvas
         self.parent_window = parent
@@ -107,6 +113,9 @@ class SimulationWindow(QMainWindow):
         """初始化用户界面"""
         self.setWindowTitle("仿真模式 - PandaPower 仿真工具")
         self.setMinimumSize(1500, 800)
+        
+        # 初始化菜单栏
+        self.init_menu_bar()
         
         # 创建中央功率曲线区域
         self.central_chart_widget = QWidget()
@@ -181,6 +190,212 @@ class SimulationWindow(QMainWindow):
         self.power_monitor.initialize_ui_components()
         
         
+    def init_menu_bar(self):
+        """初始化菜单栏"""
+        # 创建菜单栏
+        menubar = self.menuBar()
+        
+        # 创建数据菜单
+        data_menu = menubar.addMenu("数据")
+        record_data_menu = data_menu.addMenu("记录数据")
+        # 添加导入回测数据菜单项
+        import_backtest_action = data_menu.addAction("导入回测数据")
+        import_backtest_action.triggered.connect(self.import_backtest_data)
+        
+        # 添加记录仿真数据菜单项
+        record_simulation_action = record_data_menu.addAction("记录仿真数据")
+        record_simulation_action.triggered.connect(self.record_simulation_data)
+
+        stop_record_action = record_data_menu.addAction("停止记录")
+        stop_record_action.triggered.connect(self.stop_record_data)
+        
+    def import_backtest_data(self):
+        """导入回测数据"""
+        # 可以在这里实现导入回测数据的逻辑
+        QMessageBox.information(self, "提示", "导入回测数据功能待实现")
+
+    
+    def record_simulation_data(self):
+        """记录仿真数据"""
+        with self.recording_lock:
+            if self.is_recording:
+                QMessageBox.information(self, "提示", "数据记录已经在进行中")
+                return
+                
+            # 弹出文件选择对话框，让用户选择数据库保存位置
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, 
+                "选择数据库保存位置", 
+                "filtered.db", 
+                "SQLite Database Files (*.db);;All Files (*)"
+            )
+            
+            if not file_path:
+                # 用户取消选择
+                return
+                
+            # 设置数据库路径
+            self.db_path = file_path
+            
+            # 创建并启动记录线程
+            self.is_recording = True
+            self.recording_thread = threading.Thread(target=self._record_data_loop)
+            self.recording_thread.daemon = True  # 设置为守护线程，主程序退出时自动终止
+            self.recording_thread.start()
+            
+            self.statusBar().showMessage(f"数据记录已启动，保存至: {self.db_path}")
+            QMessageBox.information(self, "成功", f"仿真数据记录已开始，每秒保存一次数据到数据库\n{self.db_path}")
+      
+    def stop_record_data(self):
+        """停止记录数据"""
+        with self.recording_lock:
+            if not self.is_recording or not self.recording_thread:
+                QMessageBox.information(self, "提示", "当前没有正在进行的数据记录")
+                return
+                
+            # 停止记录线程
+            self.is_recording = False
+            if self.recording_thread and self.recording_thread.is_alive():
+                # 等待线程自然结束
+                self.recording_thread.join(timeout=2.0)  # 设置超时，避免死锁
+                self.recording_thread = None
+                
+            self.statusBar().showMessage("数据记录已停止")
+            QMessageBox.information(self, "成功", "仿真数据记录已停止")
+            
+    def _record_data_loop(self):
+        """数据记录循环"""
+        try:
+            while self.is_recording:
+                try:
+                    # 保存数据到数据库
+                    self.save_data_to_db()
+                    
+                    # 等待1秒
+                    time.sleep(1)
+                    
+                except Exception as e:
+                    logger.error(f"数据记录出错: {str(e)}")
+                    # 出错后等待一小段时间再继续
+                    time.sleep(0.5)
+        finally:
+            # 线程结束时确保状态正确
+            with self.recording_lock:
+                self.is_recording = False
+                self.recording_thread = None
+            
+    def save_data_to_db(self):
+        """将当前仿真数据保存到数据库"""
+        try:
+            import sqlite3
+            import time
+            
+            # 确保网络模型可用
+            if not self.network_model or not hasattr(self.network_model, 'net'):
+                logger.error("网络模型不可用，无法保存数据到数据库")
+                return
+                
+            net = self.network_model.net
+            timestamp = int(time.time())  # UNIX时间戳
+            local_timestamp = timestamp
+            # 连接到SQLite数据库
+            db_file = self.db_path if self.db_path else "simulation.db"
+            conn = sqlite3.connect(db_file)
+            cursor = conn.cursor()
+            
+            # 记录电表数据到meter_data表
+            if hasattr(self, 'power_monitor') and "meter" in self.network_items:
+                # 遍历所有电表，尝试获取对应的电表数据
+                # 添加安全检查，确保正确遍历字典项
+                meter_items = self.network_items["meter"]
+                if isinstance(meter_items, dict):
+                    # 使用items()方法安全遍历字典的键值对
+                    for _, item in meter_items.items():
+                        idx = item.properties['index']
+                        # 尝试获取电表数据，使用母线ID作为电表ID
+                        active_power_mw = self.power_monitor._get_meter_power(idx)
+                        
+                        # # 如果成功获取到电表数据
+                        # if active_power_mw != 0.0 or hasattr(net, 'res_bus') and idx in net.res_bus.index:
+                        #     device_sn = f"bus_{idx}"
+                        #     # 优先使用电表数据，否则使用仿真结果作为后备
+                        #     activePower = active_power_mw * 1000  # 转换为kW
+                            
+                        #     # 对于无功功率，暂时使用仿真结果作为后备
+                        #     reactivePower = 0.0
+                        #     if hasattr(net, 'res_bus') and idx in net.res_bus.index:
+                        #         reactivePower = net.res_bus.at[idx, 'q_mvar'] * 1000  # 转换为kVar
+                            
+                        #     apparentPower = (activePower**2 + reactivePower**2)**0.5 if activePower or reactivePower else 0.0
+                        #     powerFactor = activePower / apparentPower if apparentPower else 0.0
+                            
+                        #     cursor.execute(
+                        #         "INSERT INTO meter_data (device_sn, timestamp, activePower, reactivePower, apparentPower, powerFactor, local_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        #         (device_sn, timestamp, activePower, reactivePower, apparentPower, powerFactor, local_timestamp)
+                        #     )
+            
+            # # 记录光伏数据到pv_data表
+            # if hasattr(net, 'sgen') and hasattr(net, 'res_sgen') and not net.res_sgen.empty:
+            #     for idx, sgen_data in net.res_sgen.iterrows():
+            #         if idx in net.sgen.index:
+            #             device_sn = f"pv_{idx}"
+            #             activePower = sgen_data.get('p_mw', 0.0) * 1000  # 转换为kW
+            #             reactivePower = sgen_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
+            #             powerFactor = activePower / ((activePower**2 + reactivePower**2)**0.5) if activePower or reactivePower else 0.0
+                        
+            #             cursor.execute(
+            #                 "INSERT INTO pv_data (device_sn, timestamp, activePower, reactivePower, powerFactor, local_timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            #                 (device_sn, timestamp, activePower, reactivePower, powerFactor, local_timestamp)
+            #             )
+            
+            # # 记录储能数据到storage_data表
+            # if hasattr(net, 'storage') and hasattr(net, 'res_storage') and not net.res_storage.empty:
+            #     for idx, storage_data in net.res_storage.iterrows():
+            #         if idx in net.storage.index:
+            #             device_sn = f"storage_{idx}"
+            #             activePower = storage_data.get('p_mw', 0.0) * 1000  # 转换为kW
+            #             reactivePower = storage_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
+            #             soc = storage_data.get('soc_percent', 50.0) if hasattr(storage_data, 'soc_percent') else 50.0
+                        
+            #             cursor.execute(
+            #                 "INSERT INTO storage_data (device_sn, timestamp, activePower, reactivePower, soc, local_timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            #                 (device_sn, timestamp, activePower, reactivePower, soc, local_timestamp)
+            #             )
+            
+            # # 记录负载数据到meter_data表（作为特殊的电表）
+            # if hasattr(net, 'res_load') and not net.res_load.empty:
+            #     for idx, load_data in net.res_load.iterrows():
+            #         # 区分普通负载和充电桩
+            #         if idx >= 1000:
+            #             device_sn = f"charger_{idx}"
+            #             # 记录到charger_data表
+            #             activePower = load_data.get('p_mw', 0.0) * 1000  # 转换为kW
+            #             cursor.execute(
+            #                 "INSERT INTO charger_data (device_sn, timestamp, activePower, local_timestamp) VALUES (?, ?, ?, ?)",
+            #                 (device_sn, timestamp, activePower, local_timestamp)
+            #             )
+            #         else:
+            #             device_sn = f"load_{idx}"
+            #             # 记录到meter_data表
+            #             activePower = load_data.get('p_mw', 0.0) * 1000  # 转换为kW
+            #             reactivePower = load_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
+            #             cursor.execute(
+            #                 "INSERT INTO meter_data (device_sn, timestamp, activePower, reactivePower, local_timestamp) VALUES (?, ?, ?, ?, ?)",
+            #                 (device_sn, timestamp, activePower, reactivePower, local_timestamp)
+            #             )
+            
+            # 提交事务并关闭连接
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"成功保存仿真数据到数据库，时间戳: {timestamp}")
+            
+        except Exception as e:
+            logger.error(f"保存数据到数据库时出错: {str(e)}")
+
+
+# 移除QThread相关代码，使用标准threading模块
+    
     def load_network_data(self):
         """加载网络数据到设备树"""
         if not self.network_model:

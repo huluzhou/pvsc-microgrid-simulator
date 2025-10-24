@@ -485,7 +485,7 @@ class PowerMonitor:
         获取指定电表的功率测量值
         
         参数:
-            meter_id (str): 电表设备的唯一标识符
+            meter_id (int): 电表设备的唯一标识符
             
         返回:
             float: 电表测量的功率值（单位：MW），如果获取失败则返回0.0
@@ -507,7 +507,7 @@ class PowerMonitor:
         except Exception as e:
             print(f"获取电表{meter_id}功率时出错: {str(e)}")
             return 0.0
-    
+    # TODO:增加方法支持获取电表的测量值,可扩展,支持有功无功电压电流
     def _extract_measurement_config(self, measurement_row):
         """
         从测量行数据中提取测量配置信息
@@ -611,7 +611,7 @@ class PowerMonitor:
                 value_key = query_info['value_key']
                 
             measurement_value = result_df.at[element_idx, value_key]
-            return abs(float(measurement_value))
+            return float(measurement_value)
             
         except (KeyError, ValueError, AttributeError) as e:
             print(f"获取测量值时出错: {str(e)}")
