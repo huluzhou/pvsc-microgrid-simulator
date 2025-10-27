@@ -328,55 +328,67 @@ class SimulationWindow(QMainWindow):
                             (device_sn, timestamp, activePower, reactivePower, apparentPower, powerFactor, local_timestamp)
                         )
             
-            # # 记录光伏数据到pv_data表
-            # if hasattr(net, 'sgen') and hasattr(net, 'res_sgen') and not net.res_sgen.empty:
-            #     for idx, sgen_data in net.res_sgen.iterrows():
-            #         if idx in net.sgen.index:
-            #             device_sn = f"pv_{idx}"
-            #             activePower = sgen_data.get('p_mw', 0.0) * 1000  # 转换为kW
-            #             reactivePower = sgen_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
-            #             powerFactor = activePower / ((activePower**2 + reactivePower**2)**0.5) if activePower or reactivePower else 0.0
+            # 记录光伏数据到pv_data表
+            if hasattr(net, 'sgen') and hasattr(net, 'res_sgen') and not net.res_sgen.empty:
+                for idx, sgen_data in net.res_sgen.iterrows():
+                    if idx in net.sgen.index:
+                        pv_item = self.network_items.get("static_generator", {}).get(idx, {})
+                        device_sn = pv_item.properties.get('sn', f"pv_{idx}")
+                        activePower = sgen_data.get('p_mw', 0.0) * 1000  # 转换为kW
+                        reactivePower = sgen_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
+                        powerFactor = activePower / ((activePower**2 + reactivePower**2)**0.5) if activePower or reactivePower else 0.0
                         
-            #             cursor.execute(
-            #                 "INSERT INTO pv_data (device_sn, timestamp, activePower, reactivePower, powerFactor, local_timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-            #                 (device_sn, timestamp, activePower, reactivePower, powerFactor, local_timestamp)
-            #             )
-            
-            # # 记录储能数据到storage_data表
-            # if hasattr(net, 'storage') and hasattr(net, 'res_storage') and not net.res_storage.empty:
-            #     for idx, storage_data in net.res_storage.iterrows():
-            #         if idx in net.storage.index:
-            #             device_sn = f"storage_{idx}"
-            #             activePower = storage_data.get('p_mw', 0.0) * 1000  # 转换为kW
-            #             reactivePower = storage_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
-            #             soc = storage_data.get('soc_percent', 50.0) if hasattr(storage_data, 'soc_percent') else 50.0
+                        # 从network_items中获取光伏设备的电量数据 - O(1)查找
+                        dayActiveEnergy = 0.0
+                        reverseActiveEnergy = 0.0
                         
-            #             cursor.execute(
-            #                 "INSERT INTO storage_data (device_sn, timestamp, activePower, reactivePower, soc, local_timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-            #                 (device_sn, timestamp, activePower, reactivePower, soc, local_timestamp)
-            #             )
+                        # 直接通过索引映射查找对应的光伏设备 - 使用get方法保证安全性
+                        dayActiveEnergy = pv_item.today_discharge_energy
+                        reverseActiveEnergy = pv_item.total_discharge_energy
+                        
+                        cursor.execute(
+                            "INSERT INTO pv_data (device_sn, timestamp, activePower, reactivePower, powerFactor, dayActiveEnergy, reverseActiveEnergy, local_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (device_sn, timestamp, activePower, reactivePower, powerFactor, dayActiveEnergy, reverseActiveEnergy, local_timestamp)
+                        )
             
-            # # 记录负载数据到meter_data表（作为特殊的电表）
-            # if hasattr(net, 'res_load') and not net.res_load.empty:
-            #     for idx, load_data in net.res_load.iterrows():
-            #         # 区分普通负载和充电桩
-            #         if idx >= 1000:
-            #             device_sn = f"charger_{idx}"
-            #             # 记录到charger_data表
-            #             activePower = load_data.get('p_mw', 0.0) * 1000  # 转换为kW
-            #             cursor.execute(
-            #                 "INSERT INTO charger_data (device_sn, timestamp, activePower, local_timestamp) VALUES (?, ?, ?, ?)",
-            #                 (device_sn, timestamp, activePower, local_timestamp)
-            #             )
-            #         else:
-            #             device_sn = f"load_{idx}"
-            #             # 记录到meter_data表
-            #             activePower = load_data.get('p_mw', 0.0) * 1000  # 转换为kW
-            #             reactivePower = load_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
-            #             cursor.execute(
-            #                 "INSERT INTO meter_data (device_sn, timestamp, activePower, reactivePower, local_timestamp) VALUES (?, ?, ?, ?, ?)",
-            #                 (device_sn, timestamp, activePower, reactivePower, local_timestamp)
-            #             )
+            # 记录储能数据到storage_data表
+            if hasattr(net, 'storage') and hasattr(net, 'res_storage') and not net.res_storage.empty:
+                for idx, storage_data in net.res_storage.iterrows():
+                    if idx in net.storage.index:
+                        storage_item = self.network_items.get("storage", {}).get(idx, {})
+                        device_sn = storage_item.properties.get('sn', f"storage_{idx}")
+                        activePower = storage_data.get('p_mw', 0.0) * 1000  # 转换为kW
+                        reactivePower = storage_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
+                        soc = storage_item.soc_percent
+                        
+                        cursor.execute(
+                            "INSERT INTO storage_data (device_sn, timestamp, activePower, reactivePower, soc, local_timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                            (device_sn, timestamp, activePower, reactivePower, soc, local_timestamp)
+                        )
+            
+            # 记录负载数据到meter_data表（作为特殊的电表）
+            if hasattr(net, 'res_load') and not net.res_load.empty:
+                for idx, load_data in net.res_load.iterrows():
+                    # 区分普通负载和充电桩
+                    if idx >= 1000:
+                        charger_item = self.network_items.get("charger", {}).get(idx, {})
+                        device_sn = charger_item.properties.get('sn', f"charger_{idx}")
+                        # 记录到charger_data表
+                        activePower = load_data.get('p_mw', 0.0) * 1000  # 转换为kW
+                        cursor.execute(
+                            "INSERT INTO charger_data (device_sn, timestamp, activePower, local_timestamp) VALUES (?, ?, ?, ?)",
+                            (device_sn, timestamp, activePower, local_timestamp)
+                        )
+                    else:
+                        load_item = self.network_items.get("load", {}).get(idx, {})
+                        device_sn = load_item.properties.get('sn', f"load_{idx}")
+                        # 记录到meter_data表
+                        activePower = load_data.get('p_mw', 0.0) * 1000  # 转换为kW
+                        reactivePower = load_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
+                        cursor.execute(
+                            "INSERT INTO meter_data (device_sn, timestamp, activePower, reactivePower, local_timestamp) VALUES (?, ?, ?, ?, ?)",
+                            (device_sn, timestamp, activePower, reactivePower, local_timestamp)
+                        )
             
             # 提交事务并关闭连接
             conn.commit()
