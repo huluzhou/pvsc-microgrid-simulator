@@ -508,77 +508,131 @@ class PowerMonitor:
             print(f"获取电表{meter_id}功率时出错: {str(e)}")
             return 0.0
     # TODO:增加方法支持获取电表的测量值,可扩展,支持有功无功电压电流
-    def _extract_measurement_config(self, measurement_row):
+    def get_meter_measurement(self, meter_id, measurement_type='active_power'):
         """
-        从测量行数据中提取测量配置信息
+        获取指定电表的不同类型测量值
         
         参数:
-            measurement_row (pd.Series): 测量配置数据行
-            
+            meter_id (int): 电表设备的唯一标识符
+            measurement_type (str): 测量类型，支持以下值：
+                - 'active_power': 有功功率（单位：MW）
+                - 'reactive_power': 无功功率（单位：MVar）
+                - 'voltage': 电压（单位：kV）
+                - 'current': 电流（单位：kA）
+                默认为'active_power'
+                
         返回:
-            dict: 包含测量配置的词典，如果提取失败返回None
+            float: 测量值，如果获取失败则返回0.0
         """
         try:
-            return {
-                'measurement_type': measurement_row['meas_type'],
-                'element_type': measurement_row['element_type'],
-                'element_idx': measurement_row['element'],
-                'side': measurement_row.get('side', None)
-            }
-        except (KeyError, IndexError) as e:
-            print(f"提取测量配置时出错: {str(e)}")
-            return None
-    
-    def _query_measurement_value(self, config):
+            # 仅使用父窗口的缓存方法获取电表数据
+            if not hasattr(self.parent_window, 'get_meter_item_by_type_and_id'):
+                print("父窗口未提供缓存方法，无法获取电表数据")
+                return 0.0
+                
+            meter_measurement = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
+            if not meter_measurement:
+                return 0.0
+                
+            # 提取基本测量配置
+            measurement_config = self._extract_measurement_config(meter_measurement.properties)
+            if not measurement_config:
+                return 0.0
+            
+            # 根据测量类型调用相应的查询方法
+            if measurement_type == 'active_power':
+                # 有功功率，复用现有的查询方法
+                return self._query_measurement_value(measurement_config)
+            elif measurement_type == 'reactive_power':
+                # 无功功率，使用修改后的配置查询
+                config = measurement_config.copy()
+                return self._query_measurement_value(config, value_type='reactive')
+            elif measurement_type == 'voltage':
+                # 电压，需要特殊处理
+                return self._query_voltage_value(measurement_config)
+            elif measurement_type == 'current':
+                # 电流，需要特殊处理
+                return self._query_current_value(measurement_config)
+            else:
+                print(f"不支持的测量类型: {measurement_type}")
+                return 0.0
+                
+        except Exception as e:
+            print(f"获取电表{meter_id}的{measurement_type}时出错: {str(e)}")
+            return 0.0
+            
+    def _query_measurement_value(self, config, value_type='active'):
         """
-        根据测量配置查询实时测量值 - 优化版，减少对network_model.net的重复访问
+        根据测量配置查询实时测量值 - 优化版，支持有功和无功功率
         
         参数:
             config (dict): 包含测量配置的字典
-            
+            value_type (str): 值类型，'active'表示有功功率，'reactive'表示无功功率
+                
         返回:
-            float: 测量到的功率值（单位：MW）
+            float: 测量到的功率值（单位：有功为MW，无功为MVar）
         """
         try:
             element_type = config['element_type']
             element_idx = config['element_idx']
             side = config['side']
             
-            # 定义各元素类型的查询映射（移至函数顶部，减少重复定义）
+            # 根据值类型确定键名
+            active_key = 'p_mw'
+            reactive_key = 'q_mvar'
+            
+            # 定义各元素类型的查询映射，支持有功和无功
             query_map = {
                 'load': {
                     'result_attr': 'res_load',
-                    'value_key': 'p_mw'
+                    'active_key': active_key,
+                    'reactive_key': reactive_key
                 },
                 'sgen': {
                     'result_attr': 'res_sgen',
-                    'value_key': 'p_mw'
+                    'active_key': active_key,
+                    'reactive_key': reactive_key
                 },
                 'storage': {
                     'result_attr': 'res_storage',
-                    'value_key': 'p_mw'
+                    'active_key': active_key,
+                    'reactive_key': reactive_key
                 },
                 'bus': {
                     'result_attr': 'res_bus',
-                    'value_key': 'p_mw'
+                    'active_key': active_key,
+                    'reactive_key': reactive_key
                 },
                 'line': {
                     'result_attr': 'res_line',
                     'side_mapping': {
-                        'from': 'p_from_mw',
-                        'to': 'p_to_mw',
+                        'from': {
+                            'active': 'p_from_mw',
+                            'reactive': 'q_from_mvar'
+                        },
+                        'to': {
+                            'active': 'p_to_mw',
+                            'reactive': 'q_to_mvar'
+                        },
                     }
                 },
                 'trafo': {
                     'result_attr': 'res_trafo',
                     'side_mapping': {
-                        'hv': 'p_hv_mw',
-                        'lv': 'p_lv_mw',
+                        'hv': {
+                            'active': 'p_hv_mw',
+                            'reactive': 'q_hv_mvar'
+                        },
+                        'lv': {
+                            'active': 'p_lv_mw',
+                            'reactive': 'q_lv_mvar'
+                        },
                     }
                 },
                 'ext_grid': {
                     'result_attr': 'res_ext_grid',
-                    'value_key': 'p_mw'
+                    'active_key': active_key,
+                    'reactive_key': reactive_key
                 }
             }
             
@@ -605,10 +659,10 @@ class PowerMonitor:
             if 'side_mapping' in query_info:
                 # 处理有side参数的元素类型（line, trafo）
                 if side in query_info['side_mapping']:
-                    value_key = query_info['side_mapping'][side]
+                    value_key = query_info['side_mapping'][side][value_type]
             else:
                 # 处理无side参数的元素类型
-                value_key = query_info['value_key']
+                value_key = query_info['active_key'] if value_type == 'active' else query_info['reactive_key']
                 
             measurement_value = result_df.at[element_idx, value_key]
             return float(measurement_value)
@@ -616,3 +670,133 @@ class PowerMonitor:
         except (KeyError, ValueError, AttributeError) as e:
             print(f"获取测量值时出错: {str(e)}")
             return 0.0
+            
+    def _query_voltage_value(self, config):
+        """
+        查询电压值
+        
+        参数:
+            config (dict): 包含测量配置的字典
+                
+        返回:
+            float: 电压值（单位：kV），如果获取失败则返回0.0
+        """
+        try:
+            # 对于电压测量，我们需要获取连接到的母线电压
+            element_type = config['element_type']
+            element_idx = config['element_idx']
+            net = self.network_model.net
+            
+            # 根据元素类型获取对应的母线ID
+            bus_idx = None
+            
+            if element_type == 'bus':
+                # 如果直接测量母线，使用母线ID
+                bus_idx = element_idx
+            elif element_type == 'line':
+                # 对于线路，根据side参数确定母线
+                side = config['side']
+                if side == 'from':
+                    bus_idx = net.line.at[element_idx, 'from_bus']
+                elif side == 'to':
+                    bus_idx = net.line.at[element_idx, 'to_bus']
+            elif element_type == 'trafo':
+                # 对于变压器，根据side参数确定母线
+                side = config['side']
+                if side == 'hv':
+                    bus_idx = net.trafo.at[element_idx, 'hv_bus']
+                elif side == 'lv':
+                    bus_idx = net.trafo.at[element_idx, 'lv_bus']
+            elif element_type in ['load', 'sgen', 'storage', 'ext_grid']:
+                # 对于连接到母线的设备，直接获取其连接的母线
+                bus_idx = net[element_type].at[element_idx, 'bus']
+            
+            # 如果找到母线ID，查询电压值
+            if bus_idx is not None and hasattr(net, 'res_bus'):
+                if bus_idx in net.res_bus.index:
+                    return float(net.res_bus.at[bus_idx, 'vm_pu'] * net.bus.at[bus_idx, 'vn_kv'])
+            
+            return 0.0
+            
+        except (KeyError, ValueError, AttributeError) as e:
+            print(f"获取电压值时出错: {str(e)}")
+            return 0.0
+            
+    def _query_current_value(self, config):
+        """
+        查询电流值
+        
+        参数:
+            config (dict): 包含测量配置的字典
+                
+        返回:
+            float: 电流值（单位：kA），如果获取失败则返回0.0
+        """
+        try:
+            element_type = config['element_type']
+            element_idx = config['element_idx']
+            net = self.network_model.net
+            
+            # 不同元素类型的电流查询方式不同
+            if element_type == 'line' and hasattr(net, 'res_line'):
+                # 线路电流
+                if element_idx in net.res_line.index:
+                    side = config['side']
+                    if side == 'from':
+                        return float(net.res_line.at[element_idx, 'i_from_ka'])
+                    elif side == 'to':
+                        return float(net.res_line.at[element_idx, 'i_to_ka'])
+            elif element_type == 'trafo' and hasattr(net, 'res_trafo'):
+                # 变压器电流
+                if element_idx in net.res_trafo.index:
+                    side = config['side']
+                    if side == 'hv':
+                        return float(net.res_trafo.at[element_idx, 'i_hv_ka'])
+                    elif side == 'lv':
+                        return float(net.res_trafo.at[element_idx, 'i_lv_ka'])
+            elif element_type in ['load', 'sgen', 'storage'] and hasattr(net, f'res_{element_type}'):
+                # 对于负载、静态发电机和储能设备，计算电流
+                result_df = getattr(net, f'res_{element_type}')
+                if element_idx in result_df.index:
+                    p_mw = result_df.at[element_idx, 'p_mw']
+                    q_mvar = result_df.at[element_idx, 'q_mvar']
+                    # 获取连接母线的电压
+                    bus_idx = net[element_type].at[element_idx, 'bus']
+                    if bus_idx in net.res_bus.index:
+                        vm_pu = net.res_bus.at[bus_idx, 'vm_pu']
+                        vn_kv = net.bus.at[bus_idx, 'vn_kv']
+                        voltage_kv = vm_pu * vn_kv
+                        # 计算视在功率 (MVA)
+                        s_mva = (p_mw**2 + q_mvar**2)**0.5
+                        # 计算电流 (kA)
+                        # 假设为三相系统，相电压 = 线电压 / √3
+                        current_ka = s_mva / (3**0.5 * voltage_kv)
+                        return current_ka
+            
+            return 0.0
+            
+        except (KeyError, ValueError, AttributeError) as e:
+            print(f"获取电流值时出错: {str(e)}")
+            return 0.0
+
+    def _extract_measurement_config(self, measurement_row):
+        """
+        从测量行数据中提取测量配置信息
+        
+        参数:
+            measurement_row (pd.Series): 测量配置数据行
+            
+        返回:
+            dict: 包含测量配置的词典，如果提取失败返回None
+        """
+        try:
+            return {
+                'measurement_type': measurement_row['meas_type'],
+                'element_type': measurement_row['element_type'],
+                'element_idx': measurement_row['element'],
+                'side': measurement_row.get('side', None)
+            }
+        except (KeyError, IndexError) as e:
+            print(f"提取测量配置时出错: {str(e)}")
+            return None
+    

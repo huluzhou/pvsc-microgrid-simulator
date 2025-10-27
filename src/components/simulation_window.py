@@ -24,6 +24,7 @@ from .modbus_manager import ModbusManager
 from .ui_components import UIComponentManager
 # 功率监控模块导入
 from .power_monitor import PowerMonitor
+from .sqlite import init_database
 from utils.logger import logger
 
 
@@ -233,7 +234,9 @@ class SimulationWindow(QMainWindow):
             if not file_path:
                 # 用户取消选择
                 return
-                
+            # 初始化数据库 - 使用用户选择的路径
+            init_database(file_path)
+            
             # 设置数据库路径
             self.db_path = file_path
             
@@ -313,26 +316,17 @@ class SimulationWindow(QMainWindow):
                     for _, item in meter_items.items():
                         idx = item.properties['index']
                         # 尝试获取电表数据，使用母线ID作为电表ID
-                        active_power_mw = self.power_monitor._get_meter_power(idx)
+                        activePower = self.power_monitor.get_meter_measurement(idx, 'active_power') * 1000 # 转换为kW
+                        reactivePower = self.power_monitor.get_meter_measurement(idx, 'reactive_power') * 1000  # 转换为kVar
+                        device_sn = item.properties.get('sn', f"meter_{idx}")
+                            
+                        apparentPower = (activePower**2 + reactivePower**2)**0.5 if activePower or reactivePower else 0.0
+                        powerFactor = activePower / apparentPower if apparentPower else 0.0
                         
-                        # # 如果成功获取到电表数据
-                        # if active_power_mw != 0.0 or hasattr(net, 'res_bus') and idx in net.res_bus.index:
-                        #     device_sn = f"bus_{idx}"
-                        #     # 优先使用电表数据，否则使用仿真结果作为后备
-                        #     activePower = active_power_mw * 1000  # 转换为kW
-                            
-                        #     # 对于无功功率，暂时使用仿真结果作为后备
-                        #     reactivePower = 0.0
-                        #     if hasattr(net, 'res_bus') and idx in net.res_bus.index:
-                        #         reactivePower = net.res_bus.at[idx, 'q_mvar'] * 1000  # 转换为kVar
-                            
-                        #     apparentPower = (activePower**2 + reactivePower**2)**0.5 if activePower or reactivePower else 0.0
-                        #     powerFactor = activePower / apparentPower if apparentPower else 0.0
-                            
-                        #     cursor.execute(
-                        #         "INSERT INTO meter_data (device_sn, timestamp, activePower, reactivePower, apparentPower, powerFactor, local_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        #         (device_sn, timestamp, activePower, reactivePower, apparentPower, powerFactor, local_timestamp)
-                        #     )
+                        cursor.execute(
+                            "INSERT INTO meter_data (device_sn, timestamp, activePower, reactivePower, apparentPower, powerFactor, local_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (device_sn, timestamp, activePower, reactivePower, apparentPower, powerFactor, local_timestamp)
+                        )
             
             # # 记录光伏数据到pv_data表
             # if hasattr(net, 'sgen') and hasattr(net, 'res_sgen') and not net.res_sgen.empty:
