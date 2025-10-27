@@ -26,7 +26,7 @@ class LoggerManager:
         """初始化日志配置"""
         # 创建logger对象
         self.logger = logging.getLogger('power_simulation')
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
         
         # 确保没有重复添加处理器
         if self.logger.handlers:
@@ -64,6 +64,10 @@ class LoggerManager:
         
         # 添加处理器到logger
         self.logger.addHandler(file_handler)
+        
+    def debug(self, message):
+        """记录调试日志"""
+        self.logger.debug(message)
         
     def info(self, message):
         """记录信息日志"""
