@@ -475,9 +475,11 @@ class NetworkModel:
                             print(f"创建充电站: {item.component_name} -> 母线 {bus_idx}")
                     
                     elif item.component_type == 'transformer':
-                        if len(connected_buses) >= 2:
-                            hv_bus = connected_buses[0]
-                            lv_bus = connected_buses[1]
+                            hv_bus = item.properties.get('hv_bus')
+                            lv_bus = item.properties.get('lv_bus')
+                            if hv_bus is None or lv_bus is None:
+                                print(f"变压器 {item.component_name} 缺少 hv_bus 或 lv_bus 配置")
+                                continue
                             self.create_transformer(
                                 id(item),
                                 hv_bus,
@@ -487,9 +489,11 @@ class NetworkModel:
                             print(f"创建变压器: {item.component_name} -> 母线 {hv_bus}-{lv_bus}")
                     
                     elif item.component_type == 'line':
-                        if len(connected_buses) >= 2:
-                            from_bus = connected_buses[0]
-                            to_bus = connected_buses[1]
+                            from_bus = item.properties.get('from_bus')
+                            to_bus = item.properties.get('to_bus')
+                            if from_bus is None or to_bus is None:
+                                print(f"线路 {item.component_name} 缺少 from_bus 或 to_bus 配置")
+                                continue
                             self.create_line(
                                 id(item),
                                 from_bus,
