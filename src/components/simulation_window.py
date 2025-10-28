@@ -74,8 +74,11 @@ class SimulationWindow(QMainWindow):
         # 储能能量统计相关属性
         self.last_storage_update_time = None
         
+        # 初始化功率监控管理器
+        self.power_monitor = PowerMonitor(self)
+
         # Modbus服务器管理器
-        self.modbus_manager = ModbusManager(self.network_model, self.network_items, self.scene)
+        self.modbus_manager = ModbusManager(self.network_model, self.network_items, self.power_monitor, self.scene)
         
         # 初始化数据控制管理器，传入已创建的数据生成器管理器实例
         from .data_control import DataControlManager
@@ -83,10 +86,6 @@ class SimulationWindow(QMainWindow):
 
         # 初始化UI组件管理器
         self.ui_manager = UIComponentManager(self)
-        
-        
-        # 初始化功率监控管理器
-        self.power_monitor = PowerMonitor(self)
         
         self.init_ui()
         self.load_network_data()

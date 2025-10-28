@@ -14,13 +14,13 @@ from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusS
 import asyncio
 from pymodbus.server import ModbusTcpServer
 
-
 class ModbusManager:
     """Modbus服务器管理器"""
     
-    def __init__(self, network_model, network_items, scene=None):
+    def __init__(self, network_model, network_items, power_monitor, scene=None):
         self.network_model = network_model
         self.network_items = network_items
+        self.power_monitor = power_monitor
         self.modbus_servers = {}  # 存储服务器实例
         self.modbus_contexts = {}  # 存储Modbus上下文
         self.running_services = set()  # 跟踪运行中的服务
@@ -148,11 +148,14 @@ class ModbusManager:
         """创建电表设备专用上下文"""
         # 电表设备寄存器映射
         # 当前功率: 0 (保持寄存器)
-        meter_registers = [0] * 100
-        meter_registers[0] = 0
+        meter_input_registers = [0] * 10
+        meter_input_registers[0] = 0  # 当前功率
+        meter_input_registers[1] = 0  # 电压A
+        meter_input_registers[2] = 0  # 电压B
+        meter_input_registers[3] = 0  # 电压C
         
         # 创建ModbusSequentialDataBlock实例
-        input_regs = ModbusSequentialDataBlock(0, meter_registers)
+        input_regs = ModbusSequentialDataBlock(0, meter_input_registers)
         
         device_context = {
             1: ModbusDeviceContext(
@@ -558,61 +561,36 @@ class ModbusManager:
         - 使用单一缓存结构，减少内存占用
         - 直接按索引存储设备对象，避免重复查找
         - 功率值实时获取，确保数据准确性
+        
+        寄存器映射：
+        - 地址0: 有功功率 (16位)
+        - 地址1: A相电压 (16位)
+        - 地址2: B相电压 (16位)
+        - 地址3: C相电压 (16位)
         """
         try:
+            # 获取有功功率值
+            power_value = self.power_monitor.get_meter_measurement(index, 'active_power')
+            power_kw = int(power_value * 1000 / 50 * 100) & 0xFFFF
             
-            # 直接使用network_items[component_type][component_index]查找电表设备
-            if 'meter' in self.network_items and index in self.network_items['meter']:
-                meter_item = self.network_items['meter'][index]
-   
-            if not meter_item:
-                print(f"未找到电表图形项: {index}")
-                return
+            # 写入地址0：有功功率（16位）
+            slave_context.setValues(4, 0, [power_kw])
             
-            # 直接获取映射参数（不缓存，因为访问开销很小）
-            element_type = meter_item.properties.get('element_type', None)
-            element = meter_item.properties.get('element', None)
-            side = meter_item.properties.get('side', None)
+            # 获取电压值（假设三相电压相同，实际应用中可能需要分别获取）
+            voltage_value = self.power_monitor.get_meter_measurement(index, 'voltage')
+            # 电压值转换为整数格式（kV转换为V）
+            voltage_v = int(voltage_value * 1000) & 0xFFFF
             
+            # 写入地址1：A相电压（16位）
+            slave_context.setValues(4, 1, [voltage_v])
             
-            # 实时获取功率数据（不缓存）
-            power_value = 0.0
-            try:
-                if element_type == "load" and element in self.network_model.net.load.index:
-                    power_value = self.network_model.net.res_load.at[element, "p_mw"]
-                elif element_type == "bus" and element in self.network_model.net.bus.index:
-                    power_value = self.network_model.net.res_bus.at[element, "p_mw"]
-                elif element_type == "sgen" and element in self.network_model.net.sgen.index:
-                    power_value = self.network_model.net.res_sgen.at[element, "p_mw"]
-                elif element_type == 'storage' and element in self.network_model.net.storage.index:
-                    power_value = -self.network_model.net.res_storage.at[element, 'p_mw']
-                elif element_type == 'line' and element in self.network_model.net.line.index:
-                    if side == 'from':
-                        power_value = self.network_model.net.res_line.at[element, 'p_from_mw']
-                    elif side == 'to':
-                        power_value = self.network_model.net.res_line.at[element, 'p_to_mw']
-                    else:
-                        power_value = self.network_model.net.res_line.at[element, 'p_from_mw']
-                elif element_type == 'trafo' and element in self.network_model.net.trafo.index:
-                    if side == 'hv':
-                        power_value = self.network_model.net.res_trafo.at[element, 'p_hv_mw']
-                    elif side == 'lv':
-                        power_value = self.network_model.net.res_trafo.at[element, 'p_lv_mw']
-                    else:
-                        power_value = self.network_model.net.res_trafo.at[element, 'p_hv_mw']
-                elif element_type == 'ext_grid' and element in self.network_model.net.ext_grid.index:
-                    power_value = self.network_model.net.res_ext_grid.at[element, 'p_mw']
-                        
-            except (KeyError, AttributeError):
-                power_value = 0.0
-            # 转换为kw（32位无符号整数）
-            power_kw = int(power_value *1000 / 50 * 100)
+            # 写入地址2：B相电压（16位）
+            # 这里暂时使用与A相相同的电压值，实际应用中可能需要分别获取
+            slave_context.setValues(4, 2, [voltage_v])
             
-            # 分高低位写入输出寄存器（32位数据拆分为两个16位寄存器）
-            # 功率值：地址0(低16位) + 地址1(高16位)
-            power_low = power_kw & 0xFFFF
-            power_high = (power_kw >> 16) & 0xFFFF
-            slave_context.setValues(4, 0, [power_low, power_high])
+            # 写入地址3：C相电压（16位）
+            # 这里暂时使用与A相相同的电压值，实际应用中可能需要分别获取
+            slave_context.setValues(4, 3, [voltage_v])
 
         except Exception as e:
             print(f"更新电表上下文失败: {e}")
