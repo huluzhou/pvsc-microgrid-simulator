@@ -381,9 +381,9 @@ class BaseNetworkItem(QGraphicsItem):
             # 更新bus参数
             if connected_bus:
                 if hasattr(connected_bus, 'component_index'):
-                    self.properties['bus'] = str(connected_bus.component_index)
+                    self.properties['bus'] = connected_bus.component_index
                 else:
-                    self.properties['bus'] = str(connected_bus.properties.get('index', 'Unknown'))
+                    self.properties['bus'] = connected_bus.properties.get('index', 'Unknown')
             else:
                 self.properties['bus'] = None
         
@@ -398,7 +398,7 @@ class BaseNetworkItem(QGraphicsItem):
                 if hasattr(connected_item, 'component_type'):
                     if connected_item.component_type == 'bus':
                         # 直接连接到母线
-                        bus_index = str(connected_item.component_index) if hasattr(connected_item, 'component_index') else str(connected_item.properties.get('index', 'Unknown'))
+                        bus_index = connected_item.component_index if hasattr(connected_item, 'component_index') else connected_item.properties.get('index', 'Unknown')
                         connected_buses.append((i, bus_index))  # (连接点索引, 母线索引)
                     elif connected_item.component_type == 'switch' and connected_item.properties.get('bus'):
                         # 通过开关连接到母线
@@ -428,7 +428,7 @@ class BaseNetworkItem(QGraphicsItem):
                 if hasattr(connected_item, 'component_type'):
                     if connected_item.component_type == 'bus':
                         # 直接连接到母线
-                        bus_index = str(connected_item.component_index) if hasattr(connected_item, 'component_index') else str(connected_item.properties.get('index', 'Unknown'))
+                        bus_index = connected_item.component_index if hasattr(connected_item, 'component_index') else connected_item.properties.get('index', 'Unknown')
                         connected_buses.append((i, bus_index))  # (连接点索引, 母线索引)
                     elif connected_item.component_type == 'switch' and connected_item.properties.get('bus'):
                         # 通过开关连接到母线
