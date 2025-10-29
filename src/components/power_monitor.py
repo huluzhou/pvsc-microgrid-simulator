@@ -74,7 +74,7 @@ class PowerMonitor:
                 # 母线本身不直接设置功率，但可以通过潮流计算结果获取总注入功率
                 if hasattr(net, 'res_bus') and device_id in net.res_bus.index:
                     # 获取该母线的总注入功率（发电减负荷）
-                    return abs(net.res_bus.at[device_id, 'p_mw'])
+                    return net.res_bus.at[device_id, 'p_mw']
                 return 0.0
                 
             elif device_type == "线路":
@@ -98,31 +98,31 @@ class PowerMonitor:
             elif device_type == "发电机":
                 # 从发电机潮流计算结果中获取实际功率
                 if hasattr(net, 'res_gen') and device_id in net.res_gen.index:
-                    return abs(net.res_gen.at[device_id, 'p_mw'])
+                    return net.res_gen.at[device_id, 'p_mw']
                 # 如果潮流计算结果没有，使用设定值
                 gens = net.gen
                 if device_id in gens.index:
-                    return abs(gens.at[device_id, 'p_mw'])
+                    return gens.at[device_id, 'p_mw']
                 return 0.0
                     
             elif device_type == "光伏":
                 # 从光伏潮流计算结果中获取实际功率
                 if hasattr(net, 'res_sgen') and device_id in net.res_sgen.index:
-                    return abs(net.res_sgen.at[device_id, 'p_mw'])
+                    return net.res_sgen.at[device_id, 'p_mw']
                 # 使用设定值
                 sgens = net.sgen
                 if device_id in sgens.index:
-                    return abs(sgens.at[device_id, 'p_mw'])
+                    return sgens.at[device_id, 'p_mw']
                 return 0.0
                     
             elif device_type == "负载":
                 # 从负载潮流计算结果中获取实际功率
                 if hasattr(net, 'res_load') and device_id in net.res_load.index:
-                    return abs(net.res_load.at[device_id, 'p_mw'])
+                    return net.res_load.at[device_id, 'p_mw']
                 # 使用设定值
                 loads = net.load
                 if device_id in loads.index:
-                    return abs(loads.at[device_id, 'p_mw'])
+                    return loads.at[device_id, 'p_mw']
                 return 0.0
             elif device_type == "充电桩":
                 # 从充电桩潮流计算结果中获取实际功率
@@ -146,10 +146,10 @@ class PowerMonitor:
             elif device_type == "外部电网":
                 # 从外部电网潮流计算结果中获取功率
                 if hasattr(net, 'res_ext_grid') and device_id in net.res_ext_grid.index:
-                    return abs(net.res_ext_grid.at[device_id, 'p_mw'])
+                    return net.res_ext_grid.at[device_id, 'p_mw']
                 return 0.0
             elif device_type == "电表":
-                return self._get_meter_power(device_id)
+                return self.get_meter_measurement(device_id,'active_power')
         except Exception as e:
             print(f"获取设备功率失败: {str(e)}")
         
