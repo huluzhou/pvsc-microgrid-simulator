@@ -764,6 +764,10 @@ class SimulationWindow(QMainWindow):
     def closeEvent(self, event):
         """窗口关闭事件 - 增强内存清理"""
         try:
+            # 停止数据记录线程
+            if hasattr(self, 'is_recording') and self.is_recording:
+                self.stop_record_data()
+                
             # 下电所有设备
             self.power_off_all_devices()
             
