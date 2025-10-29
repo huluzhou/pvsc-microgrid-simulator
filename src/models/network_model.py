@@ -208,7 +208,7 @@ class NetworkModel:
         storage_idx = pp.create_storage(
             self.net,
             bus=bus,
-            p_mw=properties.get("p_mw", 0.0),
+            p_mw=-properties.get("p_mw", 0.0),
             max_e_mwh=properties.get("max_e_mwh", 1.0),
             name=properties.get("name", "Storage"),
             index=properties.get("index", None),
