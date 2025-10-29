@@ -288,21 +288,38 @@ class NetworkCanvas(QGraphicsView):
         if type1 == "meter" or type2 == "meter":
             return True
             
-        # 开关一端为母线,另外一端可以使母线\线路\变压器   
+        # 开关一端为母线,另外一端可以是母线\线路\变压器   
         if type1 == "switch" or type2 == "switch":
             # 确定哪个是开关，哪个是另一个组件
             switch_item = item2 if type1 == "switch" else item1
             other_item = item1 if type1 == "switch" else item2
             other_type = type2 if type1 == "switch" else type1
             
-            # 开关的另一端可以是母线、线路或变压器
+            # 开关可以连接到母线、线路或变压器
             if other_type in ["bus", "line", "transformer"]:
-                # 特殊检查：如果要连接的是母线，且开关已经连接到这个母线，则不允许连接
-                if other_type == "bus" and hasattr(switch_item, 'current_connections'):
-                    # 检查开关当前是否已经连接到这个母线
-                    # 确保比较的是同一个对象实例，而不是类型
-                    if switch_item.current_connections[0] == other_item:
-                        return False
+                # 获取开关当前已连接的组件
+                current_connections = getattr(switch_item, 'current_connections', [])
+                
+                # 如果开关已经有连接，检查是否符合"一端为母线"的规则
+                if current_connections:
+                    # 获取第一个已连接组件的类型
+                    connected_type = None
+                    if hasattr(current_connections[0], 'component_type'):
+                        connected_type = current_connections[0].component_type
+                    
+                    # 情况1: 开关已经连接到母线，现在连接到其他允许的组件
+                    if connected_type == "bus":
+                        # 允许连接到母线、线路或变压器
+                        return True
+                    # 情况2: 开关已经连接到非母线组件，现在必须连接到母线
+                    elif connected_type in ["line", "transformer"]:
+                        return other_type == "bus"
+                    # 情况3: 开关连接到其他类型，需要连接到母线
+                    else:
+                        return other_type == "bus"
+                
+                # 如果开关还没有连接，允许连接到任何允许的类型
+                # 注意：当添加第二个连接时，会再次检查规则
                 return True
             return False
             
@@ -357,22 +374,28 @@ class NetworkCanvas(QGraphicsView):
             # 获取要连接的总线ID
             bus_id = target_item.properties.get('index')
             
-            if source_item.component_type == 'transformer':
-                # 变压器连接到母线的情况
-                if source_item.properties.get('hv_bus') == bus_id:
-                    point_index_source = 0  # 高压侧连接点
-                elif source_item.properties.get('lv_bus') == bus_id:
-                    point_index_source = 1  # 低压侧连接点
-            elif source_item.component_type == 'line':
-                # 线路连接到母线的情况
-                if source_item.properties.get('from_bus') == bus_id:
-                    point_index_source = 0  # 起始端连接点
-                elif source_item.properties.get('to_bus') == bus_id:
-                    point_index_source = 1  # 终止端连接点
-        
-        # 如果没有通过特殊规则选择连接点，使用最近的连接点
-        if point_index_source == -1:
-            _, point_index_source = self.find_nearest_connection_point(source_item, target_item)
+            # 组件类型与属性、连接点索引的映射关系
+            component_mapping = {
+                'transformer': [('hv_bus', 0), ('lv_bus', 1)],
+                'line': [('from_bus', 0), ('to_bus', 1)]
+            }
+            
+            # 初始化一个标志，表示是否找到了匹配的连接关系
+            found_match = False
+            
+            # 检查当前组件类型是否在映射中
+            if source_item.component_type in component_mapping:
+                # 遍历该组件类型的所有可能连接点
+                for prop_name, point_idx in component_mapping[source_item.component_type]:
+                    if source_item.properties.get(prop_name) == bus_id:
+                        # 如果连接点可用，使用该连接点；否则标记为不可用
+                        point_index_source = point_idx if point_idx in available_points else -1
+                        found_match = True
+                        break
+            
+            # 如果没有找到匹配的连接关系，直接使用最近的连接点
+            if not found_match:
+                _, point_index_source = self.find_nearest_connection_point(source_item, target_item)
         
         # 为目标组件选择最近的连接点
         _, point_index_target = self.find_nearest_connection_point(target_item, source_item)

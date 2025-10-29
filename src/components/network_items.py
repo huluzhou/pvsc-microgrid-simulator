@@ -46,6 +46,7 @@ class BaseNetworkItem(QGraphicsItem):
         self.component_type = "base"
         self.component_name = "基础组件"
         self.properties = {}
+        self.restoring_connections = False  # 导入拓扑时恢复连接的标志
         
         # 索引将在子类中设置component_type后分配
         self.component_index = None
@@ -299,6 +300,10 @@ class BaseNetworkItem(QGraphicsItem):
         self.update()
         self.update_connections()
     
+    def set_restoring_connections_flag(self, flag):
+        """设置导入拓扑时恢复连接的标志"""
+        self.restoring_connections = flag
+        
     def update_rotated_connection_points(self):
         """更新旋转后的连接点位置"""
         if not hasattr(self, 'original_connection_points'):
@@ -334,6 +339,9 @@ class BaseNetworkItem(QGraphicsItem):
                 if connection_point_index not in self.connection_point_states:
                     self.connection_point_states[connection_point_index] = []
                 self.connection_point_states[connection_point_index].append(connected_item)
+            # 如果正在导入拓扑时恢复连接，直接返回True
+            if self.restoring_connections:
+                return True
             # 更新bus参数
             self.update_bus_parameter()
             return True
@@ -546,6 +554,9 @@ class BaseNetworkItem(QGraphicsItem):
         
         connections = self.connection_point_states[point_index]
         
+        # 获取当前组件类型
+        current_type = self.component_type if hasattr(self, 'component_type') else 'base'
+        
         # 如果已经有2个连接，不能再连接
         if len(connections) >= 2:
             return False
@@ -553,12 +564,60 @@ class BaseNetworkItem(QGraphicsItem):
         # 如果只有1个连接
         if len(connections) == 1:
             existing_item = connections[0]
-            # 如果现有连接是电表，新连接可以是任何非电表组件
-            if hasattr(existing_item, 'component_type') and existing_item.component_type == 'meter':
-                return connecting_item is None or (hasattr(connecting_item, 'component_type') and connecting_item.component_type != 'meter')
-            # 如果现有连接不是电表，新连接必须是电表
+            existing_type = existing_item.component_type if hasattr(existing_item, 'component_type') else 'base'
+            
+            # 新连接的类型
+            connecting_type = connecting_item.component_type if connecting_item and hasattr(connecting_item, 'component_type') else None
+            
+            # 根据不同组件类型应用不同的连接规则
+            if current_type in ['transformer', 'line']:
+                # 变压器和线路的连接规则：
+                # 一个连接点可以连接：一个总线/一个开关/一个总线和一个电表/一个开关和一个电表
+                if existing_type == 'meter':
+                    # 如果现有连接是电表，新连接必须是总线或开关
+                    return connecting_type in ['bus', 'switch']
+                elif existing_type in ['bus', 'switch']:
+                    # 如果现有连接是总线或开关，新连接必须是电表
+                    return connecting_type == 'meter'
+                else:
+                    # 其他情况不允许连接
+                    return False
+            
+            elif current_type == 'switch':
+                # 开关的连接规则：
+                # 一端为母线，另外一端可以是母线/线路/变压器
+                # 注意：这里只控制每个连接点最多连接一个设备
+                # 具体的母线连接逻辑在_can_connect方法中处理
+                return False
+            
             else:
-                return connecting_item is not None and hasattr(connecting_item, 'component_type') and connecting_item.component_type == 'meter'
+                # 其他设备的连接规则：
+                # 每个连接点仅可连接一个总线或者一个总线和一个电表
+                if existing_type == 'meter':
+                    # 如果现有连接是电表，新连接必须是总线
+                    return connecting_type == 'bus'
+                elif existing_type == 'bus':
+                    # 如果现有连接是总线，新连接必须是电表
+                    return connecting_type == 'meter'
+                else:
+                    # 其他情况不允许连接
+                    return False
+        
+        # 还没有连接时，根据组件类型允许的连接类型进行判断
+        if connecting_item and hasattr(connecting_item, 'component_type'):
+            connecting_type = connecting_item.component_type
+            
+            if current_type in ['transformer', 'line']:
+                # 变压器和线路的第一个连接可以是总线、开关或电表
+                return connecting_type in ['bus', 'switch', 'meter']
+            
+            elif current_type == 'switch':
+                # 开关的第一个连接可以是任何有效连接类型
+                return True
+            
+            else:
+                # 其他设备的第一个连接只能是总线或电表
+                return connecting_type in ['bus', 'meter']
         
         return True
     
