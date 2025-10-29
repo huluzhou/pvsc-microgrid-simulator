@@ -847,8 +847,9 @@ class DataControlManager:
             slider_value = int(value * 100)
             
             # 获取当前滑块范围
+            min_slider = self.parent_window.load_power_slider.minimum()
             max_slider = self.parent_window.load_power_slider.maximum()
-            slider_value = max(0, min(max_slider, slider_value))
+            slider_value = max(min_slider, min(max_slider, slider_value))
             
             self.parent_window.load_power_slider.blockSignals(True)
             self.parent_window.load_power_slider.setValue(slider_value)
@@ -870,8 +871,9 @@ class DataControlManager:
             slider_value = int(value * 100)
             
             # 获取当前滑块范围
+            min_slider = self.parent_window.load_reactive_power_slider.minimum()
             max_slider = self.parent_window.load_reactive_power_slider.maximum()
-            slider_value = max(0, min(max_slider, slider_value))
+            slider_value = max(min_slider, min(max_slider, slider_value))
             
             self.parent_window.load_reactive_power_slider.blockSignals(True)
             self.parent_window.load_reactive_power_slider.setValue(slider_value)

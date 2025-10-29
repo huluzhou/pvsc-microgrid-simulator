@@ -431,14 +431,14 @@ class UIComponentManager:
 
         # 负载功率控制
         load_power_slider = QSlider(Qt.Horizontal)
-        load_power_slider.setRange(0, 100)  # 0-1MW
+        load_power_slider.setRange(-100, 100)  # -1MW到1MW
         load_power_slider.setValue(50)
         load_power_slider.setMinimumWidth(100)
         load_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_load_power_changed)
         self.parent_window.load_power_slider = load_power_slider
         
         load_power_spinbox = QDoubleSpinBox()
-        load_power_spinbox.setRange(0.0, 1.0)
+        load_power_spinbox.setRange(-1.0, 1.0)
         load_power_spinbox.setValue(0.5)
         load_power_spinbox.setSuffix(" MW")
         load_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_load_power_spinbox_changed)
@@ -451,14 +451,14 @@ class UIComponentManager:
         
         # 负载无功功率控制
         load_reactive_power_slider = QSlider(Qt.Horizontal)
-        load_reactive_power_slider.setRange(0, 50)  # 0-0.5MVar
+        load_reactive_power_slider.setRange(-50, 50)  # -0.5MVar到0.5MVar
         load_reactive_power_slider.setValue(25)
         load_reactive_power_slider.setMinimumWidth(100)
         load_reactive_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_load_reactive_power_changed)
         self.parent_window.load_reactive_power_slider = load_reactive_power_slider
         
         load_reactive_power_spinbox = QDoubleSpinBox()
-        load_reactive_power_spinbox.setRange(0.0, 0.5)
+        load_reactive_power_spinbox.setRange(-0.5, 0.5)
         load_reactive_power_spinbox.setValue(0.25)
         load_reactive_power_spinbox.setSuffix(" MVar")
         self.parent_window.load_reactive_power_spinbox = load_reactive_power_spinbox
