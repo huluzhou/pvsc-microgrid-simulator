@@ -813,7 +813,7 @@ class StorageItem(BaseNetworkItem):
         self.is_power_on = False
         self.grid_connected = True
         
-    def update_realtime_data(self, current_power_mw, time_delta_hours=1.0):
+    def update_storage_energy_and_state(self, current_power_mw, time_delta_hours=1.0):
         """
         更新实时数据
         

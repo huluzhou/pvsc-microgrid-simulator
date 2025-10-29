@@ -168,10 +168,10 @@ class ModbusManager:
     def _create_storage_context(self, device_info):
         """创建储能设备专用上下文"""
         # 储能设备寄存器映射
-        storage_hold_registers = [0] * 100  # 扩大寄存器范围以包含所有需要的寄存器
+        storage_hold_registers = [0] * 5100  # 扩大寄存器范围以包含所有需要的寄存器
         storage_hold_registers[4+1] = 0  # 设置功率
         storage_hold_registers[55+1] = 1  # 开关机
-        storage_hold_registers[56+1] = 1  # 并网离网
+        storage_hold_registers[5095+1] = 0  # 设置PCS并离网模式：1-离网，0-并网
 
         # 将storage_input_registers字典转换为长度为1000的列表，用于ModbusSequentialDataBlock
         storage_input_registers = [0] * 5100
@@ -198,7 +198,8 @@ class ModbusManager:
         storage_input_registers[429+1] = 0
         storage_input_registers[430+1] = 0  # 累计放电总量
         storage_input_registers[431+1] = 0
-        storage_input_registers[839+1] = 1  # state3
+        storage_input_registers[432+1] = 0  # 当前PCS工作模式：bit9-并网模式，bit10-离网模式
+        storage_input_registers[839+1] = 240  # state3 240-停机，243/245-工作正常，242/246-故障
 
         storage_input_registers[900+1] = 21573 #sn
         storage_input_registers[901+1] = 21313   # SN_902 SN号
@@ -213,7 +214,6 @@ class ModbusManager:
         storage_input_registers[910+1] = 14641   # SN_911 SN号
         storage_input_registers[911+1] = 13104   # SN_912 SN号
         storage_input_registers[912+1] = 12337   # SN_913 SN号
-        storage_input_registers[5044+1] = 1  # 并网/离网状态，默认1（并网）
 
         holding_regs = ModbusSequentialDataBlock(0, storage_hold_registers)   
         input_regs = ModbusSequentialDataBlock(0, storage_input_registers)
@@ -710,11 +710,11 @@ class ModbusManager:
 
             # 状态映射表
             state_map = {
-                "halt": {"reg840": 0, "reg409": 0, "reg1": 1},  # 停机
-                "ready": {"reg840": 1, "reg409": 1, "reg1": 1},  # 就绪
-                "charge": {"reg840": 1, "reg409": 3, "reg1": 2},  # 充电
-                "discharge": {"reg840": 1, "reg409": 4, "reg1": 3},  # 放电
-                "fault": {"reg840": 1, "reg409": 2, "reg1": 4},  # 故障
+                "halt": {"reg840": 240, "reg409": 0, "reg1": 1},  # 停机
+                "ready": {"reg840": 243, "reg409": 1, "reg1": 1},  # 就绪
+                "charge": {"reg840": 245, "reg409": 3, "reg1": 2},  # 充电
+                "discharge": {"reg840": 245, "reg409": 4, "reg1": 3},  # 放电
+                "fault": {"reg840": 242, "reg409": 2, "reg1": 4},  # 故障
             }
 
             state_values = state_map.get(current_state, state_map['ready'])
@@ -752,13 +752,21 @@ class ModbusManager:
             #     print(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
             
             # 更新并网/离网状态到保持寄存器5044
-            # 从storage_item获取grid_connected属性，如果不存在默认为1（并网状态）
-            grid_connected = getattr(storage_item, 'grid_connected', 6)
-            # 确保值为0或1
-            grid_connected_value = 1 if grid_connected else 6
-            # 写入保持寄存器5044
-            slave_context.setValues(4, 5044, [grid_connected_value])
-            logger.info(f"储能设备 {index} 并网/离网状态更新: {'并网' if grid_connected_value == 1 else '离网'}")
+            # 从storage_item获取grid_connected属性，如果不存在默认为True（并网状态）
+            grid_connected = getattr(storage_item, 'grid_connected', True)
+            # 根据grid_connected值设置对应的位标志
+            # 当为true时，设置bit9为并网模式；当为false时，设置bit10为离网模式
+            if grid_connected:
+                # bit9设置为1（2^9=512）
+                mode_value = 512  # 2^9 = 512 (bit9)
+                mode_text = "并网"
+            else:
+                # bit10设置为1（2^10=1024）
+                mode_value = 1024  # 2^10 = 1024 (bit10)
+                mode_text = "离网"
+            # 写入输入寄存器432表示当前PCS工作模式
+            slave_context.setValues(4, 432, [mode_value])
+            logger.info(f"储能设备 {index} 并网/离网状态更新: {mode_text}模式")
             
         except KeyError as e:
             print(f"储能设备数据缺失: {e}")
@@ -986,7 +994,7 @@ class ModbusManager:
                 power_on = False
             # 读取储能并网离网指令 寄存器暂定
             try:
-                grid_connected = device_context.getValues(3, 56, 1)[0]
+                grid_connected = device_context.getValues(3, 5095, 1)[0]
             except (IndexError, ValueError, AttributeError):
                 grid_connected = 0
             

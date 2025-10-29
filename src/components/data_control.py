@@ -384,7 +384,7 @@ class DataControlManager:
                 self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
         
 
-    def update_realtime_data(self):
+    def show_realtime_info(self):
         # 根据当前设备类型只调用对应的更新方法
         component_type = getattr(self.parent_window, 'current_component_type', None)
         component_idx = getattr(self.parent_window, 'current_component_idx', None)

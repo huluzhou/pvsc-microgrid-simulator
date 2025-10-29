@@ -986,7 +986,7 @@ class SimulationWindow(QMainWindow):
                         current_power_mw = -self.network_model.net.storage.at[device_idx, 'p_mw']
                         
                         # 调用StorageItem的实时数据更新方法
-                        storage_item.update_realtime_data(current_power_mw, time_interval_hours)
+                        storage_item.update_storage_energy_and_state(current_power_mw, time_interval_hours)
                         
                     except Exception as e:
                         print(f"批量更新储能设备 {device_idx} 能量统计时出错: {e}")
@@ -1130,9 +1130,9 @@ class SimulationWindow(QMainWindow):
                     pass
                 # 更新并网离网状态
                 grid_connected = update_data['grid_connected']
-                if grid_connected == 1:
+                if grid_connected == 0:
                     storage_item.grid_connected = True
-                elif grid_connected == 6:
+                elif grid_connected == 1:
                     storage_item.grid_connected = False
                         
         except Exception as e:
@@ -1449,7 +1449,7 @@ class SimulationWindow(QMainWindow):
                     self.power_monitor.update_power_curve()
                     logger.info("功率曲线更新完成")
                 
-                self.data_control_manager.update_realtime_data()
+                self.data_control_manager.show_realtime_info()
                 logger.info("实时数据更新完成")
                 
                 # 批量更新Modbus数据

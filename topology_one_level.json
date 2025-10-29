@@ -1,0 +1,244 @@
+{
+  "Measurement": [
+    {
+      "index": 1,
+      "geodata": [
+        2700.0,
+        2150.0
+      ],
+      "meas_type": "p",
+      "element_type": "bus",
+      "value": 0.0,
+      "std_dev": 0.01,
+      "element": 1,
+      "side": null,
+      "in_service": true,
+      "name": "Meter 1",
+      "sn": "TMEAA380250EI00CN230914101",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "403",
+      "custom_fields": {}
+    }
+  ],
+  "Load": [
+    {
+      "index": 1,
+      "geodata": [
+        2700.0,
+        2850.0
+      ],
+      "p_mw": 1.0,
+      "q_mvar": 0.0,
+      "name": "Load 1",
+      "bus": 2,
+      "custom_fields": {}
+    }
+  ],
+  "Charger": [
+    {
+      "index": 1002,
+      "geodata": [
+        2600.0,
+        2850.0
+      ],
+      "sn_mva": 1.0,
+      "p_mw": 1.0,
+      "efficiency": 0.95,
+      "name": "充电站 2",
+      "bus": 2,
+      "sn": "TCPWX1201K0DY20CN230914002",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "703",
+      "custom_fields": {}
+    },
+    {
+      "index": 1001,
+      "geodata": [
+        2500.0,
+        2850.0
+      ],
+      "sn_mva": 1.0,
+      "p_mw": 1.0,
+      "efficiency": 0.95,
+      "name": "充电站 1",
+      "bus": 2,
+      "sn": "TCPWX1201K0DY20CN230914001",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "702",
+      "custom_fields": {}
+    }
+  ],
+  "Storage": [
+    {
+      "name": "储能 2",
+      "index": 2,
+      "sn_mva": 1.0,
+      "geodata": [
+        2400.0,
+        2850.0
+      ],
+      "p_mw": 1.0,
+      "max_e_mwh": 1.0,
+      "soc_percent": 50.0,
+      "bus": 2,
+      "sn": "TESAR100230HT00CN230913002",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "503",
+      "custom_fields": {}
+    },
+    {
+      "name": "储能 1",
+      "index": 1,
+      "sn_mva": 1.0,
+      "geodata": [
+        2300.0,
+        2850.0
+      ],
+      "p_mw": 1.0,
+      "max_e_mwh": 1.0,
+      "soc_percent": 50.0,
+      "bus": 2,
+      "sn": "TESAR100230HT00CN230913001",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "502",
+      "custom_fields": {}
+    }
+  ],
+  "Static_Generator": [
+    {
+      "index": 2,
+      "geodata": [
+        2200.0,
+        2850.0
+      ],
+      "use_power_factor": false,
+      "p_mw": 1.0,
+      "q_mvar": 0.0,
+      "sn_mva": 1.0,
+      "cos_phi": 0.9,
+      "mode": "overexcited",
+      "scaling": 1.0,
+      "type": "wye",
+      "in_service": true,
+      "name": "光伏 2",
+      "bus": 2,
+      "sn": "TH50KBT000A220806202",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "603",
+      "custom_fields": {}
+    },
+    {
+      "index": 1,
+      "geodata": [
+        2100.0,
+        2850.0
+      ],
+      "use_power_factor": false,
+      "p_mw": 1.0,
+      "q_mvar": 0.0,
+      "sn_mva": 1.0,
+      "cos_phi": 0.9,
+      "mode": "overexcited",
+      "scaling": 1.0,
+      "type": "wye",
+      "in_service": true,
+      "name": "光伏 1",
+      "bus": 2,
+      "sn": "TH50KBT000A220806201",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "602",
+      "custom_fields": {}
+    }
+  ],
+  "Transformer": [
+    {
+      "index": 1,
+      "geodata": [
+        2400.0,
+        2500.0
+      ],
+      "use_standard_type": true,
+      "std_type": "0.63 MVA 10/0.4 kV",
+      "sn_mva": 25.0,
+      "vn_hv_kv": 110.0,
+      "vn_lv_kv": 20.0,
+      "vkr_percent": 0.3,
+      "vk_percent": 12.0,
+      "pfe_kw": 14.0,
+      "i0_percent": 0.07,
+      "vector_group": "Dyn",
+      "vk0_percent": 0.0,
+      "vkr0_percent": 0.0,
+      "mag0_percent": 0.0,
+      "mag0_rx": 0.0,
+      "si0_hv_partial": 0.0,
+      "hv_bus": 1,
+      "lv_bus": 2,
+      "name": "Transformer 1",
+      "custom_fields": {}
+    }
+  ],
+  "Switch": [
+    {
+      "index": 1,
+      "geodata": [
+        2400.0,
+        2400.0
+      ],
+      "bus": 1,
+      "name": "Switch 1",
+      "element": 1,
+      "et": "t",
+      "closed": true,
+      "in_ka": 1000.0,
+      "custom_fields": {}
+    }
+  ],
+  "External_Grid": [
+    {
+      "index": 0,
+      "geodata": [
+        2400.0,
+        2150.0
+      ],
+      "vm_pu": 1.0,
+      "va_degree": 0.0,
+      "name": "External Grid 0",
+      "s_sc_max_mva": 1000.0,
+      "s_sc_min_mva": 800.0,
+      "rx_max": 0.1,
+      "rx_min": 0.1,
+      "bus": 1,
+      "custom_fields": {}
+    }
+  ],
+  "Bus": [
+    {
+      "index": 2,
+      "vn_kv": 0.4,
+      "geodata": [
+        2400.0,
+        2650.0
+      ],
+      "name": "Bus 2",
+      "custom_fields": {}
+    },
+    {
+      "index": 1,
+      "vn_kv": 10.0,
+      "geodata": [
+        2400.0,
+        2300.0
+      ],
+      "name": "Bus 1",
+      "custom_fields": {}
+    }
+  ]
+}
