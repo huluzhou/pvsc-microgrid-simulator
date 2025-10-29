@@ -764,10 +764,13 @@ class SimulationWindow(QMainWindow):
     def closeEvent(self, event):
         """窗口关闭事件 - 增强内存清理"""
         try:
+            # 下电所有设备
+            self.power_off_all_devices()
+            
             # 停止所有定时器
             self.auto_calc_timer.stop()
             
-            # 停止所有Modbus服务器
+            # 停止所有Modbus服务器（额外保障）
             if hasattr(self, 'modbus_manager'):
                 self.modbus_manager.stop_all_modbus_servers()
             
@@ -782,11 +785,9 @@ class SimulationWindow(QMainWindow):
             self._disconnect_all_signals()
             
             self.parent_window.statusBar().showMessage("已退出仿真模式")
-            # self.clear_all_members()
             # 强制垃圾回收
             import gc
             gc.collect()
-            
             
         except Exception as e:
             print(f"关闭仿真窗口时发生错误: {e}")
