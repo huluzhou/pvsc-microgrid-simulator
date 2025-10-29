@@ -604,7 +604,7 @@ class UIComponentManager:
         storage_manual_panel_layout.addRow("功率控制:", storage_power_layout)
         
         # 功率说明标签
-        power_info_label = QLabel("正值充电，负值放电")
+        power_info_label = QLabel("正值放电，负值充电")
         power_info_label.setStyleSheet("color: #666; font-size: 12px;")
         storage_manual_panel_layout.addRow("", power_info_label)
         
