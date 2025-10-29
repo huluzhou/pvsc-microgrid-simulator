@@ -174,7 +174,7 @@ class ModbusManager:
         storage_hold_registers[5095+1] = 0  # 设置PCS并离网模式：1-离网，0-并网
 
         # 将storage_input_registers字典转换为长度为1000的列表，用于ModbusSequentialDataBlock
-        storage_input_registers = [0] * 5100
+        storage_input_registers = [0] * 1000
         storage_input_registers[0+1] = 3  # state1
         storage_input_registers[2+1] = 288  # SOC
         storage_input_registers[8+1] = 10000  # 最大充电功率
@@ -187,6 +187,9 @@ class ModbusManager:
         storage_input_registers[43+1] = 0  # battery_cluster_power
         storage_input_registers[400+1] = 0  # state4
         storage_input_registers[408+1] = 1  # state2
+        storage_input_registers[409+1] = 2200  # A相电压
+        storage_input_registers[410+1] = 2200  # B相电压
+        storage_input_registers[411+1] = 2200  # C相电压
         storage_input_registers[412+1] = 0  # A相电流
         storage_input_registers[413+1] = 0  # B相电流
         storage_input_registers[414+1] = 0  # C相电流
