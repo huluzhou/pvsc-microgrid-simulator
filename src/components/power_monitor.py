@@ -126,7 +126,7 @@ class PowerMonitor:
                 return 0.0
             elif device_type == "充电桩":
                 # 从充电桩潮流计算结果中获取实际功率
-                if hasattr(net, 'res_charger') and device_id in net.res_load.index:
+                if hasattr(net, 'res_load') and device_id in net.res_load.index:
                     return net.res_load.at[device_id, 'p_mw']
                 # 使用设定值
                 chargers = net.load
