@@ -308,11 +308,10 @@ class ModbusManager:
         # 将寄存器字典转换为列表，用于ModbusSequentialDataBlock
         charger_input_registers = [0] * 200
         charger_input_registers[0 + 1] = 0  # 有功功率
-        charger_input_registers[1 + 1] = 0
+        charger_input_registers[1 + 1] = 1  # 状态
         charger_input_registers[2 + 1] = 0  # 需求功率
-        charger_input_registers[3 + 1] = 0
+        charger_input_registers[3 + 1] = 0  # gun num
         charger_input_registers[4 + 1] = 0  # 额定功率
-        charger_input_registers[5 + 1] = 0
         charger_input_registers[100 + 1] = 1  # gun1 - 初始状态1
         charger_input_registers[101 + 1] = 2  # gun2 - 初始状态2
         charger_input_registers[102 + 1] = 3  # gun3 - 初始状态3
@@ -354,8 +353,7 @@ class ModbusManager:
             
             # 分高低位写入（地址4:低16位 + 地址5:高16位）
             rated_power_low = rated_power & 0xFFFF
-            rated_power_high = (rated_power >> 16) & 0xFFFF
-            slave_context.setValues(4, 4, [rated_power_low, rated_power_high])
+            slave_context.setValues(4, 4, [rated_power_low])
             
             # 写入枪状态信息 (1, 2, 3, 4)
             slave_context.setValues(4, 100, [1])  # 枪1状态: 1
@@ -786,7 +784,7 @@ class ModbusManager:
         REG_ACTIVE_POWER = 0
         REG_REQUIRED_POWER = 2
         INPUT_REG = 4  # 使用输入寄存器存储实时数据
-        MAX_32BIT_UINT = 0xFFFFFFFF
+        MAX_16BIT_UINT = 0xFFFF
 
         try:
             # 获取充电桩功率数据
@@ -805,19 +803,17 @@ class ModbusManager:
             
 
             # 数据范围检查
-            active_power_kw = max(0, min(active_power_kw, MAX_32BIT_UINT))
-            required_power_kw = max(0, min(required_power_kw, MAX_32BIT_UINT))
+            active_power_kw = max(0, min(active_power_kw, MAX_16BIT_UINT))
+            required_power_kw = max(0, min(required_power_kw, MAX_16BIT_UINT))
             
             # 分高低位写入寄存器数据（32位数据拆分为两个16位寄存器）
             # 有功功率：地址0(低16位) + 地址1(高16位)
             active_power_low = active_power_kw & 0xFFFF
-            active_power_high = (active_power_kw >> 16) & 0xFFFF
-            slave_context.setValues(INPUT_REG, REG_ACTIVE_POWER, [active_power_low, active_power_high])
+            slave_context.setValues(INPUT_REG, REG_ACTIVE_POWER, [active_power_low])
             
             # 需求功率：地址2(低16位) + 地址3(高16位)
             required_power_low = required_power_kw & 0xFFFF
-            required_power_high = (required_power_kw >> 16) & 0xFFFF
-            slave_context.setValues(INPUT_REG, REG_REQUIRED_POWER, [required_power_low, required_power_high])
+            slave_context.setValues(INPUT_REG, REG_REQUIRED_POWER, [required_power_low])
             
         except KeyError as e:
             raise RuntimeError(f"充电桩设备数据缺失: {e}")
