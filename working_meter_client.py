@@ -47,20 +47,28 @@ class MultiMeterClient:
         for meter_name, client in self.clients.items():
             try:
                 # 读取两个连续的16位寄存器（地址0和地址1）
-                result = client.read_input_registers(address=0, count=2, device_id=1)
-                is_connected = client.read_input_registers(address=2, count=1, device_id=1)
-                is_connected_register = is_connected.registers[0]
-                self.meter_data[meter_name]['is_connected'] = is_connected_register == 1
-                if not result.isError() and len(result.registers) >= 2:
+                result = client.read_input_registers(address=0, count=10, device_id=1)
+                # voltage_a = client.read_input_registers(address=1, count=1, device_id=1)
+                # voltage_b = client.read_input_registers(address=2, count=1, device_id=1)
+                # voltage_c = client.read_input_registers(address=3, count=1, device_id=1)
+                if not result.isError() and len(result.registers) >= 1:
                     # 组合高低位得到32位无符号整数
                     low_word = result.registers[0]
-                    high_word = result.registers[1]
-                    raw_value = (high_word << 16) | low_word
+                    raw_value = low_word
                     
                     # 转换为kW（服务器端已提供kW单位）
                     power_kw = raw_value * 0.5 # 转换为MW再转kW，或直接按kW处理
                     self.meter_data[meter_name]['power'] = power_kw
                     self.meter_data[meter_name]['status'] = 'ok'
+                    self.meter_data[meter_name]['voltage_a'] = result.registers[1]
+                    self.meter_data[meter_name]['voltage_b'] = result.registers[2]
+                    self.meter_data[meter_name]['voltage_c'] = result.registers[3]
+                    self.meter_data[meter_name]['current_a'] = result.registers[4]
+                    self.meter_data[meter_name]['current_b'] = result.registers[5]
+                    self.meter_data[meter_name]['current_c'] = result.registers[6]
+                    self.meter_data[meter_name]['up_energy'] = result.registers[7]
+                    self.meter_data[meter_name]['down_energy'] = result.registers[8]
+                    self.meter_data[meter_name]['total_energy'] = result.registers[9]
                 else:
                     self.meter_data[meter_name]['status'] = 'read_error'
                     self.meter_data[meter_name]['power'] = 0.0
@@ -82,10 +90,20 @@ class MultiMeterClient:
             data = self.meter_data[meter_name]
             power = data['power']
             status = data['status']
-            is_connected = data['is_connected']
-            
-            if status == 'ok' and is_connected:
-                print(f"电表{i}:{power:6.2f}kW | 状态: {status} | 连接: {is_connected}")
+            voltage_a = data['voltage_a']
+            voltage_b = data['voltage_b']
+            voltage_c = data['voltage_c']
+            current_a = data['current_a']
+            current_b = data['current_b']
+            current_c = data['current_c']
+            up_energy = data['up_energy']
+            down_energy = data['down_energy']
+            total_energy = data['total_energy']
+
+            if status == 'ok':
+                print(
+                    f"电表{i}:{power:6.2f}kW | 状态: {status} | Vab:{voltage_a:6.2f}V | Vbc:{voltage_b:6.2f}V | Vca:{voltage_c:6.2f}V | Iab:{current_a:6.2f}A | Ibc:{current_b:6.2f}A | Ica:{current_c:6.2f}A | Up:{up_energy:6.2f}kWh | Down:{down_energy:6.2f}kWh | Total:{total_energy:6.2f}kWh"
+                )
                 total_power += power
                 active_meters += 1
             else:
@@ -111,7 +129,7 @@ def main():
     print("📊 开始监控... 按 Ctrl+C 停止")
     print()
     
-    multi_client = MultiMeterClient(base_port=403, meter_count=4)
+    multi_client = MultiMeterClient(base_port=403, meter_count=1)
     
     try:
         if not multi_client.connect_all_meters():

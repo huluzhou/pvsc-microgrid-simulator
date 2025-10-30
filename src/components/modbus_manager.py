@@ -148,11 +148,17 @@ class ModbusManager:
         """创建电表设备专用上下文"""
         # 电表设备寄存器映射
         # 当前功率: 0 (保持寄存器)
-        meter_input_registers = [0] * 10
-        meter_input_registers[0] = 0  # 当前功率
-        meter_input_registers[1] = 0  # 电压A
-        meter_input_registers[2] = 0  # 电压B
-        meter_input_registers[3] = 0  # 电压C
+        meter_input_registers = [0] * 20
+        meter_input_registers[0+1] = 0  # 当前功率
+        meter_input_registers[1+1] = 220  # 电压A
+        meter_input_registers[2+1] = 220  # 电压B
+        meter_input_registers[3+1] = 220  # 电压C
+        meter_input_registers[4+1] = 65468   # Cur_A A相电流
+        meter_input_registers[5+1] = 65469   # Cur_B B相电流
+        meter_input_registers[6+1] = 65458   # Cur_C C相电流
+        meter_input_registers[7+1] = 1000   # OnGridQ 上网电量
+        meter_input_registers[8+1] = 862   # GridPower  下网电量
+        meter_input_registers[9+1] = 1000   # MeterActivep  组合有功总电能
         
         # 创建ModbusSequentialDataBlock实例
         input_regs = ModbusSequentialDataBlock(0, meter_input_registers)
