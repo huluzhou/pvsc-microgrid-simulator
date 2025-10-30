@@ -10,6 +10,7 @@ import time
 from collections import deque
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTreeWidgetItem
+import math
 
 
 class PowerMonitor:
@@ -714,7 +715,11 @@ class PowerMonitor:
             # 如果找到母线ID，查询电压值
             if bus_idx is not None and hasattr(net, 'res_bus'):
                 if bus_idx in net.res_bus.index:
-                    return float(net.res_bus.at[bus_idx, 'vm_pu'] * net.bus.at[bus_idx, 'vn_kv'])
+                    # 检查vm_pu是否为NaN，如果是则返回0.0
+                    vm_pu = net.res_bus.at[bus_idx, 'vm_pu']
+                    if math.isnan(vm_pu):
+                        return 0.0
+                    return float(vm_pu * net.bus.at[bus_idx, 'vn_kv'])
             
             return 0.0
             
