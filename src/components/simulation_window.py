@@ -776,9 +776,18 @@ class SimulationWindow(QMainWindow):
             # 停止所有定时器
             self.auto_calc_timer.stop()
             
-            # 停止所有Modbus服务器（额外保障）
+            # 关闭所有Modbus服务器（额外保障）
             if hasattr(self, 'modbus_manager'):
                 self.modbus_manager.stop_all_modbus_servers()
+            
+            # 将所有开关设置为合闸状态
+            if 'switch' in self.network_items:
+                for switch_idx, switch_item in self.network_items['switch'].items():
+                    try:
+                        switch_item.properties['closed'] = True
+                        print(f"开关 {switch_idx} 已设置为合闸状态")
+                    except Exception as e:
+                        print(f"设置开关 {switch_idx} 状态失败: {e}")
             
             # 清理功率监控
             if hasattr(self, 'power_monitor'):
@@ -1110,7 +1119,7 @@ class SimulationWindow(QMainWindow):
                     storage_item.is_power_on = True
                     final_power = power_setpoint if power_setpoint is not None else 0.0
                     
-                    # 检查SOC限制，SOC超过限制范围时禁止充放电
+                    # 检查SOC限制，SOC大于等于100%时，禁止充电（如果final_power为正）
                     if hasattr(storage_item, 'soc_percent'):
                         # SOC大于等于100%时，禁止充电（如果final_power为正）
                         if storage_item.soc_percent >= 1.0 and final_power > 0:
