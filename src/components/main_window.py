@@ -13,7 +13,7 @@ from PySide6.QtGui import QAction
 from components.canvas import NetworkCanvas
 from components.component_palette import ComponentPalette
 from components.properties_panel import PropertiesPanel
-from utils.topology_utils import TopologyManager
+from components.topology_utils import TopologyManager
 from config import (
     # 功能标志
     FEATURE_SIMULATION, DEBUG_MODE, conditional_compile
