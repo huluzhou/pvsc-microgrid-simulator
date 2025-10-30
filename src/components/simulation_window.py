@@ -541,6 +541,8 @@ class SimulationWindow(QMainWindow):
         elif component_type == 'storage':
             self.data_control_manager.update_storage_manual_controls_from_device()
             self.data_control_manager.update_storage_device_info(component_type, component_idx)
+        elif component_type == 'switch':
+            self.data_control_manager.update_switch_device_info(component_type, component_idx)
             
     def show_meter_measurement_details(self, meter_idx):
         """显示电表设备的测量结果详情"""

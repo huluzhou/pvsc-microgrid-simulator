@@ -190,6 +190,15 @@ class DataControlManager:
                 self.parent_window.charger_current_device_label.setText(f"当前设备: {device_name}")
             else:
                 self.parent_window.charger_current_device_label.setText("未选择充电桩设备")
+    
+    def update_switch_device_info(self, component_type, component_idx):
+        """更新开关设备信息"""
+        if hasattr(self.parent_window, 'switch_current_device_label'):
+            if component_type and component_idx is not None:
+                device_name = f"开关_{component_idx}"
+                self.parent_window.switch_current_device_label.setText(f"当前设备: {device_name}")
+            else:
+                self.parent_window.switch_current_device_label.setText("未选择开关设备")
                 
     def is_device_generation_enabled(self, component_type, component_idx):
         """检查指定设备是否启用了数据生成"""
