@@ -8,7 +8,6 @@ Modbus服务器管理模块
 
 import threading
 from utils.logger import logger
-from pymodbus.server import StartTcpServer
 from pymodbus import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock, ModbusSequentialDataBlock
 import asyncio
@@ -61,7 +60,7 @@ class ModbusManager:
                     }
                     self.ip_devices.append(device_info)
         
-        print(f"发现 {len(self.ip_devices)} 个具有IP属性的设备")
+        logger.info(f"发现 {len(self.ip_devices)} 个具有IP属性的设备")
         return self.ip_devices
     
     def create_modbus_context(self, device_info):
@@ -141,7 +140,7 @@ class ModbusManager:
         if not self._write_pv_device_sn(context, device_info):
             return None
             
-        print(f"创建光伏设备上下文，SN: {device_info.get('sn', 'N/A')}")
+        logger.debug(f"创建光伏设备上下文，SN: {device_info.get('sn', 'N/A')}")
         return context
     
     def _create_meter_context(self, device_info):
@@ -292,15 +291,15 @@ class ModbusManager:
                         combined = (ascii_first << 8) | ascii_second
                         # 写入保持寄存器900开始的地址
                         slave_context.setValues(4, 900 + int(i/2), [combined])
-                print(f"已写入储能设备SN到寄存器900开始的地址: {device_sn[:16]}")
+                logger.info(f"已写入储能设备SN到寄存器900开始的地址: {device_sn[:16]}")
 
-            print(f"已写入储能设备配置参数: 额定功率={rated_power}kW, 额定容量={rated_capacity}kWh, "
+            logger.info(f"已写入储能设备配置参数: 额定功率={rated_power}kW, 额定容量={rated_capacity}kWh, "
                   f"PCS数量={pcs_num}, 电池簇数量={battery_cluster_num}, "
                   f"电池簇容量={battery_cluster_capacity}kWh, 电池簇功率={battery_cluster_power}kW")
             return True
             
         except Exception as e:
-            print(f"写入储能设备配置参数失败: {e}")
+            logger.error(f"写入储能设备配置参数失败: {e}")
             return False
     
     def _create_charger_context(self, device_info):
@@ -370,11 +369,11 @@ class ModbusManager:
             slave_context.setValues(4, 102, [3])  # 枪3状态: 3
             slave_context.setValues(4, 103, [4])  # 枪4状态: 4
             
-            print(f"已写入充电桩设备额定功率: {rated_power}kW 和枪状态信息 (1,2,3,4)")
+            logger.info(f"已写入充电桩设备额定功率: {rated_power}kW 和枪状态信息 (1,2,3,4)")
             return True
             
         except Exception as e:
-            print(f"写入充电桩设备初始化信息失败: {e}")
+            logger.error(f"写入充电桩设备初始化信息失败: {e}")
             return False
 
     def _create_default_context(self, device_info):
@@ -402,7 +401,7 @@ class ModbusManager:
             # 检查SN字段是否存在且不为None
             device_sn = device_info.get('sn')
             if device_sn is None or str(device_sn).strip() == '':
-                print(f"光伏设备 {device_info['index']} 未设置SN字段，跳过SN写入")
+                logger.warning(f"光伏设备 {device_info['index']} 未设置SN字段，跳过SN写入")
                 return False
             
             # 写入输入寄存器4989-4996，使用与给定格式完全相同的逻辑
@@ -419,7 +418,7 @@ class ModbusManager:
             slave_context.setValues(4, 4995, [(ord(device_sn[12])) << 8 | ord(device_sn[13])])
             slave_context.setValues(4, 4996, [(ord(device_sn[14])) << 8 | ord(device_sn[15])])
             
-            print(f"已写入光伏设备SN到寄存器4989-4996: {device_sn[:16]}")
+            logger.info(f"已写入光伏设备SN到寄存器4989-4996: {device_sn[:16]}")
             
             # 写入额定功率 0.1kva
             rated_power = int(device_info["sn_mva"] * 1000 * 10)
@@ -427,14 +426,14 @@ class ModbusManager:
             return True
             
         except Exception as e:
-            print(f"写入光伏设备SN失败: {e}")
+            logger.error(f"写入光伏设备SN失败: {e}")
             return False
     def start_modbus_server(self, device_info):
         """启动Modbus TCP服务器（使用底层ModbusTcpServer类）"""
         device_key = f"{device_info['type']}_{device_info['index']}"
 
         if device_key in self.modbus_servers or device_key in self.running_services:
-            print(f"设备 {device_key} 的Modbus服务器已在运行")
+            logger.warning(f"设备 {device_key} 的Modbus服务器已在运行")
             return False
 
         try:
@@ -496,7 +495,7 @@ class ModbusManager:
             # 获取服务器实例
             server = thread_server[0]
             if server is None:
-                print(f"服务器实例创建失败: {device_key}")
+                logger.error(f"服务器实例创建失败: {device_key}")
                 server_thread.join(timeout=1.0)  # 尝试等待线程结束
                 return False
 
@@ -507,17 +506,17 @@ class ModbusManager:
             }
             self.running_services.add(device_key)
 
-            print(f"已启动Modbus服务器: {device_info['name']} ({device_info['ip']}:{device_info['port']}) ")
+            logger.info(f"已启动Modbus服务器: {device_info['name']} ({device_info['ip']}:{device_info['port']}) ")
             return True
 
         except OSError as e:
             if e.errno == 10048:
-                print(f"端口 {device_info['port']} 已被占用: {device_key}")
+                logger.warning(f"端口 {device_info['port']} 已被占用: {device_key}")
             else:
-                print(f"启动失败 {device_key}: {e}")
+                logger.error(f"启动失败 {device_key}: {e}")
             return False
         except Exception as e:
-            print(f"启动失败 {device_key}: {e}")
+            logger.error(f"启动失败 {device_key}: {e}")
             self.running_services.discard(device_key)
             if device_key in self.modbus_contexts:
                 del self.modbus_contexts[device_key]
@@ -527,7 +526,7 @@ class ModbusManager:
         """关闭Modbus服务器并终止线程"""
         device_key = f"{device_type}_{device_idx}"
         if device_key not in self.modbus_servers or device_key not in self.running_services:
-            print(f"设备 {device_key} 未运行")
+            logger.warning(f"设备 {device_key} 未运行")
             return False
 
         try:
@@ -545,9 +544,9 @@ class ModbusManager:
             # 3. 等待线程结束（最多等待5秒）
             server_thread.join(timeout=5.0)
             if server_thread.is_alive():
-                print(f"警告：服务器线程 {device_key} 未正常退出")
+                logger.warning(f"服务器线程 {device_key} 未正常退出")
             else:
-                print(f"服务器线程 {device_key} 已终止")
+                logger.info(f"服务器线程 {device_key} 已终止")
 
             # 4. 清理资源
             self.running_services.discard(device_key)
@@ -558,7 +557,7 @@ class ModbusManager:
             return True
 
         except Exception as e:
-            print(f"关闭服务器失败 {device_key}: {e}")
+            logger.error(f"关闭服务器失败 {device_key}: {e}")
             return False
 
     def update_meter_context(self, index, slave_context):
@@ -600,7 +599,7 @@ class ModbusManager:
             slave_context.setValues(4, 3, [voltage_v])
 
         except Exception as e:
-            print(f"更新电表上下文失败: {e}")
+            logger.error(f"更新电表上下文失败: {e}")
 
 
     def update_sgen_context(self, index, slave_context):
@@ -639,7 +638,7 @@ class ModbusManager:
             
             # 数据范围检查
             if not (0 <= power_kw <= MAX_32BIT_UINT):
-                print(f"光伏设备 {index} 功率超出范围: {power_kw} W")
+                logger.warning(f"光伏设备 {index} 功率超出范围: {power_kw} W")
                 power_kw = max(0, min(power_kw, MAX_32BIT_UINT))
             
             # 拆分32位数据
@@ -756,7 +755,7 @@ class ModbusManager:
             logger.info(f"电池柜状态:{state_values['reg1']},工作状态:{state_values['reg409']},开关机状态:{state_values['reg840']},警报状态:{alarm_401}")
             # 调试信息（可选，生产环境可注释掉）
             # if abs(active_power) > 0.001:
-            #     print(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
+            #     logger.debug(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
             
             # 更新并网/离网状态到保持寄存器5044
             # 从storage_item获取grid_connected属性，如果不存在默认为True（并网状态）
@@ -776,11 +775,11 @@ class ModbusManager:
             logger.info(f"储能设备 {index} 并网/离网状态更新: {mode_text}模式")
             
         except KeyError as e:
-            print(f"储能设备数据缺失: {e}")
+            logger.error(f"储能设备数据缺失: {e}")
         except ValueError as e:
-            print(f"数据格式错误: {e}")
+            logger.error(f"数据格式错误: {e}")
         except Exception as e:
-            print(f"更新储能上下文失败: {e}")
+            logger.error(f"更新储能上下文失败: {e}")
     
     def update_charger_context(self, index, slave_context):
         """更新充电桩设备的Modbus寄存器数据（仅更新有功功率和需求功率）
@@ -854,10 +853,10 @@ class ModbusManager:
             # 清空IP设备列表，避免后续更新尝试
             self.ip_devices.clear()
             
-            print("已停止所有Modbus服务器")
+            logger.info("已停止所有Modbus服务器")
             return True
         except Exception as e:
-            print(f"停止所有Modbus服务器失败: {e}")
+            logger.error(f"停止所有Modbus服务器失败: {e}")
             return False
 
     def cleanup(self):
@@ -876,9 +875,9 @@ class ModbusManager:
             import gc
             gc.collect()
             
-            print("Modbus资源已完全清理")
+            logger.info("Modbus资源已完全清理")
         except Exception as e:
-            print(f"清理Modbus资源时发生错误: {e}")
+            logger.error(f"清理Modbus资源时发生错误: {e}")
     
     def update_all_modbus_data(self):
         """更新所有具有IP属性设备的Modbus数据"""
@@ -923,7 +922,7 @@ class ModbusManager:
                         self.update_charger_context(device_idx, slave_context)
                         
             except Exception as e:
-                print(f"更新设备Modbus数据失败 {device_info['name']}: {e}")
+                logger.error(f"更新设备Modbus数据失败 {device_info['name']}: {e}")
     
     
     def get_device_count(self):
@@ -1010,7 +1009,7 @@ class ModbusManager:
             }
             
         except Exception as e:
-            print(f"收集储能设备 {device_idx} 数据失败: {e}")
+            logger.error(f"收集储能设备 {device_idx} 数据失败: {e}")
             return None
             
     def collect_charger_modbus_data(self, device_idx, slave_context):
@@ -1086,5 +1085,5 @@ class ModbusManager:
             }
             
         except Exception as e:
-            print(f"收集光伏系统 {device_idx} 数据失败: {e}")
+            logger.error(f"收集光伏系统 {device_idx} 数据失败: {e}")
             return None

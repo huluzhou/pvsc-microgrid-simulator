@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
 from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem, SwitchItem, BaseNetworkItem
+from utils.logger import logger
 
 
 class NetworkCanvas(QGraphicsView):
@@ -85,7 +86,7 @@ class NetworkCanvas(QGraphicsView):
                 # 默认黑色
                 return QColor(0, 0, 0)
         except Exception as e:
-            print(f"获取连接线颜色时出错: {e}")
+            logger.error(f"获取连接线颜色时出错: {e}")
             return QColor(0, 0, 0)
 
     def get_grid_color(self):
@@ -108,7 +109,7 @@ class NetworkCanvas(QGraphicsView):
                 # 默认浅灰色
                 return QColor(230, 230, 230)
         except Exception as e:
-            print(f"获取网格颜色时出错: {e}")
+            logger.error(f"获取网格颜色时出错: {e}")
             return QColor(230, 230, 230)
     
     def draw_grid(self, grid_size=50):
@@ -227,28 +228,28 @@ class NetworkCanvas(QGraphicsView):
 
     def handle_item_selected(self, item):
         """处理组件被选中的事件"""
-        print(f"组件被选中: {item.component_type}")
+        logger.debug(f"组件被选中: {item.component_type}")
         # 如果已经有一个组件被选中，并且当前选中的是另一个组件，尝试连接它们
         if (
             hasattr(self, "first_selected_item")
             and self.first_selected_item
             and self.first_selected_item != item
         ):
-            print(
+            logger.debug(
                 f"尝试连接: {self.first_selected_item.component_type} 和 {item.component_type}"
             )
             # 如果两个组件都是可连接的，创建连接
             if self.can_connect(self.first_selected_item, item):
-                print("可以连接，创建连接线")
+                logger.debug("可以连接，创建连接线")
                 self.connect_items(self.first_selected_item, item)
             else:
-                print("不能连接这两个组件")
+                logger.debug("不能连接这两个组件")
 
             # 重置选中状态
             self.first_selected_item = None
         else:
             # 记录第一个选中的组件
-            print(f"记录第一个选中的组件: {item.component_type}")
+            logger.debug(f"记录第一个选中的组件: {item.component_type}")
             self.first_selected_item = item
     
     def get_connected_buses(self, item, bus_map):
@@ -292,7 +293,6 @@ class NetworkCanvas(QGraphicsView):
         if type1 == "switch" or type2 == "switch":
             # 确定哪个是开关，哪个是另一个组件
             switch_item = item2 if type1 == "switch" else item1
-            other_item = item1 if type1 == "switch" else item2
             other_type = type2 if type1 == "switch" else type1
             
             # 开关可以连接到母线、线路或变压器
@@ -413,7 +413,7 @@ class NetworkCanvas(QGraphicsView):
             _ = item1.component_name
             _ = item2.component_name
         except (RuntimeError, AttributeError):
-            print("连接失败: 组件对象已被删除")
+            logger.error("连接失败: 组件对象已被删除")
             return False
             
         # 检查是否可以连接
@@ -422,11 +422,11 @@ class NetworkCanvas(QGraphicsView):
             valid1, msg1 = item1.validate_connections()
             valid2, msg2 = item2.validate_connections()
             if not valid1:
-                print(f"连接失败: {msg1}")
+                logger.error(f"连接失败: {msg1}")
             elif not valid2:
-                print(f"连接失败: {msg2}")
+                logger.error(f"连接失败: {msg2}")
             else:
-                print(f"连接失败: {item1.component_name}和{item2.component_name}不能连接")
+                logger.error(f"连接失败: {item1.component_name}和{item2.component_name}不能连接")
             return False
             
         # 获取连接点索引
@@ -445,7 +445,7 @@ class NetworkCanvas(QGraphicsView):
         
         # 检查是否找到了有效的连接点
         if point_index1 == -1 or point_index2 == -1:
-            print("连接失败: 没有可用的连接点")
+            logger.error("连接失败: 没有可用的连接点")
             return False
         
         # 获取对应的连接点位置
@@ -457,7 +457,7 @@ class NetworkCanvas(QGraphicsView):
         point_idx2 = point_index2 if item2.component_type != 'bus' else None
         
         if not item1.add_connection(item2, point_idx1) or not item2.add_connection(item1, point_idx2):
-            print("连接失败: 超出连接数限制")
+            logger.error("连接失败: 超出连接数限制")
             return False
         
         # 转换为场景坐标
@@ -490,7 +490,7 @@ class NetworkCanvas(QGraphicsView):
         # 连接关系发生改变，重置诊断标志位
         if hasattr(self, 'main_window') and self.main_window:
             self.main_window.network_is_valid = False
-            print("网络连接已改变，诊断标志位已重置")
+            logger.info("网络连接已改变，诊断标志位已重置")
         
         return True
 
@@ -548,12 +548,6 @@ class NetworkCanvas(QGraphicsView):
         # 除非手动指定，都设置为测量有功功率
         meter_item.properties['meas_type'] = 'p'  # 默认测量有功功率
         
-        print(f"电表 {meter_item.component_name} 已自动配置:")
-        print(f"  测量元件类型: {meter_item.properties['element_type']}")
-        print(f"  元件索引: {meter_item.properties['element']}")
-        print(f"  测量侧: {meter_item.properties['side']}")
-        print(f"  测量类型: {meter_item.properties['meas_type']}")
-        print(f"  连接点索引: {connected_point_index}")
         
         # 强制刷新属性面板显示
         if hasattr(self, 'main_window') and self.main_window:
@@ -668,7 +662,7 @@ class NetworkCanvas(QGraphicsView):
                 # 重置连接选中状态
                 if hasattr(self, 'first_selected_item'):
                     self.first_selected_item = None
-                    print("点击画布空白区域，重置选中状态")
+                    logger.debug("点击画布空白区域，重置选中状态")
                 
             # 其他按键交给父类处理
             super().mousePressEvent(event)
@@ -830,7 +824,7 @@ class NetworkCanvas(QGraphicsView):
                             # 从network_items中删除设备
                             del self.network_items[item.component_type][item.component_index]
                 except Exception as e:
-                    print(f"从network_items中删除设备时出错: {e}")
+                    logger.error(f"从network_items中删除设备时出错: {e}")
             
             # 从画布上删除项目
             if hasattr(item, 'delete_component'):
@@ -854,7 +848,7 @@ class NetworkCanvas(QGraphicsView):
         # 连接关系发生改变，重置诊断标志位
         if hasattr(self, 'main_window') and self.main_window:
             self.main_window.network_is_valid = False
-            print("网络连接已改变，诊断标志位已重置")
+            logger.info("网络连接已改变，诊断标志位已重置")
     
     def disconnect_selected_items(self, items=None):
         """断开选中设备的所有连接"""
@@ -894,7 +888,7 @@ class NetworkCanvas(QGraphicsView):
         ]
         
         self._remove_connections(connections_to_remove)
-        print(f"断开了 {len(connections_to_remove)} 个连接")
+        logger.info(f"断开了 {len(connections_to_remove)} 个连接")
     
     def disconnect_items(self, item1, item2):
         """断开两个特定设备之间的连接"""
@@ -954,7 +948,7 @@ class NetworkCanvas(QGraphicsView):
                     self.setBackgroundBrush(QBrush(QColor(255, 255, 255)))
                     self.scene.setBackgroundBrush(QBrush(QColor(255, 255, 255)))
         except Exception as e:
-            print(f"更新背景颜色时出错: {e}")
+            logger.error(f"更新背景颜色时出错: {e}")
     
     def update_connection_colors(self):
         """更新所有连接线的颜色以适应当前主题"""
@@ -1106,7 +1100,7 @@ class NetworkCanvas(QGraphicsView):
                 self.setStyleSheet(scrollbar_style)
                 
         except Exception as e:
-            print(f"更新滚动条样式时出错: {e}")
+            logger.error(f"更新滚动条样式时出错: {e}")
     
     def clear_canvas(self):
         """清空画布"""

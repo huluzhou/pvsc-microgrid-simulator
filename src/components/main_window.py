@@ -16,12 +16,9 @@ from components.properties_panel import PropertiesPanel
 from utils.topology_utils import TopologyManager
 from config import (
     # 功能标志
-    FEATURE_SIMULATION, FEATURE_MODBUS, FEATURE_REPORT, FEATURE_EXPORT,
-    # 调试模式标志
-    DEBUG_MODE, VERBOSE_LOGGING,
-    # 辅助函数和装饰器
-    is_feature_enabled, conditional_compile, import_if_enabled
+    FEATURE_SIMULATION, DEBUG_MODE, conditional_compile
 )
+from utils.logger import logger
 # import pandapower as pp
 if FEATURE_SIMULATION:
     import pandapower as pp
@@ -312,12 +309,12 @@ class MainWindow(QMainWindow):
                 # 强制刷新画布显示
                 self.canvas.scene.update()
                 
-            print(f"属性更新: {component_type}.{prop_name} = {new_value}")
+            logger.info(f"属性更新: {component_type}.{prop_name} = {new_value}")
             self.network_is_valid = False
-            print("网络状态已标记为无效")
+            logger.info("网络状态已标记为无效")
             
         except Exception as e:
-            print(f"处理属性变化时出错: {e}")
+            logger.error(f"处理属性变化时出错: {e}")
     
     # 删除快速潮流计算方法（潮流计算功能已移除）
     @conditional_compile(FEATURE_SIMULATION)

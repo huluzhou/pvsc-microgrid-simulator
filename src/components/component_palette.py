@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QMimeData, QSize
 from PySide6.QtGui import QDrag, QPixmap, QIcon, QPalette
 from PySide6.QtSvg import QSvgRenderer
 import os
+from utils.logger import logger
 
 
 class ComponentPalette(QListWidget):
@@ -70,7 +71,7 @@ class ComponentPalette(QListWidget):
             
             return svg_content
         except Exception as e:
-            print(f"Error adapting SVG for theme: {e}")
+            logger.error(f"Error adapting SVG for theme: {e}")
             return None
 
     def create_themed_icon(self, svg_path, size=64):
@@ -120,9 +121,9 @@ class ComponentPalette(QListWidget):
                     themed_icon = self.create_themed_icon(icon_path, 64)
                     item.setIcon(themed_icon)
                 else:
-                    print(f"Warning: Icon file not found: {icon_path}")
+                    logger.warning(f"Warning: Icon file not found: {icon_path}")
             except Exception as e:
-                print(f"Error loading icon for {component['name']}: {e}")
+                logger.error(f"Error loading icon for {component['name']}: {e}")
             self.addItem(item)
 
     def startDrag(self, supportedActions):
@@ -156,7 +157,7 @@ class ComponentPalette(QListWidget):
                 pixmap = QPixmap(64, 64)
                 pixmap.fill()
         except Exception as e:
-            print(f"Error loading drag icon for {component_type}: {e}")
+            logger.error(f"Error loading drag icon for {component_type}: {e}")
             pixmap = QPixmap(64, 64)
             pixmap.fill()
 

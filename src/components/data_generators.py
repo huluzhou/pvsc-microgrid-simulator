@@ -5,6 +5,7 @@
 
 import numpy as np
 from abc import ABC, abstractmethod
+from utils.logger import logger
 
 
 class BaseDataGenerator(ABC):
@@ -132,7 +133,7 @@ class LoadDataGenerator(BaseDataGenerator):
             }
             
         except (KeyError, AttributeError):
-            print(f"负载索引 {index} 不存在")
+            logger.warning(f"负载索引 {index} 不存在")
             
         return load_data
     

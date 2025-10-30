@@ -1,5 +1,6 @@
 
-import sqlite3  
+import sqlite3
+from utils.logger import logger
 
 def init_database(db_path="filtered.db"):
     """
@@ -100,7 +101,7 @@ def init_database(db_path="filtered.db"):
     # 提交更改并关闭连接
     conn.commit()
     conn.close()
-    print(f"数据库初始化完成，所有表已创建: {db_path}")
+    logger.info(f"数据库初始化完成，所有表已创建: {db_path}")
 
 # 如果直接运行此文件，则初始化数据库
 if __name__ == "__main__":

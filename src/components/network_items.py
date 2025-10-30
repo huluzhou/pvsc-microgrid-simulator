@@ -11,7 +11,7 @@ from PySide6.QtGui import QPen,QColor, QPalette
 from PySide6.QtSvg import QSvgRenderer
 import os
 import math
-
+from utils.logger import logger
 
 from config import get_resource_path
 
@@ -127,7 +127,7 @@ class BaseNetworkItem(QGraphicsItem):
                 # 默认黑色
                 self.label.setDefaultTextColor(QColor(0, 0, 0))
         except Exception as e:
-            print(f"更新标签颜色时出错: {e}")
+            logger.error(f"更新标签颜色时出错: {e}")
             self.label.setDefaultTextColor(QColor(0, 0, 0))
     
     def reload_svg_for_theme(self):
@@ -182,11 +182,11 @@ class BaseNetworkItem(QGraphicsItem):
                 self.svg_renderer = QSvgRenderer()
                 self.svg_renderer.load(svg_content.encode('utf-8'))
             else:
-                print(f"警告: SVG文件未找到: {svg_filename}")
-                print(f"尝试的路径: {svg_path}")
+                logger.warning(f"SVG文件未找到: {svg_filename}")
+                logger.debug(f"尝试的路径: {svg_path}")
                 self.svg_renderer = None
         except Exception as e:
-            print(f"加载SVG文件时出错: {e}")
+            logger.error(f"加载SVG文件时出错: {e}")
             self.svg_renderer = None
 
     def boundingRect(self):
@@ -254,7 +254,7 @@ class BaseNetworkItem(QGraphicsItem):
                             # 触发属性变化信号，确保主窗口能处理这个变化
                             main_window.properties_panel.property_changed.emit(self.component_type, 'geodata', self.properties["geodata"])
             except Exception as e:
-                print(f"刷新属性面板时出错: {e}")
+                logger.error(f"刷新属性面板时出错: {e}")
         return super().itemChange(change, value)
         
     def update_connections(self):
@@ -678,11 +678,11 @@ class BaseNetworkItem(QGraphicsItem):
                 if component_type in canvas.network_items:
                     if self.component_index in canvas.network_items[component_type]:
                         del canvas.network_items[component_type][self.component_index]
-                        print(f"从network_items中移除组件: {self.component_name} (索引 {self.component_index})")
+                        logger.debug(f"从network_items中移除组件: {self.component_name} (索引 {self.component_index})")
             
             # 从场景中移除
             self.scene().removeItem(self)
-            print(f"删除组件: {self.component_name} (索引 {self.component_index} 已回收)")
+            logger.info(f"删除组件: {self.component_name} (索引 {self.component_index} 已回收)")
     
     def contextMenuEvent(self, event):
         """右键菜单事件"""
@@ -721,7 +721,7 @@ class BaseNetworkItem(QGraphicsItem):
             # 选中当前项
             self.setSelected(True)
             # 手动发出选中信号
-            print(f"发出选中信号: {self.component_type}")
+            logger.debug(f"发出选中信号: {self.component_type}")
             self.signals.itemSelected.emit(self)
             
             self.last_click_time = current_time
@@ -758,7 +758,7 @@ class BaseNetworkItem(QGraphicsItem):
                             # 触发属性变化信号，确保主窗口能处理这个变化
                             main_window.properties_panel.property_changed.emit(self.component_type, 'name', new_name)
             except Exception as e:
-                print(f"刷新属性面板时出错: {e}")
+                logger.error(f"刷新属性面板时出错: {e}")
 
 
 class StorageItem(BaseNetworkItem):

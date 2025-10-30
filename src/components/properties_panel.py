@@ -2,10 +2,11 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QLineEdit, 
     QComboBox, QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox,
     QScrollArea, QFrame, QFormLayout, QApplication,
-    QPushButton, QHBoxLayout, QGridLayout
+    QPushButton, QHBoxLayout
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QPalette
+from utils.logger import logger
 
 
 class PropertiesPanel(QWidget):
@@ -243,7 +244,7 @@ class PropertiesPanel(QWidget):
                             return connected_item.properties.get('index', 'Unknown')
             return ''
         except Exception as e:
-            print(f"获取连接bus索引时出错: {e}")
+            logger.error(f"获取连接bus索引时出错: {e}")
             return ''
                     
     def create_property_widget(self, prop_name, prop_info, current_value):
@@ -470,22 +471,22 @@ class PropertiesPanel(QWidget):
                 high_word = (rated_power_value >> 16) & 0xFFFF
                 slave_context.setValues(4, 8, [low_word])   # 额定功率低位
                 slave_context.setValues(4, 9, [high_word])  # 额定功率高位
-                print(f"已更新储能设备 {device_name} 的额定功率寄存器: {new_value} MVA")
+                logger.info(f"已更新储能设备 {device_name} 的额定功率寄存器: {new_value} MVA")
                 
             elif device_type == 'charger':
                 # 充电桩设备：额定功率占用寄存器4
                 rated_power_value = int(float(new_value) * 1000)  # 转换为kW单位
                 slave_context.setValues(4, 4, [rated_power_value])
-                print(f"已更新充电桩设备 {device_name} 的额定功率寄存器: {new_value} MVA")
+                logger.info(f"已更新充电桩设备 {device_name} 的额定功率寄存器: {new_value} MVA")
                 
             elif device_type == 'static_generator':
                 # 光伏设备：额定功率占用寄存器5000
                 rated_power_value = int(float(new_value) * 1000 * 10)  # 转换为0.1kVA单位
                 slave_context.setValues(4, 5000, [rated_power_value])
-                print(f"已更新光伏设备 {device_name} 的额定功率寄存器: {new_value} MVA")
+                logger.info(f"已更新光伏设备 {device_name} 的额定功率寄存器: {new_value} MVA")
                 
         except Exception as e:
-            print(f"更新Modbus寄存器失败: {e}")
+            logger.error(f"更新Modbus寄存器失败: {e}")
             
     def get_component_properties(self, component_type):
         """获取组件属性定义"""

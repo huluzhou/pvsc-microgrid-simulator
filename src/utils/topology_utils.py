@@ -8,10 +8,11 @@ topology.json工具类，用于处理网络拓扑结构的导入导出
 
 import json
 import os
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from PySide6.QtCore import QPointF
 from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem, SwitchItem
+from utils.logger import logger
 
 class TopologyManager:
     """拓扑结构管理器，处理network_item的导入导出"""
@@ -200,7 +201,7 @@ class TopologyManager:
             
             if not network_items:
                 if parent_window and hasattr(parent_window, 'show_message'):
-                    print("场景中没有网络组件")
+                    logger.warning("场景中没有网络组件")
                 return False
             
             # 在保存前验证IP和端口的唯一性
@@ -224,7 +225,8 @@ class TopologyManager:
                         "topology.json",
                         "JSON文件 (*.json)"
                     )
-                except:
+                except Exception as e:
+                    logger.error(f"导出文件对话框失败: {str(e)}")
                     file_path = "topology.json"
             
             if not file_path:
@@ -233,12 +235,12 @@ class TopologyManager:
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(topology_data, f, ensure_ascii=False, indent=2)
             
-            print(f"拓扑结构已导出到: {file_path}")
+            logger.info(f"拓扑结构已导出到: {file_path}")
             return True
             
         except Exception as e:
             if parent_window and hasattr(parent_window, 'show_message'):
-                print(f"导出失败: {str(e)}")
+                logger.error(f"导出失败: {str(e)}")
             return False
     
     def import_topology(self, scene, parent_window=None) -> bool:
@@ -248,7 +250,7 @@ class TopologyManager:
                 # 如果没有父窗口，使用默认文件名
                 file_path = "topology.json"
                 if not os.path.exists(file_path):
-                    print("未找到topology.json文件")
+                    logger.warning("未找到topology.json文件")
                     return False
             else:
                 # 使用文件对话框
@@ -259,7 +261,8 @@ class TopologyManager:
                         "",
                         "JSON文件 (*.json)"
                     )
-                except:
+                except Exception as e:
+                    logger.error(f"导入文件对话框失败: {str(e)}")
                     file_path = "topology.json"
             
             if not file_path or not os.path.exists(file_path):
@@ -277,7 +280,7 @@ class TopologyManager:
             # 导入后验证IP和端口的唯一性
             self.validate_ip_port_uniqueness(scene, parent_window)
             
-            print(f"拓扑结构已从 {file_path} 导入")
+            logger.info(f"拓扑结构已从 {file_path} 导入")
             return True
             
         except Exception as e:
@@ -285,7 +288,7 @@ class TopologyManager:
                 from PySide6.QtWidgets import QMessageBox
                 QMessageBox.critical(parent_window, "导入失败", f"导入失败: {str(e)}")
             else:
-                print(f"导入失败: {str(e)}")
+                logger.error(f"导入失败: {str(e)}")
             return False
     
     def _prepare_topology_data(self, items: List[Any]) -> Dict[str, List[Dict[str, Any]]]:

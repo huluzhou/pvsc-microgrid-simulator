@@ -6,8 +6,8 @@
 """
 
 import pandapower as pp
-import pandas as pd
 import os
+from utils.logger import logger
 class NetworkModel:
     """电网模型类，用于处理pandapower网络模型"""
 
@@ -387,7 +387,7 @@ class NetworkModel:
         try:
             # 检查是否有组件
             if not self.network_items or not any(self.network_items.values()):
-                print("没有组件，无法创建网络模型")
+                logger.warning("没有组件，无法创建网络模型")
                 return False
             
             # 第一步：创建所有母线
@@ -402,13 +402,13 @@ class NetworkModel:
                             bus_item.properties if hasattr(bus_item, 'properties') else {}
                         )
                         bus_map[bus_item] = bus_idx
-                        print(f"创建母线: {bus_item.component_name} -> 索引 {bus_idx}")
+                        logger.info(f"创建母线: {bus_item.component_name} -> 索引 {bus_idx}")
                     except Exception as e:
-                        print(f"创建母线 {bus_item.component_name} 时出错: {str(e)}")
+                        logger.error(f"创建母线 {bus_item.component_name} 时出错: {str(e)}")
                         return False
             
             if not bus_map:
-                print("没有有效的母线组件，无法创建网络模型")
+                logger.warning("没有有效的母线组件，无法创建网络模型")
                 return False
             
             # 第二步：创建连接到母线的组件（负载、发电机等，但不包括电表）
@@ -432,7 +432,7 @@ class NetworkModel:
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
                             )
-                            print(f"创建负载: {item.component_name} -> 母线 {bus_idx}")
+                            logger.info(f"创建负载: {item.component_name} -> 母线 {bus_idx}")
                     
                     elif item.component_type == 'external_grid':
                         if connected_buses:
@@ -442,7 +442,7 @@ class NetworkModel:
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
                             )
-                            print(f"创建外部电网: {item.component_name} -> 母线 {bus_idx}")
+                            logger.info(f"创建外部电网: {item.component_name} -> 母线 {bus_idx}")
                     
                     elif item.component_type == 'static_generator':
                         if connected_buses:
@@ -452,7 +452,7 @@ class NetworkModel:
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
                             )
-                            print(f"创建光伏: {item.component_name} -> 母线 {bus_idx}")
+                            logger.info(f"创建光伏: {item.component_name} -> 母线 {bus_idx}")
                     
                     elif item.component_type == 'storage':
                         if connected_buses:
@@ -462,7 +462,7 @@ class NetworkModel:
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
                             )
-                            print(f"创建储能: {item.component_name} -> 母线 {bus_idx}")
+                            logger.info(f"创建储能: {item.component_name} -> 母线 {bus_idx}")
                     
                     elif item.component_type == 'charger':
                         if connected_buses:
@@ -472,13 +472,13 @@ class NetworkModel:
                                 bus_idx,
                                 item.properties if hasattr(item, 'properties') else {}
                             )
-                            print(f"创建充电站: {item.component_name} -> 母线 {bus_idx}")
+                            logger.info(f"创建充电站: {item.component_name} -> 母线 {bus_idx}")
                     
                     elif item.component_type == 'transformer':
                             hv_bus = item.properties.get('hv_bus')
                             lv_bus = item.properties.get('lv_bus')
                             if hv_bus is None or lv_bus is None:
-                                print(f"变压器 {item.component_name} 缺少 hv_bus 或 lv_bus 配置")
+                                logger.error(f"变压器 {item.component_name} 缺少 hv_bus 或 lv_bus 配置")
                                 continue
                             self.create_transformer(
                                 id(item),
@@ -486,13 +486,13 @@ class NetworkModel:
                                 lv_bus,
                                 item.properties if hasattr(item, 'properties') else {}
                             )
-                            print(f"创建变压器: {item.component_name} -> 母线 {hv_bus}-{lv_bus}")
+                            logger.info(f"创建变压器: {item.component_name} -> 母线 {hv_bus}-{lv_bus}")
                     
                     elif item.component_type == 'line':
                             from_bus = item.properties.get('from_bus')
                             to_bus = item.properties.get('to_bus')
                             if from_bus is None or to_bus is None:
-                                print(f"线路 {item.component_name} 缺少 from_bus 或 to_bus 配置")
+                                logger.error(f"线路 {item.component_name} 缺少 from_bus 或 to_bus 配置")
                                 continue
                             self.create_line(
                                 id(item),
@@ -500,7 +500,7 @@ class NetworkModel:
                                 to_bus,
                                 item.properties if hasattr(item, 'properties') else {}
                             )
-                            print(f"创建线路: {item.component_name} -> 母线 {from_bus}-{to_bus}")
+                            logger.info(f"创建线路: {item.component_name} -> 母线 {from_bus}-{to_bus}")
                     
                     elif item.component_type == 'switch':
                         if connected_buses:
@@ -511,10 +511,10 @@ class NetworkModel:
                                 item.properties if hasattr(item, 'properties') else {}
                             )
                             item.model_index = switch_idx
-                            print(f"创建开关: {item.component_name} -> 母线 {bus_idx}")
+                            logger.info(f"创建开关: {item.component_name} -> 母线 {bus_idx}")
                 
                 except Exception as e:
-                    print(f"创建组件 {item.component_name} 时出错: {str(e)}")
+                    logger.error(f"创建组件 {item.component_name} 时出错: {str(e)}")
                     # 继续处理其他组件，不中断整个过程
 
             # 第三步：最后创建电表设备（确保所有其他设备已创建）
@@ -530,12 +530,12 @@ class NetworkModel:
                         id(item),
                         item.properties if hasattr(item, 'properties') else {}
                     )
-                    print(f"创建电表: {item.component_name} -> 测量索引 {meter_idx}")
+                    logger.info(f"创建电表: {item.component_name} -> 测量索引 {meter_idx}")
                 except Exception as e:
-                    print(f"创建组件 {item.component_name} 时出错: {str(e)}")
+                    logger.error(f"创建组件 {item.component_name} 时出错: {str(e)}")
                     # 继续处理其他组件，不中断整个过程
             
-            print(f"网络模型创建完成，包含 {len(self.net.bus)} 个母线")
+            logger.info(f"网络模型创建完成，包含 {len(self.net.bus)} 个母线")
             
             # 保存网络模型到JSON文件
             import os
@@ -544,11 +544,11 @@ class NetworkModel:
             to_json(self.net, file_path)
             # 获取完整保存路径
             full_path = os.path.abspath(file_path)
-            print(f"网络模型已保存到: {full_path}")
+            logger.info(f"网络模型已保存到: {full_path}")
             
             return True
         except Exception as e:
-            print(f"创建网络模型时出错: {str(e)}")
+            logger.error(f"创建网络模型时出错: {str(e)}")
             return False
 
     def run_power_flow(self):
@@ -559,10 +559,10 @@ class NetworkModel:
         """
         try:
             pp.runpp(self.net)
-            print("潮流计算完成")
+            logger.info("潮流计算完成")
             return True
         except Exception as e:
-            print(f"潮流计算失败: {str(e)}")
+            logger.error(f"潮流计算失败: {str(e)}")
             return False
 
     def get_bus_voltage(self, bus_idx):
@@ -656,10 +656,10 @@ class NetworkModel:
         """
         try:
             pp.to_json(self.net, filename)
-            print(f"网络模型已保存到: {os.path.abspath(filename)}")
+            logger.info(f"网络模型已保存到: {os.path.abspath(filename)}")
             return True
         except Exception as e:
-            print(f"保存网络模型时出错: {str(e)}")
+            logger.error(f"保存网络模型时出错: {str(e)}")
             return False
 
     def load_network(self, filename="network.json"):
@@ -673,8 +673,8 @@ class NetworkModel:
         """
         try:
             self.net = pp.from_json(filename)
-            print(f"网络模型已从: {os.path.abspath(filename)} 加载")
+            logger.info(f"网络模型已从: {os.path.abspath(filename)} 加载")
             return True
         except Exception as e:
-            print(f"加载网络模型时出错: {str(e)}")
+            logger.error(f"加载网络模型时出错: {str(e)}")
             return False

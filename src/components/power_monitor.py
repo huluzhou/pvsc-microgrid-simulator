@@ -11,6 +11,7 @@ from collections import deque
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTreeWidgetItem
 import math
+from utils.logger import logger
 
 
 class PowerMonitor:
@@ -35,7 +36,7 @@ class PowerMonitor:
             '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
             '#FECA57', '#FF9FF3', '#54A0FF', '#5F27CD'
         ]
-    
+
     def schedule_curve_update(self):
         """延迟更新图表，避免频繁重绘"""
         if self._update_timer is None:
@@ -152,7 +153,7 @@ class PowerMonitor:
             elif device_type == "电表":
                 return self.get_meter_measurement(device_id,'active_power')
         except Exception as e:
-            print(f"获取设备功率失败: {str(e)}")
+            logger.error(f"获取设备功率失败: {str(e)}")
         
             return 0.0
         
@@ -176,13 +177,13 @@ class PowerMonitor:
                         self.power_history[device_key].append((timestamp, power_value))
                         
                 except Exception as e:
-                    print(f"更新设备 {device_key} 功率数据失败: {str(e)}")
+                    logger.error(f"更新设备 {device_key} 功率数据失败: {str(e)}")
             
             # 更新图像显示
             self.display_power_curve()
             
         except Exception as e:
-            print(f"更新功率曲线失败: {str(e)}")
+            logger.error(f"更新功率曲线失败: {str(e)}")
     
     def display_power_curve(self):
         """显示多条功率曲线 - 确保时间基准和窗口完全一致"""
@@ -240,7 +241,6 @@ class PowerMonitor:
             # 使用全局统一的时间基准和窗口
             global_start_time = min(all_times)
             current_time = max(all_times) if all_times else time.time()
-            max_display_time = max(300, current_time - global_start_time)  # 至少显示5分钟
             
             # 绘制所有曲线
             for data in all_data:
@@ -342,7 +342,7 @@ class PowerMonitor:
             elif hasattr(self.parent_window, 'canvas_mpl'):
                 self.parent_window.canvas_mpl.draw_idle()
         except Exception as e:
-            print(f"刷新画布失败: {str(e)}")
+            logger.error(f"刷新画布失败: {str(e)}")
     
     def _handle_display_error(self, error_msg):
         """处理显示错误"""
@@ -351,7 +351,7 @@ class PowerMonitor:
                      transform=self.ax.transAxes, ha='center', va='center', 
                      bbox=dict(boxstyle='round', facecolor='red', alpha=0.5))
         self._refresh_canvas()
-        print(f"显示功率曲线失败: {error_msg}")
+        logger.error(f"显示功率曲线失败: {error_msg}")
     
     def toggle_current_device_monitor(self, state):
         """切换当前设备监控状态 - 优化延迟更新"""
@@ -391,19 +391,6 @@ class PowerMonitor:
             # 使用延迟更新机制
             self.schedule_curve_update()
     
-    def schedule_curve_update(self):
-        """延迟更新图表，避免频繁重绘"""
-        if self._update_timer is None:
-            from PySide6.QtCore import QTimer
-            self._update_timer = QTimer()
-            self._update_timer.setSingleShot(True)
-            self._update_timer.timeout.connect(self._perform_batch_update)
-        
-        # 重置计时器，延迟100ms后更新
-        self._update_timer.stop()
-        self._update_timer.start(100)
-        self._batch_update_pending = True
-    
     def update_monitored_devices_list(self):
         """更新监控设备列表"""
         if hasattr(self.parent_window, 'monitored_devices_list'):
@@ -423,7 +410,7 @@ class PowerMonitor:
                     item.setCheckState(0, Qt.Checked)
                 
             except Exception as e:
-                print(f"更新监控设备列表失败: {str(e)}")
+                logger.error(f"更新监控设备列表失败: {str(e)}")
     
     def clear_all_monitors(self):
         """清除所有监控设备 - 优化性能"""
@@ -470,7 +457,7 @@ class PowerMonitor:
             gc.collect()
             
         except Exception as e:
-            print(f"清理功率监控资源时发生错误: {e}")
+            logger.error(f"清理功率监控资源时发生错误: {e}")
 
     def clear_all_members(self):
         """清空类中所有成员变量"""
@@ -481,34 +468,7 @@ class PowerMonitor:
             if attr not in keep_attrs:
                 delattr(self, attr)  
 
-    def _get_meter_power(self, meter_id):
-        """
-        获取指定电表的功率测量值
-        
-        参数:
-            meter_id (int): 电表设备的唯一标识符
-            
-        返回:
-            float: 电表测量的功率值（单位：MW），如果获取失败则返回0.0
-        """
-        try:
-            # 仅使用父窗口的缓存方法
-            if not hasattr(self.parent_window, 'get_meter_item_by_type_and_id'):
-                print("父窗口未提供缓存方法，无法获取电表数据")
-                return 0.0
-                
-            meter_measurement = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
-            if not meter_measurement:
-                return 0.0
-                
-            # 直接提取配置并查询测量值
-            measurement_config = self._extract_measurement_config(meter_measurement.properties)
-            return self._query_measurement_value(measurement_config) if measurement_config else 0.0
-            
-        except Exception as e:
-            print(f"获取电表{meter_id}功率时出错: {str(e)}")
-            return 0.0
-    # TODO:增加方法支持获取电表的测量值,可扩展,支持有功无功电压电流
+
     def get_meter_measurement(self, meter_id, measurement_type='active_power'):
         """
         获取指定电表的不同类型测量值
@@ -528,7 +488,7 @@ class PowerMonitor:
         try:
             # 仅使用父窗口的缓存方法获取电表数据
             if not hasattr(self.parent_window, 'get_meter_item_by_type_and_id'):
-                print("父窗口未提供缓存方法，无法获取电表数据")
+                logger.error("父窗口未提供缓存方法，无法获取电表数据")
                 return 0.0
                 
             meter_measurement = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
@@ -555,11 +515,11 @@ class PowerMonitor:
                 # 电流，需要特殊处理
                 return self._query_current_value(measurement_config)
             else:
-                print(f"不支持的测量类型: {measurement_type}")
+                logger.error(f"不支持的测量类型: {measurement_type}")
                 return 0.0
                 
         except Exception as e:
-            print(f"获取电表{meter_id}的{measurement_type}时出错: {str(e)}")
+            logger.error(f"获取电表{meter_id}的{measurement_type}时出错: {str(e)}")
             return 0.0
             
     def _query_measurement_value(self, config, value_type='active'):
@@ -639,7 +599,7 @@ class PowerMonitor:
             
             # 检查元素类型是否支持
             if element_type not in query_map:
-                print(f"不支持的元素类型: {element_type}")
+                logger.error(f"不支持的元素类型: {element_type}")
                 return 0.0
                 
             query_info = query_map[element_type]
@@ -669,7 +629,7 @@ class PowerMonitor:
             return float(measurement_value)
             
         except (KeyError, ValueError, AttributeError) as e:
-            print(f"获取测量值时出错: {str(e)}")
+            logger.error(f"获取测量值时出错: {str(e)}")
             return 0.0
             
     def _query_voltage_value(self, config):
@@ -724,7 +684,7 @@ class PowerMonitor:
             return 0.0
             
         except (KeyError, ValueError, AttributeError) as e:
-            print(f"获取电压值时出错: {str(e)}")
+            logger.error(f"获取电压值时出错: {str(e)}")
             return 0.0
             
     def _query_current_value(self, config):
@@ -781,7 +741,7 @@ class PowerMonitor:
             return 0.0
             
         except (KeyError, ValueError, AttributeError) as e:
-            print(f"获取电流值时出错: {str(e)}")
+            logger.error(f"获取电流值时出错: {str(e)}")
             return 0.0
 
     def _extract_measurement_config(self, measurement_row):
@@ -802,6 +762,6 @@ class PowerMonitor:
                 'side': measurement_row.get('side', None)
             }
         except (KeyError, IndexError) as e:
-            print(f"提取测量配置时出错: {str(e)}")
+            logger.error(f"提取测量配置时出错: {str(e)}")
             return None
     

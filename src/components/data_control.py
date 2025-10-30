@@ -3,12 +3,10 @@
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox, QLabel,
-    QCheckBox, QDoubleSpinBox, QSlider, QPushButton,
-    QMessageBox, QComboBox
+    QMessageBox
 )
-from PySide6.QtCore import Qt
 from .data_generators import DataGeneratorManager
+from utils.logger import logger
 
 
 class DataControlManager:
@@ -250,7 +248,7 @@ class DataControlManager:
                     getattr(self.parent_window, current_panel_name).setVisible(False)
                 
                 self.parent_window.statusBar().showMessage(f"已启用{device_type_name}设备 {self.parent_window.current_component_idx} 的数据生成")
-                print(f"启用设备 {device_name} 的数据生成")
+                logger.info(f"启用设备 {device_name} 的数据生成")
             else:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 已在数据生成列表中")
         else:  # 未选中状态 - 禁用数据生成
@@ -262,7 +260,7 @@ class DataControlManager:
                     getattr(self.parent_window, current_panel_name).setVisible(True)
                 
                 self.parent_window.statusBar().showMessage(f"已禁用{device_type_name}设备 {self.parent_window.current_component_idx} 的数据生成")
-                print(f"禁用设备 {device_name} 的数据生成")
+                logger.info(f"禁用设备 {device_name} 的数据生成")
             else:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
     
@@ -348,7 +346,7 @@ class DataControlManager:
                         storage_item = item
                         break
         except Exception as e:
-            print(f"查找储能设备失败: {str(e)}")
+            logger.error(f"查找储能设备失败: {str(e)}")
             
         # 更新SOC显示
         if hasattr(self.parent_window, "storage_soc_label"):
@@ -359,7 +357,7 @@ class DataControlManager:
                 else:
                     self.parent_window.storage_soc_label.setText("未计算")
             except Exception as e:
-                print(f"更新储能SOC失败: {str(e)}")
+                logger.error(f"更新储能SOC失败: {str(e)}")
                 self.parent_window.storage_soc_label.setText("未计算")
         
         # 更新工作状态显示
@@ -371,7 +369,7 @@ class DataControlManager:
                 else:
                     self.parent_window.storage_work_status_label.setText("未计算")
             except Exception as e:
-                print(f"更新储能工作状态失败: {str(e)}")
+                logger.error(f"更新储能工作状态失败: {str(e)}")
                 self.parent_window.storage_work_status_label.setText("未计算")
         # 更新并网状态显示
         if hasattr(self.parent_window, "storage_grid_connection_status"):
@@ -388,7 +386,7 @@ class DataControlManager:
                         self.parent_window.storage_grid_connection_status.setText("离网")
                         self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
             except Exception as e:
-                print(f"更新储能并网状态失败: {str(e)}")
+                logger.error(f"更新储能并网状态失败: {str(e)}")
                 self.parent_window.storage_grid_connection_status.setText("离网")
                 self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
         
@@ -568,7 +566,7 @@ class DataControlManager:
                             self.parent_window.cloud_cover_spinbox.setValue(generator.cloud_cover)
                             self.parent_window.cloud_cover_spinbox.blockSignals(False)
             except Exception as e:
-                print(f"更新光伏设备手动控制值时出错: {e}")
+                logger.error(f"更新光伏设备手动控制值时出错: {e}")
         
         # 2. 更新设备信息
         if hasattr(self.parent_window, 'sgen_current_device_label') and hasattr(self.parent_window, 'sgen_enable_generation_checkbox'):
@@ -642,7 +640,7 @@ class DataControlManager:
                             self.parent_window.load_type_combo.setCurrentText(load_type_text)
                             self.parent_window.load_type_combo.blockSignals(False)
             except Exception as e:
-                print(f"更新负载设备手动控制值时出错: {e}")
+                logger.error(f"更新负载设备手动控制值时出错: {e}")
         
         # 2. 更新设备信息
         if hasattr(self.parent_window, 'load_current_device_label') and hasattr(self.parent_window, 'load_enable_generation_checkbox'):
@@ -728,7 +726,7 @@ class DataControlManager:
             if hasattr(self.parent_window, 'storage_power_spinbox'):
                 self.parent_window.storage_power_spinbox.setEnabled(is_manual_mode)
         except Exception as e:
-            print(f"更新储能设备手动控制值时出错: {e}")
+            logger.error(f"更新储能设备手动控制值时出错: {e}")
 
     def update_charger_manual_controls_from_device(self):
         """从当前充电桩设备更新手动控制组件的值"""
@@ -781,7 +779,7 @@ class DataControlManager:
                 )
                 
         except Exception as e:
-            print(f"更新充电桩设备手动控制值时出错: {e}")
+            logger.error(f"更新充电桩设备手动控制值时出错: {e}")
                 
     def on_storage_control_mode_changed(self, state):
         """处理储能设备控制模式切换（手动控制/远程控制）"""
@@ -960,13 +958,13 @@ class DataControlManager:
                 self.parent_window.network_model.net.sgen.at[component_idx, 'p_mw'] = abs(p_mw)
                 
                 self.parent_window.statusBar().showMessage(f"已更新光伏设备 {component_idx} 的功率设置: P={p_mw:.2f}MW")
-                print(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW")
+                logger.debug(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW")
             else:
                 QMessageBox.warning(self.parent_window, "错误", f"光伏设备 {component_idx} 不存在")
                 
         except Exception as e:
             QMessageBox.critical(self.parent_window, "错误", f"应用光伏设置时出错: {str(e)}")
-            print(f"应用光伏设置时出错: {e}")
+            logger.error(f"应用光伏设置时出错: {e}")
     
     def apply_load_settings(self):
         """应用负载设备设置"""
@@ -993,13 +991,13 @@ class DataControlManager:
                 self.parent_window.network_model.net.load.at[component_idx, 'q_mvar'] = q_mvar
                 
                 self.parent_window.statusBar().showMessage(f"已更新负载设备 {component_idx} 的功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
-                print(f"应用负载设备 {component_idx} 功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
+                logger.debug(f"应用负载设备 {component_idx} 功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
             else:
                 QMessageBox.warning(self.parent_window, "错误", f"负载设备 {component_idx} 不存在")
                 
         except Exception as e:
             QMessageBox.critical(self.parent_window, "错误", f"应用负载设置时出错: {str(e)}")
-            print(f"应用负载设置时出错: {e}")
+            logger.error(f"应用负载设置时出错: {e}")
     
     def apply_storage_settings(self):
         """应用储能设备设置"""
@@ -1025,13 +1023,13 @@ class DataControlManager:
                 
                 power_status = "放电" if p_mw > 0 else "充电" if p_mw < 0 else "待机"
                 self.parent_window.statusBar().showMessage(f"已更新储能设备 {component_idx} 的功率设置: P={p_mw:.2f}MW ({power_status})")
-                print(f"应用储能设备 {component_idx} 功率设置: P={p_mw:.2f}MW ({power_status})")
+                logger.debug(f"应用储能设备 {component_idx} 功率设置: P={p_mw:.2f}MW ({power_status})")
             else:
                 QMessageBox.warning(self.parent_window, "错误", f"储能设备 {component_idx} 不存在")
                 
         except Exception as e:
             QMessageBox.critical(self.parent_window, "错误", f"应用储能设置时出错: {str(e)}")
-            print(f"应用储能设置时出错: {e}")
+            logger.error(f"应用储能设置时出错: {e}")
 
     def apply_charger_settings(self):
         """应用充电桩设备设置"""
@@ -1081,14 +1079,14 @@ class DataControlManager:
                 self.parent_window.network_model.net.load.at[component_idx, 'p_mw'] = final_power_mw
                 
                 self.parent_window.statusBar().showMessage(f"已更新充电桩设备 {component_idx} 的功率设置: {final_power_kw:.1f}kW (需求功率: {demand_power_kw:.1f}kW, 功率限制: {power_limit_kw:.1f}kW)")
-                print(f"应用充电桩设备 {component_idx} 功率设置: {final_power_kw:.1f}kW (max({demand_power_kw:.1f}kW, {power_limit_kw:.1f}kW))")
+                logger.debug(f"应用充电桩设备 {component_idx} 功率设置: {final_power_kw:.1f}kW (max({demand_power_kw:.1f}kW, {power_limit_kw:.1f}kW))")
 
             else:
                 QMessageBox.warning(self.parent_window, "错误", f"充电桩设备 {component_idx} 不存在")
                 
         except Exception as e:
             QMessageBox.critical(self.parent_window, "错误", f"应用充电桩设置时出错: {str(e)}")
-            print(f"应用充电桩设置时出错: {e}")
+            logger.error(f"应用充电桩设置时出错: {e}")
     
     def remove_all_device_tabs(self):
         """移除所有设备相关的选项卡"""
@@ -1109,7 +1107,7 @@ class DataControlManager:
             }.get(component_type, component_type)
             
             self.parent_window.statusBar().showMessage(f"已启用{device_type_name}设备 {component_idx} 的数据生成")
-            print(f"启用设备 {device_key} 的数据生成")
+            logger.info(f"启用设备 {device_key} 的数据生成")
     
     def update_theme_colors(self):
         """更新主题颜色"""

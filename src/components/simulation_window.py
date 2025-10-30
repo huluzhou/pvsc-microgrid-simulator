@@ -107,7 +107,7 @@ class SimulationWindow(QMainWindow):
             gc.collect()
             
         except Exception as e:
-            print(f"定期清理失败: {e}")
+            logger.error(f"定期清理失败: {e}")
 
     def init_ui(self):
         """初始化用户界面"""
@@ -639,9 +639,9 @@ class SimulationWindow(QMainWindow):
                         self.switch_status_value.setStyleSheet("font-weight: bold; color: #4CAF50;")
                     
                     # 更新network_model中的开关状态会在自动计算前进行
-                    print(f"开关 {self.current_component_idx} 已合闸")
+                    logger.info(f"开关 {self.current_component_idx} 已合闸")
             except Exception as e:
-                print(f"开关合闸操作失败: {e}")
+                logger.error(f"开关合闸操作失败: {e}")
                 
     def on_switch_open(self):
         """开关分闸操作"""
@@ -658,9 +658,9 @@ class SimulationWindow(QMainWindow):
                         self.switch_status_value.setStyleSheet("font-weight: bold; color: #F44336;")
                     
                     # 更新network_model中的开关状态会在自动计算前进行
-                    print(f"开关 {self.current_component_idx} 已分闸")
+                    logger.info(f"开关 {self.current_component_idx} 已分闸")
             except Exception as e:
-                print(f"开关分闸操作失败: {e}")
+                logger.error(f"开关分闸操作失败: {e}")
             
     def get_component_type_chinese(self, component_type):
         """获取组件类型的中文名称"""
@@ -785,9 +785,9 @@ class SimulationWindow(QMainWindow):
                 for switch_idx, switch_item in self.network_items['switch'].items():
                     try:
                         switch_item.properties['closed'] = True
-                        print(f"开关 {switch_idx} 已设置为合闸状态")
+                        logger.info(f"开关 {switch_idx} 已设置为合闸状态")
                     except Exception as e:
-                        print(f"设置开关 {switch_idx} 状态失败: {e}")
+                        logger.error(f"设置开关 {switch_idx} 状态失败: {e}")
             
             # 清理功率监控
             if hasattr(self, 'power_monitor'):
@@ -805,7 +805,7 @@ class SimulationWindow(QMainWindow):
             gc.collect()
             
         except Exception as e:
-            print(f"关闭仿真窗口时发生错误: {e}")
+            logger.error(f"关闭仿真窗口时发生错误: {e}")
         finally:
             event.accept()
     def clear_all_members(self):
@@ -842,7 +842,7 @@ class SimulationWindow(QMainWindow):
             # 断开定时器信号
             self.auto_calc_timer.timeout.disconnect()
         except Exception as e:
-            print(f"断开自动潮流计算定时器信号时发生错误: {e}")
+            logger.error(f"断开自动潮流计算定时器信号时发生错误: {e}")
             pass
     
     def update_auto_calc_timer(self):
@@ -954,11 +954,11 @@ class SimulationWindow(QMainWindow):
                 self.reset_daily_pv_energy()
                 self.reset_daily_storage_energy()
                 self.last_reset_date = current_date
-                print(f"已重置所有设备的每日数据 - {current_date}")
+                logger.info(f"已重置所有设备的每日数据 - {current_date}")
             elif not hasattr(self, 'last_reset_date'):
                 self.last_reset_date = current_date
         except Exception as e:
-            print(f"每日数据重置检查失败: {str(e)}")
+            logger.error(f"每日数据重置检查失败: {str(e)}")
 
 
     def _update_energy_stats_batch(self):
@@ -989,7 +989,7 @@ class SimulationWindow(QMainWindow):
                         pv_item.total_discharge_energy += energy_generated_kwh
                         
                     except Exception as e:
-                        print(f"批量更新光伏设备 {device_idx} 能量统计时出错: {e}")
+                        logger.error(f"批量更新光伏设备 {device_idx} 能量统计时出错: {e}")
             
             # 批量更新储能能量统计
             if self.network_items['storage'] and hasattr(self.network_model, 'net'):
@@ -1005,10 +1005,10 @@ class SimulationWindow(QMainWindow):
                         storage_item.update_storage_energy_and_state(current_power_mw, time_interval_hours)
                         
                     except Exception as e:
-                        print(f"批量更新储能设备 {device_idx} 能量统计时出错: {e}")
+                        logger.error(f"批量更新储能设备 {device_idx} 能量统计时出错: {e}")
                         
         except Exception as e:
-            print(f"批量更新能量统计失败: {str(e)}")
+            logger.error(f"批量更新能量统计失败: {str(e)}")
             
     def reset_daily_storage_energy(self):
         """重置储能设备的每日能量统计"""
@@ -1027,7 +1027,7 @@ class SimulationWindow(QMainWindow):
                 storage_item.reset_daily_energy()
                 
         except Exception as e:
-            print(f"重置储能设备每日能量统计失败: {str(e)}")
+            logger.error(f"重置储能设备每日能量统计失败: {str(e)}")
 
 
 
@@ -1086,7 +1086,7 @@ class SimulationWindow(QMainWindow):
                             sgen_updates.append((device_idx, update_data))
                             
                 except Exception as e:
-                    print(f"收集设备 {device_key} 参数失败: {e}")
+                    logger.error(f"收集设备 {device_key} 参数失败: {e}")
             
             # 批量应用各类型设备更新
             if storage_updates:
@@ -1099,7 +1099,7 @@ class SimulationWindow(QMainWindow):
                 self._apply_sgen_updates_batch(sgen_updates)
                     
         except Exception as e:
-            print(f"Modbus参数批量更新失败: {str(e)}")
+            logger.error(f"Modbus参数批量更新失败: {str(e)}")
 
 
 
@@ -1152,7 +1152,7 @@ class SimulationWindow(QMainWindow):
                     storage_item.grid_connected = False
                         
         except Exception as e:
-            print(f"批量应用储能更新失败: {e}")
+            logger.error(f"批量应用储能更新失败: {e}")
             
     def _apply_charger_updates_batch(self, charger_updates):
         """批量应用充电桩设备功率限制更新"""
@@ -1178,15 +1178,13 @@ class SimulationWindow(QMainWindow):
                                         f"{charger_item.power_limit * 1000:.1f} kW"
                                     )
                             except Exception as label_error:
-                                print(f"更新功率限制标签时出错: {label_error}")
+                                logger.error(f"更新功率限制标签时出错: {label_error}")
 
                     except Exception as e:
-                        print(
-                            f"更新充电桩{charger_item.component_index}功率限制时出错: {e}"
-                        )
+                        logger.error(f"更新充电桩{charger_item.component_index}功率限制时出错: {e}")
                         
         except Exception as e:
-            print(f"批量应用充电桩功率限制更新失败: {e}")
+            logger.error(f"批量应用充电桩功率限制更新失败: {e}")
             
     def _apply_sgen_updates_batch(self, sgen_updates):
         """批量应用光伏系统更新"""
@@ -1228,7 +1226,7 @@ class SimulationWindow(QMainWindow):
                     pass
                     
         except Exception as e:
-            print(f"批量应用光伏系统更新失败: {e}")
+            logger.error(f"批量应用光伏系统更新失败: {e}")
 
     def _update_generated_data_batch(self, generated_devices, network_model, data_generator_manager):
         """
@@ -1279,7 +1277,7 @@ class SimulationWindow(QMainWindow):
             return True
             
         except Exception as e:
-            print(f"批量更新设备数据失败: {str(e)}")
+            logger.error(f"批量更新设备数据失败: {str(e)}")
             return False
 
     def get_meter_item_by_type_and_id(self, device_type, device_id):
@@ -1299,7 +1297,7 @@ class SimulationWindow(QMainWindow):
             return self.network_items['meter'].get(device_id)
             
         except Exception as e:
-            print(f"获取电表项失败: {str(e)}")
+            logger.error(f"获取电表项失败: {str(e)}")
             return None
     
     def update_device_tree_status(self):
@@ -1364,7 +1362,7 @@ class SimulationWindow(QMainWindow):
                 update_item_status_optimized(root.child(i))
                 
         except Exception as e:
-            print(f"更新设备树状态失败: {str(e)}")
+            logger.error(f"更新设备树状态失败: {str(e)}")
 
     def reset_daily_pv_energy(self):
         """重置所有光伏设备的日发电量"""
@@ -1382,10 +1380,10 @@ class SimulationWindow(QMainWindow):
             for pv_item in pv_items:
                 pv_item.today_discharge_energy = 0.0
                 
-            print("已重置所有光伏设备的日发电量")
+            logger.info("已重置所有光伏设备的日发电量")
             
         except Exception as e:
-            print(f"重置光伏日发电量失败: {str(e)}")
+            logger.error(f"重置光伏日发电量失败: {str(e)}")
 
     def _sync_switch_states(self, network_items, net):
         """
@@ -1479,7 +1477,7 @@ class SimulationWindow(QMainWindow):
                 
         except Exception as e:
             error_msg = f"自动潮流计算错误: {str(e)}"
-            print(error_msg)
+            logger.error(error_msg)
             self.statusBar().showMessage("自动潮流计算发生错误")
             logger.critical(error_msg)
         finally:

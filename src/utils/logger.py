@@ -50,8 +50,8 @@ class LoggerManager:
         # 创建文件处理器，使用RotatingFileHandler来控制文件大小
         file_handler = RotatingFileHandler(
             log_file,
-            maxBytes=100*1024*1024,  # 10MB
-            backupCount=10,          # 保留5个备份文件
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=100,          # 保留100个备份文件
             encoding='utf-8'
         )
         
