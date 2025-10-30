@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QMenu, QApplication
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPalette
 
-from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem, SwitchItem
+from components.network_items import BusItem, LineItem, TransformerItem, LoadItem, StorageItem, ChargerItem, ExternalGridItem, StaticGeneratorItem, MeterItem, SwitchItem, BaseNetworkItem
 
 
 class NetworkCanvas(QGraphicsView):
@@ -1110,13 +1110,17 @@ class NetworkCanvas(QGraphicsView):
     
     def clear_canvas(self):
         """清空画布"""
-        # 场景已被清空，但不需要清除Modbus设备缓存，因为现在直接使用network_items
-            
-        # 清空全局network_items字典
-        for key in self.network_items:
-            self.network_items[key].clear()
-            
+        # 清空场景中的所有项目，这会移除场景对组件的引用
         self.scene.clear()
+        
+        # 清空全局network_items字典，移除对组件对象的引用
+        for key in list(self.network_items.keys()):  # 使用list()创建副本以安全地清空
+            self.network_items[key].clear()
+        
+        # 重置组件计数器，避免多次导入时计数器累加错误
+        BaseNetworkItem.reset_component_counters()
+        
+        # 重新绘制网格
         self.draw_grid()
 
     def fit_in_view(self):
