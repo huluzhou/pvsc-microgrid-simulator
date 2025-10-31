@@ -1114,6 +1114,9 @@ class SimulationWindow(QMainWindow):
                     
                 power_on = update_data['power_on'] 
                 power_setpoint = update_data['power_setpoint']
+                # 初始化final_power变量，确保在所有代码路径中都有定义
+                final_power = 0.0
+                
                 # 更新开关机状态，根据实际功率判断充放电状态
                 if power_on is not None:
                     if power_on:
