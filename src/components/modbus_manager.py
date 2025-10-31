@@ -758,18 +758,27 @@ class ModbusManager:
             #     logger.debug(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
             
             # 更新并网/离网状态到保持寄存器5044
-            # 从storage_item获取grid_connected属性，如果不存在默认为True（并网状态）
-            grid_connected = getattr(storage_item, 'grid_connected', True)
-            # 根据grid_connected值设置对应的位标志
-            # 当为true时，设置bit9为并网模式；当为false时，设置bit10为离网模式
-            if grid_connected:
-                # bit9设置为1（2^9=512）
-                mode_value = 512  # 2^9 = 512 (bit9)
-                mode_text = "并网"
-            else:
-                # bit10设置为1（2^10=1024）
-                mode_value = 1024  # 2^10 = 1024 (bit10)
-                mode_text = "离网"
+            # 从storage_item获取grid_connected属性，确保正确处理各种情况
+            try:
+                grid_connected = getattr(storage_item, 'grid_connected', True)
+                # 确保grid_connected是布尔值，避免None或0值导致的问题
+                grid_connected = bool(grid_connected)
+                # 根据grid_connected值设置对应的位标志
+                # 当为true时，设置bit9为并网模式；当为false时，设置bit10为离网模式
+                if grid_connected:
+                    # bit9设置为1（2^9=512）
+                    mode_value = 512  # 2^9 = 512 (bit9)
+                    mode_text = "并网"
+                else:
+                    # bit10设置为1（2^10=1024）
+                    mode_value = 1024  # 2^10 = 1024 (bit10)
+                    mode_text = "离网"
+                logger.info(f"储能设备 {index} 并网/离网状态更新: {mode_text}模式, grid_connected值: {grid_connected}")
+            except Exception as e:
+                # 发生异常时默认设置为并网模式
+                logger.error(f"获取储能设备 {index} 并网状态时出错: {e}")
+                mode_value = 512  # 默认设置为并网模式
+                mode_text = "并网(默认)"
             # 写入输入寄存器432表示当前PCS工作模式
             slave_context.setValues(4, 432, [mode_value])
             logger.info(f"储能设备 {index} 并网/离网状态更新: {mode_text}模式")
