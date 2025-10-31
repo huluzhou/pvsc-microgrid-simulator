@@ -1115,21 +1115,22 @@ class SimulationWindow(QMainWindow):
                 power_on = update_data['power_on'] 
                 power_setpoint = update_data['power_setpoint']
                 # 更新开关机状态，根据实际功率判断充放电状态
-                if power_on:
-                    storage_item.is_power_on = True
-                    final_power = power_setpoint if power_setpoint is not None else 0.0
-                    
-                    # 检查SOC限制，SOC大于等于100%时，禁止充电（如果final_power为正）
-                    if hasattr(storage_item, 'soc_percent'):
-                        # SOC大于等于100%时，禁止充电（如果final_power为正）
-                        if storage_item.soc_percent >= 1.0 and final_power > 0:
-                            final_power = 0.0
-                        # SOC小于等于0%时，禁止放电（如果final_power为负）
-                        elif storage_item.soc_percent <= 0.0 and final_power < 0:
-                            final_power = 0.0
-                else:
-                    storage_item.is_power_on = False
-                    final_power = 0.0
+                if power_on is not None:
+                    if power_on:
+                        storage_item.is_power_on = True
+                        final_power = power_setpoint if power_setpoint is not None else 0.0
+                        
+                        # 检查SOC限制，SOC大于等于100%时，禁止充电（如果final_power为正）
+                        if hasattr(storage_item, 'soc_percent'):
+                            # SOC大于等于100%时，禁止充电（如果final_power为正）
+                            if storage_item.soc_percent >= 1.0 and final_power > 0:
+                                final_power = 0.0
+                            # SOC小于等于0%时，禁止放电（如果final_power为负）
+                            elif storage_item.soc_percent <= 0.0 and final_power < 0:
+                                final_power = 0.0
+                    else:
+                        storage_item.is_power_on = False
+                        final_power = 0.0
                     
                 # 更新功率设定值到网络模型
                 try:

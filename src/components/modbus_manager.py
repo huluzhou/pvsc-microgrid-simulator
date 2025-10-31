@@ -993,9 +993,14 @@ class ModbusManager:
             # 读取开关机状态（寄存器55）
             try:
                 power_on = device_context.getValues(3, 55, 1)[0]
-                power_on = bool(power_on)
+                if power_on == 240:
+                    power_on = False
+                elif power_on == 243:
+                    power_on = True
+                else:
+                    power_on = None
             except (IndexError, ValueError, AttributeError):
-                power_on = False
+                power_on = None
             # 读取储能并网离网指令 寄存器暂定
             try:
                 grid_connected = device_context.getValues(3, 5095, 1)[0]
