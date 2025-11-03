@@ -171,7 +171,7 @@ class PowerMonitor:
                         
                         # 如果该设备的历史数据不存在，创建新的deque
                         if device_key not in self.power_history:
-                            self.power_history[device_key] = deque(maxlen=100)
+                            self.power_history[device_key] = deque(maxlen=300)
                         
                         # 添加历史数据
                         self.power_history[device_key].append((timestamp, power_value))
