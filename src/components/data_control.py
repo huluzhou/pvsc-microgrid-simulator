@@ -1019,7 +1019,29 @@ class DataControlManager:
             if component_idx in self.parent_window.network_model.net.storage.index:
                 p_mw = self.parent_window.storage_power_spinbox.value()
                 
+                # 直接更新功率值，不受工作状态限制，支持在halt状态下手动控制
                 self.parent_window.network_model.net.storage.at[component_idx, 'p_mw'] = -p_mw
+                
+                # 更新对应storage_item的状态
+                storage_item = None
+                if hasattr(self.parent_window, 'network_items') and 'storage' in self.parent_window.network_items:
+                    storage_item = self.parent_window.network_items['storage'].get(component_idx)
+                    
+                    # 如果在手动控制模式下，更新状态和上电状态
+                    if hasattr(storage_item, 'is_manual_control') and storage_item.is_manual_control:
+                        # 在手动控制模式下，将设备设置为上电状态
+                        storage_item.is_power_on = True
+                        
+                        # 根据功率值更新充放电状态
+                        if p_mw > 0:
+                            storage_item.state = 'discharge'  # 放电
+                        elif p_mw < 0:
+                            storage_item.state = 'charge'  # 充电
+                        else:
+                            storage_item.state = 'ready'  # 待机
+                    
+                    # 即使在halt状态下也更新UI显示
+                    self.update_storage_realtime_info(component_idx)
                 
                 power_status = "放电" if p_mw > 0 else "充电" if p_mw < 0 else "待机"
                 self.parent_window.statusBar().showMessage(f"已更新储能设备 {component_idx} 的功率设置: P={p_mw:.2f}MW ({power_status})")
@@ -1092,22 +1114,6 @@ class DataControlManager:
         """移除所有设备相关的选项卡"""
         # 这个方法用于清理设备选项卡，在设备切换时调用
         pass
-    
-    def enable_device_data_generation(self, component_type, component_idx):
-        """启用指定设备的数据生成"""
-        device_key = f"{component_type}_{component_idx}"
-        if device_key not in self.parent_window.generated_devices:
-            self.parent_window.generated_devices.add(device_key)
-
-            
-            device_type_name = {
-                'load': '负载',
-                'sgen': '光伏', 
-                'storage': '储能'
-            }.get(component_type, component_type)
-            
-            self.parent_window.statusBar().showMessage(f"已启用{device_type_name}设备 {component_idx} 的数据生成")
-            logger.info(f"启用设备 {device_key} 的数据生成")
     
     def update_theme_colors(self):
         """更新主题颜色"""

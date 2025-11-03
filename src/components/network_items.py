@@ -808,7 +808,7 @@ class StorageItem(BaseNetworkItem):
         self.today_discharge_energy = 0.0  # 今日放电电量 (kWh)
         self.total_charge_energy = 0.0  # 累计充电电量 (kWh)
         self.total_discharge_energy = 0.0  # 累计放电电量 (kWh)
-        self.state = 'power_off'  # 初始状态为halt
+        self.state = 'halt'  # 初始状态为halt
         self.is_manual_control = False  # 是否处于手动控制模式，默认关闭
         self.is_power_on = False
         self.grid_connected = True
