@@ -471,7 +471,7 @@ class MainWindow(QMainWindow):
             "关于 PandaPower 仿真工具",
             "<h3>PandaPower 仿真工具</h3>"
             "<p>基于PySide6和pandapower的电网仿真工具</p>"
-            "<p>版本: 1.0.6</p>"
+            "<p>版本: 1.0.6.1</p>"
         )
 
     def open_topology(self):

@@ -1601,6 +1601,7 @@ class SimulationWindow(QMainWindow):
                     if device_type == 'storage':
                         # 储能设备数据收集
                         update_data = self.modbus_manager.collect_storage_modbus_data(device_idx, slave_context)
+                        logger.info(f"储能设备 {device_idx} 数据更新: {update_data}")
                         if update_data:
                             storage_updates.append((device_idx, update_data))
                     
