@@ -361,7 +361,7 @@ class SimulationWindow(QMainWindow):
                                 continue
                             
                             # 根据设备类型选择功率字段
-                            if device_type == 'sgen':
+                            if device_type == 'static_generator':
                                 p_mw = row.get('activePower', 0.0) / 1000  # 转换为MW
                                 q_mvar = row.get('reactivePower', 0.0) / 1000  # 转换为MVAr
                             elif device_type == 'storage':
