@@ -175,7 +175,7 @@ class ModbusManager:
         # 储能设备寄存器映射
         storage_hold_registers = [0] * 5100  # 扩大寄存器范围以包含所有需要的寄存器
         storage_hold_registers[4+1] = 0  # 设置功率
-        storage_hold_registers[55+1] = 1  # 开关机
+        storage_hold_registers[55+1] = 243  # 开关机 默认开机
         storage_hold_registers[5095+1] = 0  # 设置PCS并离网模式：1-离网，0-并网
 
         # 将storage_input_registers字典转换为长度为1000的列表，用于ModbusSequentialDataBlock
