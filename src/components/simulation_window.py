@@ -44,6 +44,14 @@ class SimulationWindow(QMainWindow):
         self.recording_lock = threading.Lock()
         self.db_path = None  # 数据库文件路径
         
+        # 回测相关属性
+        self.is_backtesting = False
+        self.backtest_data = None
+        self.backtest_data_index = None
+        self.backtest_current_step = 0
+        self.backtest_start_time = None
+        self.backtest_timer = None
+        
         self.canvas = canvas
         self.parent_window = parent
         self.network_model = self.parent_window.network_model
@@ -198,9 +206,19 @@ class SimulationWindow(QMainWindow):
         # 创建数据菜单
         data_menu = menubar.addMenu("数据")
         record_data_menu = data_menu.addMenu("记录数据")
+        backtest_menu = data_menu.addMenu("回测功能")
+        
         # 添加导入回测数据菜单项
-        import_backtest_action = data_menu.addAction("导入回测数据")
+        import_backtest_action = backtest_menu.addAction("导入回测数据")
         import_backtest_action.triggered.connect(self.import_backtest_data)
+        
+        # 添加开始回测菜单项
+        start_backtest_action = backtest_menu.addAction("开始回测")
+        start_backtest_action.triggered.connect(self.start_backtest)
+        
+        # 添加停止回测菜单项
+        stop_backtest_action = backtest_menu.addAction("停止回测")
+        stop_backtest_action.triggered.connect(self.stop_backtest)
         
         # 添加记录仿真数据菜单项
         record_simulation_action = record_data_menu.addAction("记录仿真数据")
@@ -211,8 +229,504 @@ class SimulationWindow(QMainWindow):
         
     def import_backtest_data(self):
         """导入回测数据"""
-        # 可以在这里实现导入回测数据的逻辑
-        QMessageBox.information(self, "提示", "导入回测数据功能待实现")
+        try:
+            # 打开文件选择对话框，只支持SQLite数据库文件
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, 
+                "选择回测数据文件", 
+                "", 
+                "SQLite数据库 (*.db);;所有文件 (*.*)"
+            )
+            
+            if not file_path:
+                # 用户取消选择
+                return
+            
+            # 验证文件扩展名是否为.db
+            if not file_path.endswith('.db'):
+                QMessageBox.warning(self, "格式错误", "请选择SQLite数据库文件 (*.db)")
+                return
+            
+            # 从SQLite数据库读取数据
+            df = self._read_backtest_data_from_db(file_path)
+            
+            # 检查数据格式是否正确
+            required_columns = ['timestamp', 'device_type', 'device_id', 'p_mw']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                QMessageBox.warning(self, "格式错误", 
+                                   f"文件缺少必要的列: {', '.join(missing_columns)}")
+                return
+            
+            # 显示数据预览对话框
+            preview_text = "成功导入回测数据文件\n"
+            preview_text += f"数据总行数: {len(df)}\n"
+            
+            # 统计设备类型
+            device_types = df['device_type'].unique()
+            preview_text += f"包含设备类型: {', '.join(device_types)}\n"
+            
+            # 统计设备数量（使用device_type和device_id组合唯一标识设备）
+            device_count = len(df.groupby(['device_type', 'device_id']).size())
+            preview_text += f"设备总数: {device_count} 个\n"
+            
+            # 存储回测数据到实例变量
+            self.backtest_data = df
+            # 注意：is_backtesting标志将在开始回测时设置，而不是导入时
+            
+            # 准备回测数据的索引结构，优化查询性能
+            self._prepare_backtest_data_index()
+            
+            # 提示用户开始回测
+            reply = QMessageBox.question(self, "导入成功", 
+                                        f"{preview_text}\n是否立即开始回测？",
+                                        QMessageBox.Yes | QMessageBox.No)
+            
+            if reply == QMessageBox.Yes:
+                # 如果用户选择立即开始回测，可以在这里添加启动回测的代码
+                self.start_backtest()
+                
+        except Exception as e:
+            logger.error(f"导入回测数据失败: {str(e)}")
+            QMessageBox.critical(self, "导入失败", 
+                               f"导入回测数据时发生错误: {str(e)}")
+            
+    def _read_backtest_data_from_db(self, db_path):
+        """从SQLite数据库读取回测数据"""
+        try:
+            import pandas as pd
+            import sqlite3
+            
+            # 连接到数据库
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # 获取数据库中的所有表
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = [table[0] for table in cursor.fetchall()]
+            
+            if not tables:
+                raise Exception("数据库中没有表")
+            
+            # 存储所有设备数据的列表
+            all_data = []
+            
+            # 读取每个表中的数据
+            for table in tables:
+                # 跳过命令数据表
+                if table == 'cmd_data':
+                    continue
+                
+                # 如果是meter_data表，需要特殊处理
+                if table == 'meter_data':
+                    # 查询meter_data表中的数据
+                    df_meter = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+                    if not df_meter.empty:
+                        for _, row in df_meter.iterrows():
+                            device_sn = row['device_sn']
+                            # 从表名获取设备类型信息，优化查找效率
+                            table_device_type = table.replace('_data', '')
+                            # 使用_find_device_type_and_id_by_sn方法获取设备类型和ID，传入表名对应的设备类型
+                            device_type, device_id = self._find_device_type_and_id_by_sn(device_sn, table_device_type)
+                            
+                            # 如果没有找到设备类型，根据设备序列号判断设备类型
+                            if not device_type:
+                                logger.warning(f"未找到设备类型，根据SN判断: {device_sn}")
+                                continue
+                            
+                            data_row = {
+                                'timestamp': row['timestamp'],
+                                'device_type': device_type,
+                                'device_id': device_id,
+                                'p_mw': row['activePower'] / 1000 if 'load' in device_sn else 0.0,  # 转换为MW
+                                'q_mvar': row.get('reactivePower', 0.0) / 1000 if 'load' in device_sn else 0.0  # 转换为MVAr
+                            }
+                            all_data.append(data_row)
+                else:
+                    # 查询其他表的数据
+                    df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+                    if not df.empty:
+                        # 从device_sn字段提取设备信息
+                        for _, row in df.iterrows():
+                            device_sn = row['device_sn']
+                            
+                            table_device_type = table.replace('_data', '')
+                            # 使用_find_device_type_and_id_by_sn方法获取设备类型和ID
+                            device_type, device_id = self._find_device_type_and_id_by_sn(device_sn, table_device_type)
+                            
+                            # 如果没有找到设备类型和ID，使用表名和从SN提取的ID作为默认值
+                            if not device_type:
+                                logger.warning(f"未找到设备类型，根据SN判断: {device_sn}")
+                                continue
+                            
+                            # 根据设备类型选择功率字段
+                            if device_type == 'sgen':
+                                p_mw = row.get('activePower', 0.0) / 1000  # 转换为MW
+                                q_mvar = row.get('reactivePower', 0.0) / 1000  # 转换为MVAr
+                            elif device_type == 'storage':
+                                p_mw = row.get('activePower', 0.0) / 1000  # 转换为MW
+                                q_mvar = row.get('reactivePower', 0.0) / 1000  # 转换为MVAr
+                            elif device_type == 'load' and 'charger' in device_sn:
+                                p_mw = row.get('activePower', 0.0) / 1000  # 转换为MW
+                                q_mvar = 0.0  # 充电桩通常没有无功功率数据
+                            else:
+                                p_mw = 0.0
+                                q_mvar = 0.0
+                            
+                            data_row = {
+                                'timestamp': row['timestamp'],
+                                'device_type': device_type,
+                                'device_id': device_id,
+                                'p_mw': p_mw,
+                                'q_mvar': q_mvar
+                            }
+                            all_data.append(data_row)
+            
+            # 关闭数据库连接
+            conn.close()
+            
+            if not all_data:
+                raise Exception("数据库中没有可用于回测的设备数据")
+            
+            # 将所有数据转换为DataFrame
+            result_df = pd.DataFrame(all_data)
+            
+            if result_df.empty:
+                raise Exception("没有找到有效的设备数据")
+            
+            # 将timestamp列转换为datetime类型
+            try:
+                result_df['timestamp'] = pd.to_datetime(result_df['timestamp'], unit='s')
+            except Exception:
+                # 如果转换失败，尝试其他格式
+                try:
+                    result_df['timestamp'] = pd.to_datetime(result_df['timestamp'])
+                except Exception as e:
+                    # 如果都失败，保持原始格式但记录警告
+                    logger.warning(f"无法将timestamp转换为datetime格式: {str(e)}")
+                    # 按时间戳排序
+                    result_df.sort_values(by='timestamp', inplace=True)
+                    return result_df
+            
+            # 设置timestamp为索引
+            result_df.set_index('timestamp', inplace=True)
+            
+            # 创建空的结果DataFrame用于存储重采样后的数据
+            resampled_data = []
+            
+            # 按设备类型和设备ID分组进行重采样
+            for (device_type, device_id), group in result_df.groupby(['device_type', 'device_id']):
+                # 对每个设备的数据进行1秒重采样
+                # 使用前向填充和线性插值相结合的方式
+                try:
+                    # 首先进行1秒重采样，保留原始值
+                    resampled = group.resample('1s').asfreq()
+                    
+                    # 对缺失的值进行前向填充（保留最近的有效值）
+                    resampled = resampled.ffill()
+                    
+                    # 先推断数据类型
+                    resampled = resampled.infer_objects(copy=False)
+                    
+                    # 重新添加设备类型和设备ID信息，确保与DataFrame行数匹配
+                    resampled['device_type'] = [device_type] * len(resampled)
+                    resampled['device_id'] = [device_id] * len(resampled)
+                    
+                    # 只对数值型列进行线性插值，避免object类型警告
+                    numeric_cols = resampled.select_dtypes(include=['float64', 'int64']).columns
+                    if not numeric_cols.empty:
+                        resampled[numeric_cols] = resampled[numeric_cols].interpolate(method='linear')
+                    
+                    # 转换回秒级时间戳
+                    resampled.reset_index(inplace=True)
+                    resampled['timestamp'] = resampled['timestamp'].astype(int) / 10**9  # 转换为秒
+                    
+                    # 添加到结果列表
+                    resampled_data.append(resampled)
+                except Exception as e:
+                    logger.error(f"重采样设备数据失败 (设备类型: {device_type}, ID: {device_id}): {str(e)}")
+                    # 如果重采样失败，使用原始数据
+                    group.reset_index(inplace=True)
+                    group['timestamp'] = group['timestamp'].astype(int) / 10**9  # 转换为秒
+                    resampled_data.append(group)
+            
+            # 合并所有重采样后的数据
+            if resampled_data:
+                result_df = pd.concat(resampled_data)
+            else:
+                # 如果重采样失败，重置索引并转换时间戳
+                result_df.reset_index(inplace=True)
+                result_df['timestamp'] = result_df['timestamp'].astype(int) / 10**9  # 转换为秒
+            
+            # 按时间戳排序
+            result_df.sort_values(by='timestamp', inplace=True)
+            
+            logger.info(f"回测数据重采样完成，总记录数: {len(result_df)}")
+            
+            return result_df
+            
+        except Exception as e:
+            logger.error(f"从数据库读取回测数据失败: {str(e)}")
+            raise Exception(f"读取数据库时出错: {str(e)}")
+    
+    def _prepare_backtest_data_index(self):
+        """准备回测数据的索引结构，优化查询性能"""
+        if not hasattr(self, 'backtest_data'):
+            return
+        
+        # 初始化索引结构: backtest_data_index[device_type][device_id][second_key]
+        self.backtest_data_index = {}
+        self.backtest_max_timestamp = 0  # 存储最大时间戳（秒）
+        
+        # 遍历所有数据行
+        for _, row in self.backtest_data.iterrows():
+            # 优先使用数据行中预先提取的device_type和device_id
+            device_type = row.get('device_type')
+            device_id = row.get('device_id')
+            
+            # 如果数据行中没有设备类型和ID，记录警告并跳过
+            if not device_type or device_id is None:
+                logger.warning("无法找到设备对应的类型和ID，跳过此数据点")
+                continue
+            
+            # 初始化嵌套字典结构
+            if device_type not in self.backtest_data_index:
+                self.backtest_data_index[device_type] = {}
+            if device_id not in self.backtest_data_index[device_type]:
+                self.backtest_data_index[device_type][device_id] = {}
+            
+            # 将timestamp转换为整数秒作为索引键
+            try:
+                second_key = int(float(row['timestamp']))
+                self.backtest_data_index[device_type][device_id][second_key] = {
+                    'timestamp': row['timestamp'],
+                    'p_mw': row['p_mw'],
+                    'q_mvar': row.get('q_mvar', 0.0)
+                }
+                # 更新最大时间戳
+                if second_key > self.backtest_max_timestamp:
+                    self.backtest_max_timestamp = second_key
+            except (ValueError, TypeError):
+                logger.warning(f"无法将时间戳 {row['timestamp']} 转换为秒数，跳过此数据点")
+        
+        # 记录统计信息
+        total_devices = sum(len(devices) for devices in self.backtest_data_index.values())
+        total_data_points = sum(sum(len(data_points) for data_points in devices.values()) 
+                               for devices in self.backtest_data_index.values())
+        logger.info(f"回测数据索引准备完成: 设备总数={total_devices}, 数据点总数={total_data_points}, 最大时间戳={self.backtest_max_timestamp}秒")
+    
+    def _find_device_type_and_id_by_sn(self, device_sn, table_device_type=None):
+        """通过device_sn在network_items中查找对应的设备类型和ID
+        
+        Args:
+            device_sn: 设备序列号
+            table_device_type: 从表名推断的设备类型（可选），用于优化查找效率
+        
+        Returns:
+            设备类型和设备ID的元组
+        """
+        if not hasattr(self, 'network_items') or not self.network_items:
+            return None, None
+            
+        try:
+            # 如果提供了表名对应的设备类型，直接在该类型中查找
+            type_map = {
+                'pv': 'static_generator',
+                'storage': 'storage',
+                'charger': 'load',
+                'meter': 'meter',
+            }
+            dev_type = type_map.get(table_device_type, table_device_type)
+            if dev_type and dev_type in self.network_items:
+                item_dict = self.network_items[dev_type]
+                # 处理字典类型的item_dict
+                if isinstance(item_dict, dict):
+                    for item in item_dict.values():
+                        # 检查设备是否有properties字典并且包含device_sn属性
+                        if hasattr(item, 'properties'):
+                            if 'sn' in item.properties and item.properties['sn'] == device_sn:
+                                return item.component_type, item.component_index
+                            # 尝试从组件名称或其他属性中匹配
+                            elif hasattr(item, 'component_name') and device_sn in item.component_name:
+                                return item.component_type, item.component_index
+            
+            # 如果没有找到匹配的设备，返回None
+            return None, None
+            
+        except Exception as e:
+            logger.error(f"查找设备类型和ID失败: {device_sn}, 错误: {str(e)}")
+            return None, None
+    
+    def start_backtest(self):
+        """开始回测过程"""
+        # 检查是否有回测数据而不是检查is_backtesting标志
+        if not hasattr(self, 'backtest_data') or self.backtest_data is None:
+            QMessageBox.warning(self, "警告", "没有可用的回测数据，请先导入回测数据")
+            return
+        
+        # 设置回测标志
+        self.is_backtesting = True
+        
+        # 初始化回测状态
+        self.backtest_current_step = 0
+        self.backtest_start_time = time.time()
+        
+        # 存储回测数据中的最小时间戳作为基准时间
+        if hasattr(self, 'backtest_data_index'):
+            # 获取所有时间戳并找到最小值
+            all_timestamps = []
+            for devices in self.backtest_data_index.values():
+                for data_points in devices.values():
+                    all_timestamps.extend(data_points.keys())
+            if all_timestamps:
+                self.backtest_base_timestamp = min(all_timestamps)
+                logger.info(f"回测基准时间戳: {self.backtest_base_timestamp}秒")
+            else:
+                self.backtest_base_timestamp = 0
+        else:
+            self.backtest_base_timestamp = 0
+        
+        # 不再使用回测定时器，回测步骤将在自动潮流计算中运行
+        # 直接更新状态和显示消息
+        self.statusBar().showMessage("回测已开始")
+        QMessageBox.information(self, "成功", "回测已开始")
+    
+    def run_backtest_step(self):
+        """执行回测的每一步"""
+        try:
+            # 获取当前时间步的数据
+            current_time = time.time() - self.backtest_start_time
+            current_second = int(current_time)
+            
+            # 计算实际的数据时间戳
+            if hasattr(self, 'backtest_base_timestamp') and hasattr(self, 'backtest_max_timestamp'):
+                data_timestamp = self.backtest_base_timestamp + current_second
+                
+                # 检查当前时间是否已超过回测数据的最大时间戳
+                if data_timestamp > self.backtest_max_timestamp:
+                    logger.info(f"回测数据已用尽: 当前秒数={current_second}, 数据时间戳={data_timestamp}, 最大时间戳={self.backtest_max_timestamp}")
+            else:
+                # 兼容旧版本逻辑，直接使用current_second
+                data_timestamp = current_second
+                if hasattr(self, 'backtest_max_timestamp') and current_second > self.backtest_max_timestamp:
+                    logger.info(f"回测数据已用尽: 当前秒数={current_second}, 最大秒数={self.backtest_max_timestamp}")
+                
+                # 重置所有设备功率为零
+                self._reset_all_devices_power()
+                
+                # 停止回测
+                self.stop_backtest("回测数据已用尽")
+                return
+            
+            # 更新设备数据，传递实际的回测时间（从开始到现在的秒数）
+            self._update_devices_with_backtest_data(current_time)
+            
+            # 增加回测步数
+            self.backtest_current_step += 1
+            
+        except Exception as e:
+            logger.error(f"回测步骤执行失败: {str(e)}")
+            self.stop_backtest()
+    
+    def _update_devices_with_backtest_data(self, current_time):
+        """使用回测数据更新设备状态"""
+        if not hasattr(self, 'backtest_data_index'):
+            return
+            
+        # 将current_time转换为整数秒（从回测开始的秒数，从零开始）
+        current_second = int(current_time)
+        
+        # 将回测秒数转换为数据索引中的时间戳
+        if hasattr(self, 'backtest_base_timestamp'):
+            data_timestamp = self.backtest_base_timestamp + current_second
+        else:
+            data_timestamp = current_second
+            
+        logger.debug(f"回测当前秒数: {current_second}秒，数据时间戳: {data_timestamp}秒")
+            
+        # 遍历所有设备类型和ID
+        for device_type, devices in self.backtest_data_index.items():
+            for device_id, data_points in devices.items():
+                if data_points:
+                    # 直接通过秒数索引获取数据点（使用字典键）
+                    if data_timestamp in data_points:
+                        data_point = data_points[data_timestamp]
+                        logger.debug(f"回测数据点: 设备类型={device_type}, ID={device_id}, 秒数={current_second}, 数据时间戳={data_timestamp}")
+                        
+                        # 更新设备数据
+                        self._apply_device_backtest_data(
+                            device_type, 
+                            device_id, 
+                            data_point['p_mw'], 
+                            data_point['q_mvar']
+                        )
+                    else:
+                        logger.debug(f"回测数据点不存在: 设备类型={device_type}, ID={device_id}, 秒数={current_second}, 数据时间戳={data_timestamp}")
+    
+
+    
+    def _apply_device_backtest_data(self, device_type, device_id, p_mw, q_mvar):
+        """直接使用设备类型和ID更新回测数据"""
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            return
+            
+        net = self.network_model.net
+        
+        # 如果提供了设备类型和ID，直接更新其数据
+        if device_type and device_id is not None:
+            try:
+                # 根据设备类型更新相应的设备数据
+                if device_type == 'load' and hasattr(net, 'load') and device_id in net.load.index:
+                    net.load.at[device_id, 'p_mw'] = p_mw
+                    net.load.at[device_id, 'q_mvar'] = q_mvar
+                elif device_type == 'static_generator' and hasattr(net, 'sgen') and device_id in net.sgen.index:
+                    net.sgen.at[device_id, 'p_mw'] = p_mw
+                    net.sgen.at[device_id, 'q_mvar'] = q_mvar
+                elif device_type == 'storage' and hasattr(net, 'storage') and device_id in net.storage.index:
+                    net.storage.at[device_id, 'p_mw'] = -p_mw
+                    net.storage.at[device_id, 'q_mvar'] = -q_mvar
+            except Exception as e:
+                logger.error(f"更新设备 {device_type}_{device_id} 数据失败: {str(e)}")
+        else:
+            logger.warning("未提供有效的设备类型和ID")
+    
+    def stop_backtest(self, message="回测已停止"):
+        """停止回测过程"""
+        # 不再需要停止回测定时器，因为已经移除了定时器
+        self.is_backtesting = False
+        self.statusBar().showMessage(message)
+        QMessageBox.information(self, "提示", message)
+        
+    def _reset_all_devices_power(self):
+        """重置所有设备的功率为零"""
+        if not self.network_model or not hasattr(self.network_model, 'net'):
+            return
+            
+        net = self.network_model.net
+        
+        # 重置各类设备的功率
+        try:
+            # 重置负载
+            if hasattr(net, 'load') and not net.load.empty:
+                net.load['p_mw'] = 0.0
+                net.load['q_mvar'] = 0.0
+                logger.info("已重置所有负载功率为零")
+            
+            # 重置光伏
+            if hasattr(net, 'sgen') and not net.sgen.empty:
+                net.sgen['p_mw'] = 0.0
+                net.sgen['q_mvar'] = 0.0
+                logger.info("已重置所有光伏功率为零")
+            
+            # 重置储能
+            if hasattr(net, 'storage') and not net.storage.empty:
+                net.storage['p_mw'] = 0.0
+                net.storage['q_mvar'] = 0.0
+                logger.info("已重置所有储能功率为零")
+                
+        except Exception as e:
+            logger.error(f"重置设备功率时发生错误: {str(e)}")
 
     
     def record_simulation_data(self):
@@ -770,11 +1284,16 @@ class SimulationWindow(QMainWindow):
             if hasattr(self, 'is_recording') and self.is_recording:
                 self.stop_record_data()
                 
+            # 停止回测
+            if hasattr(self, 'is_backtesting') and self.is_backtesting:
+                self.stop_backtest()
+                
             # 下电所有设备
             self.power_off_all_devices()
             
             # 停止所有定时器
             self.auto_calc_timer.stop()
+            # 回测定时器已移除，不再需要停止
             
             # 关闭所有Modbus服务器（额外保障）
             if hasattr(self, 'modbus_manager'):
@@ -1429,10 +1948,17 @@ class SimulationWindow(QMainWindow):
             # 检查每日重置
             self.check_and_reset_daily_data()
                 
-            # 使用批处理更新生成的数据
-            if self.generated_devices:
+            # 使用批处理更新生成的数据，但在回测期间禁止数据自动生成
+            if self.generated_devices and not hasattr(self, 'is_backtesting') or not self.is_backtesting:
                 logger.info(f"更新生成数据，设备数量: {len(self.generated_devices)}")
                 self._update_generated_data_batch(self.generated_devices, network_model, self.data_generator_manager)
+            elif hasattr(self, 'is_backtesting') and self.is_backtesting:
+                logger.info("回测期间，禁止数据自动生成")
+                
+            # 在回测期间，先执行回测步骤以确保时序一致性
+            if hasattr(self, 'is_backtesting') and self.is_backtesting:
+                logger.info("执行回测步骤")
+                self.run_backtest_step()
                 
             # 批量更新Modbus参数
             logger.info("批量更新Modbus参数")

@@ -220,6 +220,11 @@ class DataControlManager:
         if self.parent_window.current_component_type != device_type:
             return
             
+        # 检查是否正在回测
+        if hasattr(self.parent_window, 'is_backtesting') and self.parent_window.is_backtesting:
+            QMessageBox.warning(self.parent_window, "回测期间", "数据回测期间，数据生成功能无效，请先停止回测再启用数据生成")
+            return
+            
         device_key = f"{self.parent_window.current_component_type}_{self.parent_window.current_component_idx}"
         device_name = f"{self.parent_window.current_component_type}_{self.parent_window.current_component_idx}"
         
