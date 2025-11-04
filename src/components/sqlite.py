@@ -88,6 +88,16 @@ def init_database(db_path="filtered.db"):
         )
     conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS load_data(
+                device_id INTEGER NOT NULL,
+                timestamp INTEGER NOT NULL,
+                activePower REAL,
+                reactivePower REAL,
+                local_timestamp INTEGER NOT NULL
+            );"""
+        )
+    conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS cmd_data(
                 timestamp INTEGER NOT NULL,
                 device_sn TEXT NOT NULL,

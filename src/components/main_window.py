@@ -162,7 +162,7 @@ class MainWindow(QMainWindow):
         self.properties_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         
         # 设置停靠窗口的最小宽度
-        self.properties_dock.setMinimumWidth(300)
+        self.properties_dock.setMinimumWidth(299)
         
         # 属性面板内容
         self.properties_panel = PropertiesPanel(self)

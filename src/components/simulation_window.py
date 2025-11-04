@@ -218,7 +218,8 @@ class SimulationWindow(QMainWindow):
         
         # 添加停止回测菜单项
         stop_backtest_action = backtest_menu.addAction("停止回测")
-        stop_backtest_action.triggered.connect(self.stop_backtest)
+        # 连接信号时使用lambda确保传递正确的参数类型
+        stop_backtest_action.triggered.connect(lambda: self.stop_backtest())
         
         # 添加记录仿真数据菜单项
         record_simulation_action = record_data_menu.addAction("记录仿真数据")
@@ -343,6 +344,20 @@ class SimulationWindow(QMainWindow):
                                 'q_mvar': row.get('reactivePower', 0.0) / 1000 if 'load' in device_sn else 0.0  # 转换为MVAr
                             }
                             all_data.append(data_row)
+                elif table == 'load_data':
+                    # 查询load_data表中的数据
+                    df_load = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+                    if not df_load.empty:
+                        for _, row in df_load.iterrows():
+                            device_id = row['device_id']
+                            data_row = {
+                                'timestamp': row['timestamp'],
+                                'device_type': 'load',
+                                'device_id': device_id,
+                                'p_mw': row['activePower'] / 1000,  # 转换为MW
+                                'q_mvar': row.get('reactivePower', 0.0) / 1000  # 转换为MVAr
+                            }
+                            all_data.append(data_row)
                 else:
                     # 查询其他表的数据
                     df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
@@ -367,9 +382,9 @@ class SimulationWindow(QMainWindow):
                             elif device_type == 'storage':
                                 p_mw = row.get('activePower', 0.0) / 1000  # 转换为MW
                                 q_mvar = row.get('reactivePower', 0.0) / 1000  # 转换为MVAr
-                            elif device_type == 'load' and 'charger' in device_sn:
+                            elif device_type == 'charger':
                                 p_mw = row.get('activePower', 0.0) / 1000  # 转换为MW
-                                q_mvar = 0.0  # 充电桩通常没有无功功率数据
+                                q_mvar = row.get('reactivePower', 0.0) / 1000  # 转换为MVAr
                             else:
                                 p_mw = 0.0
                                 q_mvar = 0.0
@@ -534,8 +549,9 @@ class SimulationWindow(QMainWindow):
             type_map = {
                 'pv': 'static_generator',
                 'storage': 'storage',
-                'charger': 'load',
+                'charger': 'charger',
                 'meter': 'meter',
+                'load': 'load',
             }
             dev_type = type_map.get(table_device_type, table_device_type)
             if dev_type and dev_type in self.network_items:
@@ -546,9 +562,6 @@ class SimulationWindow(QMainWindow):
                         # 检查设备是否有properties字典并且包含device_sn属性
                         if hasattr(item, 'properties'):
                             if 'sn' in item.properties and item.properties['sn'] == device_sn:
-                                return item.component_type, item.component_index
-                            # 尝试从组件名称或其他属性中匹配
-                            elif hasattr(item, 'component_name') and device_sn in item.component_name:
                                 return item.component_type, item.component_index
             
             # 如果没有找到匹配的设备，返回None
@@ -683,9 +696,10 @@ class SimulationWindow(QMainWindow):
                 elif device_type == 'static_generator' and hasattr(net, 'sgen') and device_id in net.sgen.index:
                     net.sgen.at[device_id, 'p_mw'] = p_mw
                     net.sgen.at[device_id, 'q_mvar'] = q_mvar
-                elif device_type == 'storage' and hasattr(net, 'storage') and device_id in net.storage.index:
-                    net.storage.at[device_id, 'p_mw'] = -p_mw
-                    net.storage.at[device_id, 'q_mvar'] = -q_mvar
+                elif device_type == 'charger' and hasattr(net, 'load') and device_id in net.load.index:
+                    net.load.at[device_id, 'p_mw'] = p_mw
+                    net.load.at[device_id, 'q_mvar'] = q_mvar
+
             except Exception as e:
                 logger.error(f"更新设备 {device_type}_{device_id} 数据失败: {str(e)}")
         else:
@@ -893,14 +907,12 @@ class SimulationWindow(QMainWindow):
                             (device_sn, timestamp, activePower, local_timestamp)
                         )
                     else:
-                        load_item = self.network_items.get("load", {}).get(idx, {})
-                        device_sn = load_item.properties.get('sn', f"load_{idx}")
                         # 记录到meter_data表
                         activePower = load_data.get('p_mw', 0.0) * 1000  # 转换为kW
                         reactivePower = load_data.get('q_mvar', 0.0) * 1000  # 转换为kVar
                         cursor.execute(
-                            "INSERT INTO meter_data (device_sn, timestamp, activePower, reactivePower, local_timestamp) VALUES (?, ?, ?, ?, ?)",
-                            (device_sn, timestamp, activePower, reactivePower, local_timestamp)
+                            "INSERT INTO load_data (device_id, timestamp, activePower, reactivePower, local_timestamp) VALUES (?, ?, ?, ?, ?)",
+                            (idx, timestamp, activePower, reactivePower, local_timestamp)
                         )
             
             # 提交事务并关闭连接
