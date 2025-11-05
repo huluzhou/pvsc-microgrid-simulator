@@ -632,18 +632,18 @@ class ModbusManager:
                 raise RuntimeError(f"未找到光伏设备 {index} 的图形项")
             
             # 数据转换和验证
-            power_kw = int(round(abs(power_mw) * 1000 * 1000))  # MW -> kW -> W
+            power_w = int(round(abs(power_mw) * 1000 * 1000))  # MW -> kW -> W
             total_energy_wh = int(round(pv_item.total_discharge_energy)) 
             today_energy_wh = int(round(pv_item.today_discharge_energy)) 
             
             # 数据范围检查
-            if not (0 <= power_kw <= MAX_32BIT_UINT):
-                logger.warning(f"光伏设备 {index} 功率超出范围: {power_kw} W")
-                power_kw = max(0, min(power_kw, MAX_32BIT_UINT))
+            if not (0 <= power_w <= MAX_32BIT_UINT):
+                logger.warning(f"光伏设备 {index} 功率超出范围: {power_w} W")
+                power_w = max(0, min(power_w, MAX_32BIT_UINT))
             
             # 拆分32位数据
-            power_low = power_kw & 0xFFFF
-            power_high = (power_kw >> 16) & 0xFFFF
+            power_low = power_w & 0xFFFF
+            power_high = (power_w >> 16) & 0xFFFF
             total_low = total_energy_wh & 0xFFFF
             total_high = (total_energy_wh >> 16) & 0xFFFF
             
@@ -1081,7 +1081,8 @@ class ModbusManager:
             # 读取有功功率限制（寄存器5038）
             try:
                 power_limit_kw = device_context.getValues(3, 5038, 1)[0]
-                power_limit_mw = power_limit_kw / 1000.0  # kW -> MW
+                # 先将kW转换为MW，再除以10进行额外缩放（根据设备通信协议要求）
+                power_limit_mw = power_limit_kw / 1000.0 / 10  # kW -> 缩放后的MW值
             except (IndexError, ValueError, AttributeError):
                 power_limit_mw = None
                 
