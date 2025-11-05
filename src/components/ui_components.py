@@ -311,35 +311,38 @@ class UIComponentManager:
 
         sgen_layout.addWidget(sgen_params_group)
         
-        # 光伏手动控制面板
-        sgen_manual_group = QGroupBox("光伏发电手动控制面板")
-        sgen_manual_layout = QFormLayout(sgen_manual_group)
+        # 手动控制面板
+        sgen_manual_group = QGroupBox("光伏手动控制")
+        sgen_manual_panel_layout = QFormLayout(sgen_manual_group)
+        
+        # 设置sgen_manual_panel属性引用，确保控制模式切换功能正常工作
         self.parent_window.sgen_manual_panel = sgen_manual_group
         
-        # 光伏功率控制
+        # 功率控制
         sgen_power_slider = QSlider(Qt.Horizontal)
-        sgen_power_slider.setRange(0, 100)  # 0-1MW
-        sgen_power_slider.setValue(50)
+        sgen_power_slider.setRange(0, 1000)  # 滑块范围：0.0到100.0kW（乘以10，支持0.1kW精度）
+        sgen_power_slider.setValue(500)  # 默认值50.0kW
         sgen_power_slider.setMinimumWidth(100)
         sgen_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_power_changed)
         self.parent_window.sgen_power_slider = sgen_power_slider
         
         sgen_power_spinbox = QDoubleSpinBox()
-        sgen_power_spinbox.setRange(0.0, 1.0)
-        sgen_power_spinbox.setValue(0.5)
-        sgen_power_spinbox.setSuffix(" MW")
+        sgen_power_spinbox.setRange(0.0, 1000.0)
+        sgen_power_spinbox.setValue(50.0)
+        sgen_power_spinbox.setSingleStep(0.1)  # 设置精度为0.1kW
+        sgen_power_spinbox.setSuffix(" kW")
         sgen_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_power_spinbox_changed)
         self.parent_window.sgen_power_spinbox = sgen_power_spinbox
         
         sgen_power_layout = QHBoxLayout()
         sgen_power_layout.addWidget(sgen_power_slider)
         sgen_power_layout.addWidget(sgen_power_spinbox)
-        sgen_manual_layout.addRow("发电功率:", sgen_power_layout)
+        sgen_manual_panel_layout.addRow("发电功率:", sgen_power_layout)
         
         # 应用按钮
         sgen_apply_button = QPushButton("应用光伏设置")
         sgen_apply_button.clicked.connect(self.parent_window.data_control_manager.apply_sgen_settings)
-        sgen_manual_layout.addRow("", sgen_apply_button)
+        sgen_manual_panel_layout.addRow("", sgen_apply_button)
         self.parent_window.sgen_apply_button = sgen_apply_button
         
         sgen_layout.addWidget(sgen_manual_group)
@@ -431,16 +434,17 @@ class UIComponentManager:
 
         # 负载功率控制
         load_power_slider = QSlider(Qt.Horizontal)
-        load_power_slider.setRange(-100, 100)  # -1MW到1MW
-        load_power_slider.setValue(50)
+        load_power_slider.setRange(-1000, 1000)  # -100kW到100kW，乘以10以实现0.1kW精度
+        load_power_slider.setValue(500)  # 对应50kW
         load_power_slider.setMinimumWidth(100)
         load_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_load_power_changed)
         self.parent_window.load_power_slider = load_power_slider
         
         load_power_spinbox = QDoubleSpinBox()
-        load_power_spinbox.setRange(-1.0, 1.0)
-        load_power_spinbox.setValue(0.5)
-        load_power_spinbox.setSuffix(" MW")
+        load_power_spinbox.setRange(-1000.0, 1000.0)  # -1000kW到1000kW
+        load_power_spinbox.setSingleStep(0.1)  # 0.1kW精度
+        load_power_spinbox.setValue(50.0)  # 对应50kW
+        load_power_spinbox.setSuffix(" kW")  # 单位改为kW
         load_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_load_power_spinbox_changed)
         self.parent_window.load_power_spinbox = load_power_spinbox
         
@@ -451,16 +455,17 @@ class UIComponentManager:
         
         # 负载无功功率控制
         load_reactive_power_slider = QSlider(Qt.Horizontal)
-        load_reactive_power_slider.setRange(-50, 50)  # -0.5MVar到0.5MVar
-        load_reactive_power_slider.setValue(25)
+        load_reactive_power_slider.setRange(-500, 500)  # -50kvar到50kvar，乘以10以实现0.1kvar精度
+        load_reactive_power_slider.setValue(250)  # 对应25kvar
         load_reactive_power_slider.setMinimumWidth(100)
         load_reactive_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_load_reactive_power_changed)
         self.parent_window.load_reactive_power_slider = load_reactive_power_slider
         
         load_reactive_power_spinbox = QDoubleSpinBox()
-        load_reactive_power_spinbox.setRange(-0.5, 0.5)
-        load_reactive_power_spinbox.setValue(0.25)
-        load_reactive_power_spinbox.setSuffix(" MVar")
+        load_reactive_power_spinbox.setRange(-1000.0, 1000.0)  # -1000kvar到1000kvar
+        load_reactive_power_spinbox.setSingleStep(0.1)  # 0.1kvar精度
+        load_reactive_power_spinbox.setValue(25.0)  # 对应25kvar
+        load_reactive_power_spinbox.setSuffix(" kvar")  # 单位改为kvar
         self.parent_window.load_reactive_power_spinbox = load_reactive_power_spinbox
         load_reactive_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_load_reactive_power_spinbox_changed)
         
@@ -584,16 +589,17 @@ class UIComponentManager:
         
         # 有功功率控制（正值为放电，负值为充电）
         storage_power_slider = QSlider(Qt.Horizontal)
-        storage_power_slider.setRange(-100, 100)  # 滑块范围：-100.0到100.0MW（乘以10）
+        storage_power_slider.setRange(-1000, 1000)  # 滑块范围：-100.0到100.0kW（乘以10，支持0.1kW精度）
         storage_power_slider.setValue(0)
         storage_power_slider.setMinimumWidth(100)
         storage_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_storage_power_changed)
         self.parent_window.storage_power_slider = storage_power_slider
         
         storage_power_spinbox = QDoubleSpinBox()
-        storage_power_spinbox.setRange(-1.0, 1.0)
+        storage_power_spinbox.setRange(-100.0, 100.0)
+        storage_power_spinbox.setSingleStep(0.1)  # 设置精度为0.1kW
         storage_power_spinbox.setValue(0.0)
-        storage_power_spinbox.setSuffix(" MW")
+        storage_power_spinbox.setSuffix(" kW")
         storage_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_storage_power_spinbox_changed)
         self.parent_window.storage_power_spinbox = storage_power_spinbox
         
@@ -731,13 +737,14 @@ class UIComponentManager:
         
         # 需求功率设置
         charger_required_power_slider = QSlider(Qt.Horizontal)
-        charger_required_power_slider.setRange(0, 200)
-        charger_required_power_slider.setValue(50)
+        charger_required_power_slider.setRange(0, 2000)  # 滑块范围：0到200.0kW（乘以10，支持0.1kW精度）
+        charger_required_power_slider.setValue(500)  # 默认值50.0kW
         charger_required_power_slider.setMinimumWidth(100)
         charger_required_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_charger_required_power_changed)
         
         charger_required_power_spinbox = QDoubleSpinBox()
         charger_required_power_spinbox.setRange(0.0, 200.0)
+        charger_required_power_spinbox.setSingleStep(0.1)  # 设置精度为0.1kW
         charger_required_power_spinbox.setValue(50.0)
         charger_required_power_spinbox.setSuffix(" kW")
         charger_required_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_charger_required_power_spinbox_changed)

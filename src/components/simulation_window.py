@@ -1057,98 +1057,96 @@ class SimulationWindow(QMainWindow):
         
         # 根据设备类型更新设备信息
         if component_type == 'sgen':
-            self.data_control_manager.update_sgen_device(component_type, component_idx)
+            self.data_control_manager.update_sgen_control_panel_info(component_type, component_idx)
         elif component_type == 'load':
-            self.data_control_manager.update_load_device(component_type, component_idx)
+            self.data_control_manager.update_load_control_panel_info(component_type, component_idx)
         elif component_type == 'charger':
-            #根据额定功率设置spinbox的范围
-            self.data_control_manager.update_charger_manual_controls_from_device()
-            self.data_control_manager.update_charger_device_info(component_type, component_idx)
+            # 根据额定功率设置spinbox的范围
+            self.data_control_manager.update_charger_control_panel_info(component_type, component_idx)
         elif component_type == 'storage':
-            self.data_control_manager.update_storage_manual_controls_from_device()
-            self.data_control_manager.update_storage_device_info(component_type, component_idx)
+            self.data_control_manager.update_storage_control_panel_info(component_type, component_idx)
         elif component_type == 'switch':
-            self.data_control_manager.update_switch_device_info(component_type, component_idx)
+            self.data_control_manager.update_switch_control_panel_info(component_type, component_idx)
             
-    def show_meter_measurement_details(self, meter_idx):
-        """显示电表设备的测量结果详情"""
-        try:
-            # 获取电表图形项
-            meter_item = self.get_meter_item_by_type_and_id('meter', meter_idx)
-            if not meter_item:
-                return {"error": f"未找到电表设备: {meter_idx}"}
+    # def show_meter_measurement_details(self, meter_idx):
+    #     """显示电表设备的测量结果详情"""
+    #     try:
+    #         # 获取电表图形项
+    #         meter_item = self.get_meter_item_by_type_and_id('meter', meter_idx)
+    #         if not meter_item:
+    #             return {"error": f"未找到电表设备: {meter_idx}"}
             
-            # 获取电表属性
-            properties = meter_item.properties
+    #         # 获取电表属性
+    #         properties = meter_item.properties
             
-            # 获取测量参数
-            element_type = properties.get('element_type', 'bus')
-            element_idx = properties.get('element', 0)
-            side = properties.get('side', None)
+    #         # 获取测量参数
+    #         element_type = properties.get('element_type', 'bus')
+    #         element_idx = properties.get('element', 0)
+    #         side = properties.get('side', None)
             
-            # 构建返回字典
-            result = {}
+    #         # 构建返回字典
+    #         result = {}
             
-            # 快速检查网络模型是否可用
-            if not self.network_model or not hasattr(self.network_model, 'net'):
-                return {"error": "网络模型不可用"}
+    #         # 快速检查网络模型是否可用
+    #         if not self.network_model or not hasattr(self.network_model, 'net'):
+    #             return {"error": "网络模型不可用"}
             
-            net = self.network_model.net
+    #         net = self.network_model.net
             
-            # 获取实时测量值 - 使用映射表避免重复的条件判断
-            measurement_mapping = {
-                'load': {'res_attr': 'res_load', 'param': 'p_mw'},
-                'sgen': {'res_attr': 'res_sgen', 'param': 'p_mw'},
-                'storage': {'res_attr': 'res_storage', 'param': 'p_mw', 'factor': -1},
-                'bus': {'res_attr': 'res_bus', 'param': 'p_mw'},
-                'line': {
-                    'res_attr': 'res_line',
-                    'params': {'from': 'p_from_mw', 'to': 'p_to_mw'},
-                    'side': side
-                },
-                'trafo': {
-                    'res_attr': 'res_trafo',
-                    'params': {'hv': 'p_hv_mw', 'lv': 'p_lv_mw'},
-                    'side': side
-                },
-                'ext_grid': {'res_attr': 'res_ext_grid', 'param': 'p_mw'}
-            }
+    #         # 获取实时测量值 - 使用映射表避免重复的条件判断
+    #         measurement_mapping = {
+    #             'load': {'res_attr': 'res_load', 'param': 'p_mw'},
+    #             'sgen': {'res_attr': 'res_sgen', 'param': 'p_mw'},
+    #             'storage': {'res_attr': 'res_storage', 'param': 'p_mw', 'factor': -1},
+    #             'bus': {'res_attr': 'res_bus', 'param': 'p_mw'},
+    #             'line': {
+    #                 'res_attr': 'res_line',
+    #                 'params': {'from': 'p_from_mw', 'to': 'p_to_mw'},
+    #                 'side': side
+    #             },
+    #             'trafo': {
+    #                 'res_attr': 'res_trafo',
+    #                 'params': {'hv': 'p_hv_mw', 'lv': 'p_lv_mw'},
+    #                 'side': side
+    #             },
+    #             'ext_grid': {'res_attr': 'res_ext_grid', 'param': 'p_mw'}
+    #         }
             
-            if element_type in measurement_mapping:
-                mapping = measurement_mapping[element_type]
-                res_attr = mapping.get('res_attr')
+    #         if element_type in measurement_mapping:
+    #             mapping = measurement_mapping[element_type]
+    #             res_attr = mapping.get('res_attr')
                 
-                # 检查结果属性是否存在
-                if hasattr(net, res_attr) and not getattr(net, res_attr).empty and element_idx in getattr(net, res_attr).index:
-                    result_set = False
-                    res_data = getattr(net, res_attr)
+    #             # 检查结果属性是否存在
+    #             if hasattr(net, res_attr) and not getattr(net, res_attr).empty and element_idx in getattr(net, res_attr).index:
+    #                 result_set = False
+    #                 res_data = getattr(net, res_attr)
                     
-                    # 处理带方向的组件（线路和变压器）
-                    if 'params' in mapping and 'side' in mapping:
-                        side_param = mapping.get('params', {}).get(mapping.get('side'))
-                        if side_param:
-                            measurement_value = res_data.at[element_idx, side_param]
-                            result[side_param] = measurement_value
-                            result_set = True
-                    # 处理普通组件
-                    elif 'param' in mapping:
-                        param = mapping.get('param')
-                        measurement_value = res_data.at[element_idx, param]
-                        # 应用可选的转换因子
-                        if 'factor' in mapping:
-                            measurement_value *= mapping.get('factor')
-                        result[param] = measurement_value
-                        result_set = True
+    #                 # 处理带方向的组件（线路和变压器）
+    #                 if 'params' in mapping and 'side' in mapping:
+    #                     side_param = mapping.get('params', {}).get(mapping.get('side'))
+    #                     if side_param:
+    #                         measurement_value = res_data.at[element_idx, side_param]
+    #                         result[side_param] = measurement_value
+    #                         result_set = True
+    #                 # 处理普通组件
+    #                 elif 'param' in mapping:
+    #                     param = mapping.get('param')
+    #                     measurement_value = res_data.at[element_idx, param]
+    #                     # 应用可选的转换因子
+    #                     if 'factor' in mapping:
+    #                         measurement_value *= mapping.get('factor')
+    #                     result[param] = measurement_value
+    #                     result_set = True
                     
-                    # 如果成功获取测量值，添加其他有用信息
-                    if result_set:
-                        result['element_type'] = element_type
-                        result['element_idx'] = element_idx
-                        result['side'] = side
+    #                 # 如果成功获取测量值，添加其他有用信息
+    #                 if result_set:
+    #                     result['element_type'] = element_type
+    #                     result['element_idx'] = element_idx
+    #                     result['side'] = side
             
-            return result if result else {"error": "无法获取测量值"}
-        except Exception as e:
-            return {"error": f"获取电表详情时出错: {str(e)}"}
+    #         return result if result else {"error": "无法获取测量值"}
+    #     except Exception as e:
+    #         return {"error": f"获取电表详情时出错: {str(e)}"}
                         
     def on_switch_close(self):
         """开关合闸操作"""
