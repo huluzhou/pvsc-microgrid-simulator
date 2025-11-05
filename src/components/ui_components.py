@@ -608,6 +608,16 @@ class UIComponentManager:
         power_info_label.setStyleSheet("color: #666; font-size: 12px;")
         storage_manual_panel_layout.addRow("", power_info_label)
         
+        # 荷电状态控制
+        soc_control_label = QLabel("荷电状态控制：")
+        soc_spinbox = QDoubleSpinBox()
+        soc_spinbox.setRange(0.0, 100.0)
+        soc_spinbox.setDecimals(1)
+        soc_spinbox.setSuffix(" %")
+        soc_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_soc_spinbox_changed)
+        self.parent_window.soc_spinbox = soc_spinbox
+        storage_manual_panel_layout.addRow(soc_control_label, soc_spinbox)
+        
         # 应用按钮
         storage_apply_button = QPushButton("应用储能设置")
         storage_apply_button.clicked.connect(self.parent_window.data_control_manager.apply_storage_settings)

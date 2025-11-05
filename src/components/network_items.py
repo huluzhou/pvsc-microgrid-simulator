@@ -780,7 +780,7 @@ class StorageItem(BaseNetworkItem):
             "geodata": (0, 0),
             "p_mw": 1.0,  # 额定功率
             "max_e_mwh": 1.0,  # 最大储能容量
-            "soc_percent": 50.0,  # 荷电状态百分比
+            "soc_percent": 0.5,  # 荷电状态（0-1之间的值）
             "bus": None,  # 连接的母线
             "sn": component_sn,  # 序列号
             "brand": "",  # 品牌

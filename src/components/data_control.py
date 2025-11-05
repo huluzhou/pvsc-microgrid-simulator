@@ -822,6 +822,14 @@ class DataControlManager:
                         # 更新手动控制模式状态
                         item.is_manual_control = not is_remote_enabled
                         break
+                        
+    def on_soc_spinbox_changed(self, value):
+        """处理SOC值变化的回调方法
+        
+        注意：此方法目前未使用。SOC值的更新在用户点击应用按钮时通过apply_storage_settings方法处理。
+        保留此方法作为预留接口，以备将来可能需要实现SOC值的实时更新功能。
+        """
+        pass
 
     def on_sgen_power_changed(self, value):
         """光伏功率滑块改变时的回调"""
@@ -1027,6 +1035,8 @@ class DataControlManager:
                 # 直接更新功率值，不受工作状态限制，支持在halt状态下手动控制
                 self.parent_window.network_model.net.storage.at[component_idx, 'p_mw'] = -p_mw
                 
+                # SOC值将直接更新到StorageItem对象中，而不是networkmodel
+                
                 # 更新对应storage_item的状态
                 storage_item = None
                 if hasattr(self.parent_window, 'network_items') and 'storage' in self.parent_window.network_items:
@@ -1045,12 +1055,22 @@ class DataControlManager:
                         else:
                             storage_item.state = 'ready'  # 待机
                     
+                    # 更新SOC状态到StorageItem的soc_percent属性
+                    if hasattr(self.parent_window, 'soc_spinbox') and storage_item:
+                        soc_value = self.parent_window.soc_spinbox.value()
+                        # 更新对象属性（将百分比转换为0-1之间的值）
+                        storage_item.soc_percent = soc_value / 100.0
+                        # 同时更新properties字典中的值，保持与soc_percent属性一致（0-1之间的值）
+                        if hasattr(storage_item, 'properties') and 'soc_percent' in storage_item.properties:
+                            storage_item.properties['soc_percent'] = soc_value / 100.0
+                    
                     # 即使在halt状态下也更新UI显示
                     self.update_storage_realtime_info(component_idx)
                 
                 power_status = "放电" if p_mw > 0 else "充电" if p_mw < 0 else "待机"
-                self.parent_window.statusBar().showMessage(f"已更新储能设备 {component_idx} 的功率设置: P={p_mw:.2f}MW ({power_status})")
-                logger.debug(f"应用储能设备 {component_idx} 功率设置: P={p_mw:.2f}MW ({power_status})")
+                soc_status = f", SOC={soc_value:.1f}%" if hasattr(self.parent_window, 'soc_spinbox') else ""
+                self.parent_window.statusBar().showMessage(f"已更新储能设备 {component_idx} 的设置: P={p_mw:.2f}MW ({power_status}){soc_status}")
+                logger.debug(f"应用储能设备 {component_idx} 设置: P={p_mw:.2f}MW ({power_status}){soc_status}")
             else:
                 QMessageBox.warning(self.parent_window, "错误", f"储能设备 {component_idx} 不存在")
                 
