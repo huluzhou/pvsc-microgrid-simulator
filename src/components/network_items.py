@@ -778,7 +778,7 @@ class StorageItem(BaseNetworkItem):
             "index": self.component_index,  # 组件索引
             "sn_mva": 1.0,
             "geodata": (0, 0),
-            "p_mw": 1.0,  # 额定功率
+            "p_mw": 0.0,  # 额定功率
             "max_e_mwh": 1.0,  # 最大储能容量
             "soc_percent": 0.5,  # 荷电状态（0-1之间的值）
             "bus": None,  # 连接的母线
@@ -874,7 +874,7 @@ class ChargerItem(BaseNetworkItem):
             "index": self.component_index + 1000,  # 组件索引
             "geodata": (0, 0),
             "sn_mva": 1.0,
-            "p_mw": 1.0,  # 充电功率
+            "p_mw": 0.0,  # 充电功率
             "efficiency": 0.95,  # 充电效率
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
@@ -1062,7 +1062,7 @@ class GeneratorItem(BaseNetworkItem):
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
-            "p_mw": 50.0,  # 有功功率
+            "p_mw": 0.0,  # 有功功率
             "vm_pu": 1.0,  # 电压幅值
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
@@ -1099,7 +1099,7 @@ class LoadItem(BaseNetworkItem):
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
-            "p_mw": 1.0,  # 有功功率
+            "p_mw": 0.0,  # 有功功率
             "q_mvar": 0.0,  # 无功功率
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
@@ -1176,7 +1176,7 @@ class StaticGeneratorItem(BaseNetworkItem):
             "use_power_factor": False,  # 使用功率因数模式
             
             # 直接功率模式参数
-            "p_mw": 1.0,  # 有功功率 (MW)
+            "p_mw": 0.0,  # 有功功率 (MW)
             "q_mvar": 0.0,  # 无功功率 (Mvar)
             
             # 功率因数模式参数
