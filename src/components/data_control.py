@@ -203,9 +203,9 @@ class DataControlManager:
                         
                         # 更新滑块范围和值
                         if hasattr(self.parent_window, 'storage_power_slider'):
-                            self.parent_window.storage_power_slider.setRange(int(min_power * 100), int(max_power * 100))  # 精确到0.01MW
+                            self.parent_window.storage_power_slider.setRange(int(min_power * 10), int(max_power * 10))  # 精确到0.1kW
                             # 确保当前值不超过新范围
-                            safe_value = max(int(min_power * 100), min(int(max_power * 100), int(current_power * 100)))
+                            safe_value = max(int(min_power * 10), min(int(max_power * 10), int(current_power * 10)))
                             self.parent_window.storage_power_slider.setValue(safe_value)
                         
                         # 更新输入框范围和值
