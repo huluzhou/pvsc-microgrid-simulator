@@ -577,7 +577,7 @@ class ModbusManager:
         try:
             # 获取有功功率值
             power_value = self.power_monitor.get_meter_measurement(index, 'active_power')
-            power_kw = int(power_value * 1000 / 50 * 100) & 0xFFFF
+            power_kw = int(-power_value * 1000 / 50 * 100) & 0xFFFF
             
             # 写入地址0：有功功率（16位）
             slave_context.setValues(4, 0, [power_kw])

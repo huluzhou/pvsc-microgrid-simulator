@@ -54,10 +54,18 @@ class MultiMeterClient:
                 if not result.isError() and len(result.registers) >= 1:
                     # 组合高低位得到32位无符号整数
                     low_word = result.registers[0]
-                    raw_value = low_word
+                    # 将读取的16位无符号整数转换为有符号整数(int16)
+                    if low_word >= 0x8000:  # 如果是负数（最高位为1）
+                        raw_value = low_word - 0x10000  # 转换为有符号整数
+                    else:
+                        raw_value = low_word  # 正数保持不变
                     
-                    # 转换为kW（服务器端已提供kW单位）
-                    power_kw = raw_value * 0.5 # 转换为MW再转kW，或直接按kW处理
+                    # 转换为kW：服务器端将MW转换为特殊格式存储在16位寄存器中
+                    # 1. raw_value是经过int16转换的16位有符号整数
+                    # 2. 服务器端的转换公式为: power_value(MW) * 1000/50 * 100 = power_value(MW) * 2000
+                    # 3. 客户端需要乘以0.5才能得到正确的kW值
+                    # 例如: 1MW = 1000kW = 2000 * 0.5kW
+                    power_kw = -raw_value * 0.5
                     self.meter_data[meter_name]['power'] = power_kw
                     self.meter_data[meter_name]['status'] = 'ok'
                     self.meter_data[meter_name]['voltage_a'] = result.registers[1]
