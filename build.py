@@ -324,10 +324,10 @@ def main():
         return False
     
     print("\n" + "="*50)
-    print("🎉 打包完成! 🎉")
+    print("打包完成!")
     print("="*50)
-    print("📁 可执行文件位置: dist/pandapower_sim.exe")
-    print("📦 您可以将整个dist文件夹分发给用户")
+    print("可执行文件位置: dist/pandapower_sim.exe")
+    print("您可以将整个dist文件夹分发给用户")
     print("="*50)
     
     return True
