@@ -7,7 +7,8 @@
 
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QTreeWidgetItem, QMessageBox, QDockWidget, QFileDialog
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, 
+    QTreeWidgetItem, QMessageBox, QDockWidget, QFileDialog, QStatusBar
   )
 import threading
 import time
@@ -122,8 +123,19 @@ class SimulationWindow(QMainWindow):
         self.setWindowTitle("仿真模式 - PandaPower 仿真工具")
         self.setMinimumSize(1500, 800)
         
+        # 创建主窗口部件和布局
+        self.central_widget = QWidget()
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        
         # 初始化菜单栏
         self.init_menu_bar()
+        
+        # 添加状态显示面板 - 这里使用不同的方式来确保小部件不会被销毁
+        self.init_status_indicators()
+        
+        # 将状态指示器面板添加到主布局
+        self.main_layout.addWidget(self.status_indicators_bar)
         
         # 创建中央功率曲线区域
         self.central_chart_widget = QWidget()
@@ -132,7 +144,12 @@ class SimulationWindow(QMainWindow):
         # 设置中央区域大小策略
         self.central_chart_widget.setMinimumSize(600, 400)
         self.ui_manager.create_central_image_area(layout)
-        self.setCentralWidget(self.central_chart_widget)
+        
+        # 将中央图表部件添加到主布局
+        self.main_layout.addWidget(self.central_chart_widget)
+        
+        # 设置主窗口的中央部件
+        self.setCentralWidget(self.central_widget)
         
         
         # 创建左侧设备树dockwidget
@@ -191,13 +208,81 @@ class SimulationWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.switch_dock)
         self.switch_dock.hide()  # 初始隐藏
         
-        # 创建状态栏
+        # 创建并显示状态栏
         self.statusBar().showMessage("仿真模式已就绪")
         
         # 初始化功率监控的UI组件引用
         self.power_monitor.initialize_ui_components()
         
         
+    def init_status_indicators(self):
+        """初始化状态指示器面板"""
+        from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QFrame, QStatusBar
+        from PySide6.QtCore import Qt
+        
+        # 创建一个独立的状态条小部件，而不是使用菜单栏的corner widget
+        self.status_indicators_bar = QWidget()
+        self.status_indicators_bar.setMinimumHeight(25)
+        self.status_indicators_layout = QHBoxLayout(self.status_indicators_bar)
+        self.status_indicators_layout.setContentsMargins(10, 2, 10, 2)
+        self.status_indicators_layout.setSpacing(20)
+        
+        # 创建回测状态指示器
+        self.backtest_status_indicator = QFrame()
+        self.backtest_status_indicator.setFixedSize(12, 12)
+        self.backtest_status_indicator.setFrameStyle(QFrame.Panel | QFrame.Sunken)
+        self.backtest_status_indicator.setStyleSheet("background-color: #9E9E9E;")  # 灰色表示未运行
+        
+        self.backtest_status_label = QLabel("回测: 未运行")
+        
+        # 创建记录数据状态指示器
+        self.record_status_indicator = QFrame()
+        self.record_status_indicator.setFixedSize(12, 12)
+        self.record_status_indicator.setFrameStyle(QFrame.Panel | QFrame.Sunken)
+        self.record_status_indicator.setStyleSheet("background-color: #9E9E9E;")  # 灰色表示未运行
+        
+        self.record_status_label = QLabel("记录: 未运行")
+        
+        # 将指示器添加到布局中
+        self.status_indicators_layout.addWidget(QLabel("运行状态:"))
+        self.status_indicators_layout.addWidget(self.backtest_status_indicator)
+        self.status_indicators_layout.addWidget(self.backtest_status_label)
+        self.status_indicators_layout.addWidget(self.record_status_indicator)
+        self.status_indicators_layout.addWidget(self.record_status_label)
+        
+        # 将状态指示器条添加到主布局中，放在菜单栏下方
+        # 注意：我们不在此处添加到主布局，而是在创建中央部件后添加
+    
+    def update_backtest_status(self, is_running):
+        """更新回测状态显示"""
+        # 检查对象是否存在且有效
+        if hasattr(self, 'backtest_status_label') and hasattr(self, 'backtest_status_indicator'):
+            try:
+                if is_running:
+                    self.backtest_status_label.setText("回测: 运行中")
+                    self.backtest_status_indicator.setStyleSheet("background-color: #2196F3;")  # 蓝色表示运行中
+                else:
+                    self.backtest_status_label.setText("回测: 未运行")
+                    self.backtest_status_indicator.setStyleSheet("background-color: #9E9E9E;")  # 灰色表示未运行
+            except RuntimeError:
+                # 忽略对象已被销毁的错误
+                pass
+    
+    def update_record_status(self, is_recording):
+        """更新记录数据状态显示"""
+        # 检查对象是否存在且有效
+        if hasattr(self, 'record_status_label') and hasattr(self, 'record_status_indicator'):
+            try:
+                if is_recording:
+                    self.record_status_label.setText("记录: 运行中")
+                    self.record_status_indicator.setStyleSheet("background-color: #FF9800;")  # 橙色表示运行中
+                else:
+                    self.record_status_label.setText("记录: 未运行")
+                    self.record_status_indicator.setStyleSheet("background-color: #9E9E9E;")  # 灰色表示未运行
+            except RuntimeError:
+                # 忽略对象已被销毁的错误
+                pass
+    
     def init_menu_bar(self):
         """初始化菜单栏"""
         # 创建菜单栏
@@ -581,6 +666,9 @@ class SimulationWindow(QMainWindow):
         # 设置回测标志
         self.is_backtesting = True
         
+        # 更新回测状态显示
+        self.update_backtest_status(True)
+        
         # 初始化回测状态
         self.backtest_current_step = 0
         self.backtest_start_time = time.time()
@@ -709,6 +797,10 @@ class SimulationWindow(QMainWindow):
         """停止回测过程"""
         # 不再需要停止回测定时器，因为已经移除了定时器
         self.is_backtesting = False
+        
+        # 更新回测状态显示
+        self.update_backtest_status(False)
+        
         self.statusBar().showMessage(message)
         QMessageBox.information(self, "提示", message)
         
@@ -769,6 +861,10 @@ class SimulationWindow(QMainWindow):
             
             # 创建并启动记录线程
             self.is_recording = True
+            
+            # 更新记录状态显示
+            self.update_record_status(True)
+            
             self.recording_thread = threading.Thread(target=self._record_data_loop)
             self.recording_thread.daemon = True  # 设置为守护线程，主程序退出时自动终止
             self.recording_thread.start()
@@ -785,6 +881,9 @@ class SimulationWindow(QMainWindow):
                 
             # 停止记录线程
             self.is_recording = False
+            
+            # 更新记录状态显示
+            self.update_record_status(False)
             if self.recording_thread and self.recording_thread.is_alive():
                 # 等待线程自然结束
                 self.recording_thread.join(timeout=2.0)  # 设置超时，避免死锁

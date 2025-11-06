@@ -812,6 +812,7 @@ class StorageItem(BaseNetworkItem):
         self.is_manual_control = False  # 是否处于手动控制模式，默认关闭
         self.is_power_on = False
         self.grid_connected = True
+        self.comm_status = False  # 初始通信状态为False
         
     def update_storage_energy_and_state(self, current_power_mw, time_delta_hours=1.0):
         """
@@ -885,6 +886,7 @@ class ChargerItem(BaseNetworkItem):
         }
         self.power_limit = 1.0 
         self.required_power = 1.0 # 实际需求功率
+        self.comm_status = False  # 初始通信状态为False
         self.label.setPlainText(component_name)
         
         # 连接约束：充电站可以连接一个母线和一个电表
@@ -1197,6 +1199,7 @@ class StaticGeneratorItem(BaseNetworkItem):
         }
         self.today_discharge_energy = 0.0
         self.total_discharge_energy = 0.0
+        self.comm_status = False  # 初始通信状态为False
         sn_mva = self.properties.get("sn_mva", 1.0)
         self.active_power_limit_per = 110# kw (100% 额定功率)
         self.active_power_limit = sn_mva * 1000 * self.active_power_limit_per / 100  # kw (110% 额定功率)
