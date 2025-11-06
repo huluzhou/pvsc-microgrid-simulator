@@ -97,48 +97,49 @@ class DataControlManager:
             
     def on_device_power_off(self):
         """控制当前设备关闭通信"""
-        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
-            QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
-            return
+        try:
+            # 检查必要属性是否存在
+            if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+                QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
+                return
+                
+            device_type = self.parent_window.current_component_type
+            device_idx = self.parent_window.current_component_idx
+            device_key = f"{device_type}_{device_idx}"
             
-        device_type = self.parent_window.current_component_type
-        device_idx = self.parent_window.current_component_idx
-        
-        # 从全局变量network_items获取设备信息
-        component_type_map = {
-            'sgen': 'static_generator',
-            'load': 'load',
-            'storage': 'storage',
-            'charger': 'charger'
-        }
-        
-        component_type_key = component_type_map.get(device_type)
-        if not component_type_key:
-            QMessageBox.warning(self.parent_window, "警告", f"不支持的设备类型: {device_type}")
-            return
-            
-        # 检查设备是否存在于network_items中
-        if component_type_key not in self.network_items or device_idx not in self.network_items[component_type_key]:
-            QMessageBox.warning(self.parent_window, "警告", f"设备 {device_type} {device_idx} 不存在")
-            return
-        
-        # 获取modbus_manager
-        modbus_manager = getattr(self.parent_window, 'modbus_manager', None)
-        if not modbus_manager:
-            QMessageBox.warning(self.parent_window, "警告", "Modbus管理器未初始化")
-            return
-            
-        # 停止Modbus服务器（关闭通信）
-        result = modbus_manager.stop_modbus_server(component_type_key, device_idx)
-        if result:
+            # 映射设备类型到中文名称
             device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
-            self.parent_window.statusBar().showMessage(f"已成功停止{device_type_name}设备 {device_idx} 的Modbus服务器")
-            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已关闭通信")
-            self._toggle_device_data_generation(0, device_type)
-        else:
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
-            self.parent_window.statusBar().showMessage(f"停止{device_type_name}设备 {device_idx} 的Modbus服务器失败")
-            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 关闭通信失败")
+            
+            logger.info(f"尝试关闭{device_type_name}设备 {device_idx} 的通信")
+        
+            # 获取modbus_manager
+            modbus_manager = getattr(self.parent_window, 'modbus_manager', None)
+            if not modbus_manager:
+                logger.warning("Modbus管理器未初始化")
+                QMessageBox.warning(self.parent_window, "警告", "Modbus管理器未初始化")
+                return
+                
+            # 停止Modbus服务器（关闭通信）
+            result = modbus_manager.stop_modbus_server(device_type, device_idx)
+            
+            if result:
+                # 显示成功信息
+                success_message = f"已成功停止{device_type_name}设备 {device_idx} 的Modbus服务器"
+                self.parent_window.statusBar().showMessage(success_message)
+                QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已关闭通信")
+                logger.info(success_message)
+            else:
+                # 显示失败信息
+                error_message = f"停止{device_type_name}设备 {device_idx} 的Modbus服务器失败"
+                self.parent_window.statusBar().showMessage(error_message)
+                QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 关闭通信失败")
+                logger.warning(error_message)
+                
+        except Exception as e:
+            # 捕获所有异常，确保方法不会崩溃
+            error_info = f"关闭设备通信时发生异常: {str(e)}"
+            logger.error(error_info, exc_info=True)
+            QMessageBox.critical(self.parent_window, "错误", error_info)
         
         
     def on_storage_power_updated(self, device_idx, new_power):
