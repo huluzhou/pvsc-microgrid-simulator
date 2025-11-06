@@ -242,8 +242,17 @@ class UIComponentManager:
         device_control_layout.addWidget(sgen_enable_generation_checkbox)
         current_device_layout.addLayout(device_control_layout)
         self.parent_window.sgen_enable_generation_checkbox = sgen_enable_generation_checkbox
-         # 设备通信控制
-        power_control_layout = QHBoxLayout()
+         # 设备通信控制 - 使用垂直布局重构
+        comm_control_layout = QVBoxLayout()  # 创建垂直布局
+        
+        # 添加通信状态指示器（放在上方）
+        sgen_comm_status_label = QLabel("通信状态: 未连接")
+        sgen_comm_status_label.setStyleSheet("color: red; font-weight: bold;")
+        self.parent_window.sgen_comm_status_label = sgen_comm_status_label
+        comm_control_layout.addWidget(sgen_comm_status_label)
+        
+        # 创建水平布局容纳按钮（放在下方）
+        buttons_layout = QHBoxLayout()
         sgen_power_on_button = QPushButton("开启通信")
         sgen_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
         sgen_power_off_button = QPushButton("关闭通信")
@@ -251,9 +260,15 @@ class UIComponentManager:
         self.parent_window.sgen_power_on_button = sgen_power_on_button
         self.parent_window.sgen_power_off_button = sgen_power_off_button
         
-        power_control_layout.addWidget(sgen_power_on_button)
-        power_control_layout.addWidget(sgen_power_off_button)
-        current_device_layout.addLayout(power_control_layout)
+        # 添加按钮到水平布局
+        buttons_layout.addWidget(sgen_power_on_button)
+        buttons_layout.addWidget(sgen_power_off_button)
+        
+        # 将按钮水平布局添加到垂直布局
+        comm_control_layout.addLayout(buttons_layout)
+        
+        # 将垂直布局添加到当前设备布局
+        current_device_layout.addLayout(comm_control_layout)
 
         sgen_layout.addWidget(current_device_group)
 
@@ -377,8 +392,6 @@ class UIComponentManager:
         self.parent_window.load_enable_generation_checkbox = load_enable_generation_checkbox
         current_device_layout.addLayout(device_control_layout)
 
-        # 负载设备不需要通信控制按钮
-
         load_layout.addWidget(current_device_group)
 
         # 负载主要结果展示
@@ -491,14 +504,33 @@ class UIComponentManager:
         current_device_layout.addWidget(storage_current_device_label)
         self.parent_window.storage_current_device_label = storage_current_device_label
         
-        # 设备通信控制
-        power_control_layout = QHBoxLayout()
+        # 设备通信控制 - 使用垂直布局重构
+        comm_control_layout = QVBoxLayout()  # 创建垂直布局
+        
+        # 添加通信状态指示器（放在上方）
+        storage_comm_status_label = QLabel("通信状态: 未连接")
+        storage_comm_status_label.setStyleSheet("color: red; font-weight: bold;")
+        self.parent_window.storage_comm_status_label = storage_comm_status_label
+        comm_control_layout.addWidget(storage_comm_status_label)
+        
+        # 创建水平布局容纳按钮（放在下方）
+        buttons_layout = QHBoxLayout()
         storage_power_on_button = QPushButton("开启通信")
         storage_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
         storage_power_off_button = QPushButton("关闭通信")
         storage_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
         self.parent_window.storage_power_on_button = storage_power_on_button
         self.parent_window.storage_power_off_button = storage_power_off_button
+        
+        # 添加按钮到水平布局
+        buttons_layout.addWidget(storage_power_on_button)
+        buttons_layout.addWidget(storage_power_off_button)
+        
+        # 将按钮水平布局添加到垂直布局
+        comm_control_layout.addLayout(buttons_layout)
+        
+        # 将垂直布局添加到当前设备布局
+        current_device_layout.addLayout(comm_control_layout)
         
         # 设备并网/离网控制
         storage_grid_connection_layout = QVBoxLayout()
@@ -507,7 +539,6 @@ class UIComponentManager:
         storage_grid_connection_status = QLabel("--")
         storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #FFC107;")
         
-        
         storage_grid_connection_layout.addWidget(storage_grid_connection_label)
         storage_grid_connection_layout.addWidget(storage_grid_connection_status)
         
@@ -515,9 +546,6 @@ class UIComponentManager:
         self.parent_window.storage_grid_connection_status = storage_grid_connection_status
         self.parent_window.storage_connection_label = storage_grid_connection_label
         
-        power_control_layout.addWidget(storage_power_on_button)
-        power_control_layout.addWidget(storage_power_off_button)
-        current_device_layout.addLayout(power_control_layout)
         current_device_layout.addLayout(storage_grid_connection_layout)
 
         storage_layout.addWidget(current_device_group)
@@ -689,8 +717,17 @@ class UIComponentManager:
         current_device_layout.addWidget(charger_current_device_label)
         self.parent_window.charger_current_device_label = charger_current_device_label
 
-        # 设备通信控制
-        power_control_layout = QHBoxLayout()
+        # 设备通信控制 - 使用垂直布局重构
+        comm_control_layout = QVBoxLayout()  # 创建垂直布局
+        
+        # 添加通信状态指示器（放在上方）
+        charger_comm_status_label = QLabel("通信状态: 未连接")
+        charger_comm_status_label.setStyleSheet("color: red; font-weight: bold;")
+        self.parent_window.charger_comm_status_label = charger_comm_status_label
+        comm_control_layout.addWidget(charger_comm_status_label)
+        
+        # 创建水平布局容纳按钮（放在下方）
+        buttons_layout = QHBoxLayout()
         charger_power_on_button = QPushButton("开启通信")
         charger_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
         charger_power_off_button = QPushButton("关闭通信")
@@ -698,10 +735,15 @@ class UIComponentManager:
         self.parent_window.charger_power_on_button = charger_power_on_button
         self.parent_window.charger_power_off_button = charger_power_off_button
         
+        # 添加按钮到水平布局
+        buttons_layout.addWidget(charger_power_on_button)
+        buttons_layout.addWidget(charger_power_off_button)
         
-        power_control_layout.addWidget(charger_power_on_button)
-        power_control_layout.addWidget(charger_power_off_button)
-        current_device_layout.addLayout(power_control_layout)
+        # 将按钮水平布局添加到垂直布局
+        comm_control_layout.addLayout(buttons_layout)
+        
+        # 将垂直布局添加到当前设备布局
+        current_device_layout.addLayout(comm_control_layout)
 
         charger_layout.addWidget(current_device_group)
 

@@ -65,7 +65,7 @@ class DataControlManager:
         
         # 构建设备信息
         device_info = {
-            'type': device_type,
+            'type': component_type_key,
             'index': device_idx,
             'name': properties.get('component_name', f"{device_type}_{device_idx}"),
             'sn': properties.get('sn', None),
@@ -90,10 +90,16 @@ class DataControlManager:
             self.parent_window.statusBar().showMessage(f"已成功启动{device_type_name}设备 {device_idx} 的Modbus服务器")
             QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已开启通信")
             
+            # 更新通信状态指示器，基于设备的comm_status属性
+            self._update_comm_status_indicator(device_type, device_idx)
+            
         else:
             device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
             self.parent_window.statusBar().showMessage(f"启动{device_type_name}设备 {device_idx} 的Modbus服务器失败")
             QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 开启通信失败")
+            
+            # 更新通信状态指示器，基于设备的comm_status属性
+            self._update_comm_status_indicator(device_type, device_idx)
             
     def on_device_power_off(self):
         """控制当前设备关闭通信"""
@@ -106,7 +112,14 @@ class DataControlManager:
             device_type = self.parent_window.current_component_type
             device_idx = self.parent_window.current_component_idx
             device_key = f"{device_type}_{device_idx}"
-            
+            component_type_map = {
+            'sgen': 'static_generator',
+            'load': 'load',
+            'storage': 'storage',
+            'charger': 'charger'
+            }
+        
+            component_type_key = component_type_map.get(device_type)
             # 映射设备类型到中文名称
             device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
             
@@ -120,7 +133,7 @@ class DataControlManager:
                 return
                 
             # 停止Modbus服务器（关闭通信）
-            result = modbus_manager.stop_modbus_server(device_type, device_idx)
+            result = modbus_manager.stop_modbus_server(component_type_key, device_idx)
             
             if result:
                 # 显示成功信息
@@ -128,6 +141,9 @@ class DataControlManager:
                 self.parent_window.statusBar().showMessage(success_message)
                 QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已关闭通信")
                 logger.info(success_message)
+                
+                # 更新通信状态指示器，基于设备的comm_status属性
+                self._update_comm_status_indicator(device_type, device_idx)
             else:
                 # 显示失败信息
                 error_message = f"停止{device_type_name}设备 {device_idx} 的Modbus服务器失败"
@@ -172,8 +188,65 @@ class DataControlManager:
                 self.parent_window.storage_power_spinbox.blockSignals(False)
                 
     # 设备控制面板信息更新方法组
+    def _update_comm_status_indicator(self, device_type, device_idx=None):
+        """更新设备通信状态指示器，基于设备的comm_status属性
+        
+        Args:
+            device_type: 设备类型 (sgen, storage, load, charger)
+            device_idx: 设备索引（可选）
+        """
+        try:
+            # 构建状态指示器标签名
+            indicator_map = {
+                'sgen': 'sgen_comm_status_label',
+                'storage': 'storage_comm_status_label',
+                'load': 'load_comm_status_label',
+                'charger': 'charger_comm_status_label'
+            }
+            
+            indicator_name = indicator_map.get(device_type)
+            if not indicator_name:
+                return
+                
+            # 检查状态指示器是否存在
+            if not hasattr(self.parent_window, indicator_name):
+                return
+                
+            # 获取状态指示器
+            status_label = getattr(self.parent_window, indicator_name)
+            
+            # 确定实际的设备类型键名
+            type_map = {
+                'sgen': 'static_generator',
+                'storage': 'storage',
+                'load': 'load',
+                'charger': 'charger'
+            }
+            component_type_key = type_map.get(device_type)
+            
+            # 默认状态为未连接
+            is_connected = False
+            
+            # 如果提供了设备索引且设备存在，从设备的comm_status属性获取状态
+            if device_idx is not None and component_type_key in self.network_items:
+                device_item = self.network_items[component_type_key].get(device_idx)
+                if device_item and hasattr(device_item, 'comm_status'):
+                    is_connected = device_item.comm_status
+            
+            # 更新状态指示器
+            if is_connected:
+                status_label.setText("通信状态: 已连接")
+                status_label.setStyleSheet("color: green; font-weight: bold;")
+            else:
+                status_label.setText("通信状态: 未连接")
+                status_label.setStyleSheet("color: red; font-weight: bold;")
+                
+        except Exception as e:
+            logger.warning(f"更新通信状态指示器失败: {str(e)}")
+            
     def update_storage_control_panel_info(self, component_type, component_idx):
-        """更新储能设备控制面板信息"""
+        """更新储能控制面板信息"""
+        # 更新设备标签
         if hasattr(self.parent_window, 'storage_current_device_label'):
             if component_type and component_idx is not None:
                 device_name = f"储能_{component_idx}"
@@ -237,6 +310,7 @@ class DataControlManager:
                     except Exception as e:
                         logger.error(f"更新储能设备信息和控制时出错: {e}")
             else:
+                # 未选择设备时的处理
                 self.parent_window.storage_current_device_label.setText("未选择储能设备")
                 
     def update_charger_control_panel_info(self, component_type, component_idx):
@@ -575,8 +649,8 @@ class DataControlManager:
             else:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
     
-    def update_sgen_active_power(self, component_idx):
-        """更新光伏设备的有功功率显示"""
+    def update_sgen_realtime_info(self, component_idx):
+        """更新光伏设备的实时信息（有功功率）"""
         if hasattr(self.parent_window, "sgen_active_power_label") and hasattr(
             self.parent_window, "network_model"
         ):
@@ -588,23 +662,10 @@ class DataControlManager:
                 )
             else:
                 self.parent_window.sgen_active_power_label.setText("未计算")
-
-    def update_storage_active_power(self, component_idx):
-        """更新储能设备的有功功率显示"""
-        if hasattr(self.parent_window, "storage_active_power_label") and hasattr(
-            self.parent_window, "network_model"
-        ):
-            net = self.parent_window.network_model.net
-            if hasattr(net, "res_storage") and component_idx in net.res_storage.index:
-                active_power = -net.res_storage.at[component_idx, "p_mw"]
-                self.parent_window.storage_active_power_label.setText(
-                    f"{active_power:.4f} MW"
-                )
-            else:
-                self.parent_window.storage_active_power_label.setText("未计算")
+        self._update_comm_status_indicator('sgen', component_idx)
     
-    def update_load_active_power(self, component_idx):
-        """更新负载设备的有功功率显示"""
+    def update_load_realtime_info(self, component_idx):
+        """更新负载设备的实时信息（有功功率）"""
         if hasattr(self.parent_window, "load_active_power_label") and hasattr(
             self.parent_window, "network_model"
         ):
@@ -621,9 +682,10 @@ class DataControlManager:
                 )
             else:
                 self.parent_window.load_active_power_label.setText("未计算")
+        self._update_comm_status_indicator('load', component_idx)
     
-    def update_charger_active_power(self, component_idx):
-        """更新充电桩设备的有功功率显示"""
+    def update_charger_realtime_info(self, component_idx):
+        """更新充电桩设备的实时信息（有功功率）"""
         if hasattr(self.parent_window, "charger_active_power_label") and hasattr(
             self.parent_window, "network_model"
         ):
@@ -643,9 +705,24 @@ class DataControlManager:
                 )
             else:
                 self.parent_window.charger_active_power_label.setText("未计算")
+        self._update_comm_status_indicator('charger', component_idx)
 
     def update_storage_realtime_info(self, component_idx):
-        """更新储能设备的状态量显示"""
+        """更新储能设备的实时信息（有功功率、SOC、工作状态、并网状态）"""
+        # 1. 更新有功功率显示
+        if hasattr(self.parent_window, "storage_active_power_label") and hasattr(
+            self.parent_window, "network_model"
+        ):
+            net = self.parent_window.network_model.net
+            if hasattr(net, "res_storage") and component_idx in net.res_storage.index:
+                active_power = -net.res_storage.at[component_idx, "p_mw"]
+                self.parent_window.storage_active_power_label.setText(
+                    f"{active_power:.4f} MW"
+                )
+            else:
+                self.parent_window.storage_active_power_label.setText("未计算")
+        
+        # 2. 更新其他状态量显示
         # 查找储能设备
         storage_item = None
         try:
@@ -700,7 +777,8 @@ class DataControlManager:
                 logger.error(f"更新储能并网状态失败: {str(e)}")
                 self.parent_window.storage_grid_connection_status.setText("离网")
                 self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
-        
+        # 更新通信状态指示器
+        self._update_comm_status_indicator('storage', component_idx)
 
     def show_realtime_info(self):
         # 根据当前设备类型只调用对应的更新方法
@@ -708,14 +786,13 @@ class DataControlManager:
         component_idx = getattr(self.parent_window, 'current_component_idx', None)
         
         if component_type == 'sgen':
-            self.update_sgen_active_power(component_idx)
+            self.update_sgen_realtime_info(component_idx)
         elif component_type == 'storage':
-            self.update_storage_active_power(component_idx)
             self.update_storage_realtime_info(component_idx)
         elif component_type == 'load':
-            self.update_load_active_power(component_idx)
+            self.update_load_realtime_info(component_idx)
         elif component_type == 'charger':
-            self.update_charger_active_power(component_idx)
+            self.update_charger_realtime_info(component_idx)
 
     def on_sgen_variation_changed(self, value):
         """光伏变化幅度改变时的回调"""

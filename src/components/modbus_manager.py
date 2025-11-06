@@ -507,6 +507,16 @@ class ModbusManager:
             }
             self.running_services.add(device_key)
 
+            # 更新设备通信状态为True
+            try:
+                if device_info['type'] in self.network_items and device_info['index'] in self.network_items[device_info['type']]:
+                    device_item = self.network_items[device_info['type']][device_info['index']]
+                    if hasattr(device_item, 'comm_status'):
+                        device_item.comm_status = True
+                        logger.debug(f"已将设备 {device_key} 通信状态更新为: True")
+            except Exception as e:
+                logger.error(f"更新设备通信状态失败: {e}")
+
             logger.info(f"已启动Modbus服务器: {device_info['name']} ({device_info['ip']}:{device_info['port']}) ")
             return True
 
@@ -554,6 +564,17 @@ class ModbusManager:
             del self.modbus_servers[device_key]
             if device_key in self.modbus_contexts:
                 del self.modbus_contexts[device_key]
+            
+            # 更新设备通信状态为False
+            try:
+                # 直接使用传入的device_type和device_idx参数查找设备
+                if device_type in self.network_items and device_idx in self.network_items[device_type]:
+                    device_item = self.network_items[device_type][device_idx]
+                    if hasattr(device_item, 'comm_status'):
+                        device_item.comm_status = False
+                        logger.debug(f"已将设备 {device_key} 通信状态更新为: False")
+            except Exception as e:
+                logger.error(f"更新设备通信状态失败: {e}")
 
             return True
 
