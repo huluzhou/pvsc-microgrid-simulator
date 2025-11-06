@@ -27,7 +27,7 @@ class DataControlManager:
             parent_window.storage_power_changed.connect(self.on_storage_power_updated)
     
     def on_device_power_on(self):
-        """控制当前设备上电"""
+        """控制当前设备开启通信"""
         if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
             QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
             return
@@ -80,23 +80,23 @@ class DataControlManager:
         # 检查IP是否存在
         if not device_info['ip']:
             device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
-            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 缺少IP地址，上电失败")
+            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 缺少IP地址，开启通信失败")
             return
             
-        # 启动Modbus服务器（上电）
+        # 启动Modbus服务器（开启通信）
         result = modbus_manager.start_modbus_server(device_info)
         if result:
             device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
             self.parent_window.statusBar().showMessage(f"已成功启动{device_type_name}设备 {device_idx} 的Modbus服务器")
-            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已上电")
+            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已开启通信")
             
         else:
             device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
             self.parent_window.statusBar().showMessage(f"启动{device_type_name}设备 {device_idx} 的Modbus服务器失败")
-            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 上电失败")
+            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 开启通信失败")
             
     def on_device_power_off(self):
-        """控制当前设备下电"""
+        """控制当前设备关闭通信"""
         if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
             QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
             return
@@ -128,17 +128,17 @@ class DataControlManager:
             QMessageBox.warning(self.parent_window, "警告", "Modbus管理器未初始化")
             return
             
-        # 停止Modbus服务器（下电）
+        # 停止Modbus服务器（关闭通信）
         result = modbus_manager.stop_modbus_server(component_type_key, device_idx)
         if result:
             device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
             self.parent_window.statusBar().showMessage(f"已成功停止{device_type_name}设备 {device_idx} 的Modbus服务器")
-            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已下电")
+            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已关闭通信")
             self._toggle_device_data_generation(0, device_type)
         else:
             device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
             self.parent_window.statusBar().showMessage(f"停止{device_type_name}设备 {device_idx} 的Modbus服务器失败")
-            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 下电失败")
+            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 关闭通信失败")
         
         
     def on_storage_power_updated(self, device_idx, new_power):

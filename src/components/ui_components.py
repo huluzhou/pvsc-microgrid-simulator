@@ -124,10 +124,10 @@ class UIComponentManager:
         
         # Modbus服务器控制按钮
         modbus_control_layout = QHBoxLayout()
-        self.parent_window.power_on_all_btn = QPushButton("上电所有设备")
+        self.parent_window.power_on_all_btn = QPushButton("开启所有设备通信")
         self.parent_window.power_on_all_btn.clicked.connect(self.parent_window.power_on_all_devices)
         
-        self.parent_window.power_off_all_btn = QPushButton("下电所有设备")
+        self.parent_window.power_off_all_btn = QPushButton("关闭所有设备通信")
         self.parent_window.power_off_all_btn.clicked.connect(self.parent_window.power_off_all_devices)
         
         modbus_control_layout.addWidget(self.parent_window.power_on_all_btn)
@@ -242,11 +242,11 @@ class UIComponentManager:
         device_control_layout.addWidget(sgen_enable_generation_checkbox)
         current_device_layout.addLayout(device_control_layout)
         self.parent_window.sgen_enable_generation_checkbox = sgen_enable_generation_checkbox
-         # 设备上电/下电控制
+         # 设备通信控制
         power_control_layout = QHBoxLayout()
-        sgen_power_on_button = QPushButton("设备上电")
+        sgen_power_on_button = QPushButton("开启通信")
         sgen_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
-        sgen_power_off_button = QPushButton("设备下电")
+        sgen_power_off_button = QPushButton("关闭通信")
         sgen_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
         self.parent_window.sgen_power_on_button = sgen_power_on_button
         self.parent_window.sgen_power_off_button = sgen_power_off_button
@@ -377,19 +377,7 @@ class UIComponentManager:
         self.parent_window.load_enable_generation_checkbox = load_enable_generation_checkbox
         current_device_layout.addLayout(device_control_layout)
 
-        # 设备上电/下电控制
-        power_control_layout = QHBoxLayout()
-        load_power_on_button = QPushButton("设备上电")
-        load_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
-        load_power_off_button = QPushButton("设备下电")
-        load_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
-        self.parent_window.load_power_on_button = load_power_on_button
-        self.parent_window.load_power_off_button = load_power_off_button
-        
-        
-        power_control_layout.addWidget(load_power_on_button)
-        power_control_layout.addWidget(load_power_off_button)
-        current_device_layout.addLayout(power_control_layout)
+        # 负载设备不需要通信控制按钮
 
         load_layout.addWidget(current_device_group)
 
@@ -503,11 +491,11 @@ class UIComponentManager:
         current_device_layout.addWidget(storage_current_device_label)
         self.parent_window.storage_current_device_label = storage_current_device_label
         
-        # 设备上电/下电控制
+        # 设备通信控制
         power_control_layout = QHBoxLayout()
-        storage_power_on_button = QPushButton("设备上电")
+        storage_power_on_button = QPushButton("开启通信")
         storage_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
-        storage_power_off_button = QPushButton("设备下电")
+        storage_power_off_button = QPushButton("关闭通信")
         storage_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
         self.parent_window.storage_power_on_button = storage_power_on_button
         self.parent_window.storage_power_off_button = storage_power_off_button
@@ -701,11 +689,11 @@ class UIComponentManager:
         current_device_layout.addWidget(charger_current_device_label)
         self.parent_window.charger_current_device_label = charger_current_device_label
 
-        # 设备上电/下电控制
+        # 设备通信控制
         power_control_layout = QHBoxLayout()
-        charger_power_on_button = QPushButton("设备上电")
+        charger_power_on_button = QPushButton("开启通信")
         charger_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
-        charger_power_off_button = QPushButton("设备下电")
+        charger_power_off_button = QPushButton("关闭通信")
         charger_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
         self.parent_window.charger_power_on_button = charger_power_on_button
         self.parent_window.charger_power_off_button = charger_power_off_button

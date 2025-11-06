@@ -1415,7 +1415,7 @@ class SimulationWindow(QMainWindow):
             logger.info("自动计算任务停止")
 
     def power_on_all_devices(self):
-        """上电所有设备 - 启动所有Modbus服务器"""
+        """开启所有设备的通信 - 启动所有Modbus服务器"""
         try:
             if not self.network_model:
                 QMessageBox.warning(self, "警告", "没有可用的网络模型")
@@ -1435,19 +1435,19 @@ class SimulationWindow(QMainWindow):
             
             QMessageBox.information(
                 self, 
-                "上电成功", 
+                "通信开启成功", 
                 f"已成功启动 {running_services} 个设备的Modbus服务器\n"
                 f"总设备数: {device_count['total']}"
             )
             
-            self.statusBar().showMessage(f"已上电 {running_services} 个设备")
+            self.statusBar().showMessage(f"已开启 {running_services} 个设备的通信")
             
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"上电失败: {str(e)}")
-            self.statusBar().showMessage("上电操作失败")
+            QMessageBox.critical(self, "错误", f"通信开启失败: {str(e)}")
+            self.statusBar().showMessage("通信开启操作失败")
     
     def power_off_all_devices(self):
-        """下电所有设备 - 停止所有Modbus服务器"""
+        """关闭所有设备的通信 - 停止所有Modbus服务器"""
         try:
             if not self.network_model:
                 QMessageBox.warning(self, "警告", "没有可用的网络模型")
@@ -1462,15 +1462,15 @@ class SimulationWindow(QMainWindow):
             
             QMessageBox.information(
                 self, 
-                "下电成功", 
+                "通信关闭成功", 
                 f"已成功停止 {running_count} 个设备的Modbus服务器"
             )
             
-            self.statusBar().showMessage("所有设备已下电")
+            self.statusBar().showMessage(f"已关闭 {running_count} 个设备的通信")
             
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"下电失败: {str(e)}")
-            self.statusBar().showMessage("下电操作失败")
+            QMessageBox.critical(self, "错误", f"通信关闭失败: {str(e)}")
+            self.statusBar().showMessage("通信关闭操作失败")
     
     def check_and_reset_daily_data(self):
         """检查并执行每日数据重置"""
