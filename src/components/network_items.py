@@ -1253,6 +1253,7 @@ class MeterItem(BaseNetworkItem):
             "port": f"{402 + self.component_index}",
         }
         self.label.setPlainText(self.properties["name"])
+        self.comm_status = False  # 初始通信状态为False
         
         # 连接约束：电表可以连接到多个组件
         self.max_connections =  1 # 允许连接多个组件

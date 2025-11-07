@@ -46,7 +46,8 @@ class DataControlManager:
             'sgen': 'static_generator',
             'load': 'load',
             'storage': 'storage',
-            'charger': 'charger'
+            'charger': 'charger',
+            'meter': 'meter'
         }
         
         component_type_key = component_type_map.get(device_type)
@@ -79,14 +80,14 @@ class DataControlManager:
             
         # 检查IP是否存在
         if not device_info['ip']:
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩', 'meter': '电表'}.get(device_type, device_type)
             QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 缺少IP地址，开启通信失败")
             return
             
         # 启动Modbus服务器（开启通信）
         result = modbus_manager.start_modbus_server(device_info)
         if result:
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩', 'meter': '电表'}.get(device_type, device_type)
             self.parent_window.statusBar().showMessage(f"已成功启动{device_type_name}设备 {device_idx} 的Modbus服务器")
             QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已开启通信")
             
@@ -94,7 +95,7 @@ class DataControlManager:
             self._update_comm_status_indicator(device_type, device_idx)
             
         else:
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩', 'meter': '电表'}.get(device_type, device_type)
             self.parent_window.statusBar().showMessage(f"启动{device_type_name}设备 {device_idx} 的Modbus服务器失败")
             QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 开启通信失败")
             
@@ -116,12 +117,13 @@ class DataControlManager:
             'sgen': 'static_generator',
             'load': 'load',
             'storage': 'storage',
-            'charger': 'charger'
+            'charger': 'charger',
+            'meter': 'meter'
             }
         
             component_type_key = component_type_map.get(device_type)
             # 映射设备类型到中文名称
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩', 'meter': '电表'}.get(device_type, device_type)
             
             logger.info(f"尝试关闭{device_type_name}设备 {device_idx} 的通信")
         
@@ -158,6 +160,51 @@ class DataControlManager:
             QMessageBox.critical(self.parent_window, "错误", error_info)
         
         
+    def get_meter_measurement_by_type(self, meter_id):
+        """
+        基于电表设备自身的meas_type属性获取测量值，内部调用PowerMonitor的get_meter_measurement方法
+        
+        参数:
+            meter_id (int): 电表设备的唯一标识符
+            
+        返回:
+            float: 测量值，如果获取失败则返回0.0
+        """
+        try:
+            # 检查network_items中是否存在meter类型且meter_id有效
+            if 'meter' not in self.network_items or meter_id not in self.network_items['meter']:
+                logger.warning(f"电表设备 {meter_id} 不存在")
+                return 0.0
+            
+            # 获取电表设备实例
+            meter_item = self.network_items['meter'][meter_id]
+            
+            # 获取电表设备的meas_type属性
+            meas_type = meter_item.properties.get('meas_type', 'p')
+            
+            # 根据meas_type映射到PowerMonitor支持的测量类型
+            measurement_type_map = {
+                'p': 'active_power',       # 有功功率
+                'q': 'reactive_power',     # 无功功率
+                'vm': 'voltage',           # 电压
+                'i': 'current'             # 电流
+            }
+            
+            # 获取对应的测量类型
+            power_monitor_measurement_type = measurement_type_map.get(meas_type, 'active_power')
+            
+            # 调用PowerMonitor的get_meter_measurement方法获取测量值
+            if hasattr(self.parent_window, 'power_monitor'):
+                return self.parent_window.power_monitor.get_meter_measurement(meter_id, power_monitor_measurement_type)
+            else:
+                logger.warning("PowerMonitor实例未找到")
+                # 如果无法获取测量值，返回设备的value属性值
+                return meter_item.properties.get('value', 0.0)
+                
+        except Exception as e:
+            logger.error(f"获取电表测量值时发生错误: {str(e)}", exc_info=True)
+            return 0.0
+    
     def on_storage_power_updated(self, device_idx, new_power):
         """响应储能功率变化信号，更新滑块和输入框的值"""
         # 检查是否当前选中的是该储能设备
@@ -201,7 +248,8 @@ class DataControlManager:
                 'sgen': 'sgen_comm_status_label',
                 'storage': 'storage_comm_status_label',
                 'load': 'load_comm_status_label',
-                'charger': 'charger_comm_status_label'
+                'charger': 'charger_comm_status_label',
+                'meter': 'meter_comm_status_label'
             }
             
             indicator_name = indicator_map.get(device_type)
@@ -220,7 +268,8 @@ class DataControlManager:
                 'sgen': 'static_generator',
                 'storage': 'storage',
                 'load': 'load',
-                'charger': 'charger'
+                'charger': 'charger',
+                'meter': 'meter'
             }
             component_type_key = type_map.get(device_type)
             
@@ -360,6 +409,75 @@ class DataControlManager:
             else:
                 self.parent_window.charger_current_device_label.setText("未选择充电桩设备")
     
+    def update_meter_control_panel_info(self, component_type, component_idx):
+        """更新电表设备控制面板信息"""
+        # 更新设备标签
+        if hasattr(self.parent_window, 'meter_current_device_label'):
+            if component_type and component_idx is not None:
+                device_name = f"电表_{component_idx}"
+                self.parent_window.meter_current_device_label.setText(f"当前设备: {device_name}")
+            else:
+                self.parent_window.meter_current_device_label.setText("未选择电表设备")
+        
+        # 更新测量类型信息
+        if hasattr(self.parent_window, 'meter_meas_type_label'):
+            if component_type and component_idx is not None and 'meter' in self.network_items and component_idx in self.network_items['meter']:
+                try:
+                    meter_item = self.network_items['meter'][component_idx]
+                    meas_type = meter_item.properties.get('meas_type', 'p')
+                    
+                    # 测量类型显示映射
+                    meas_type_display = {
+                        'p': '有功功率',
+                        'q': '无功功率',
+                        'vm': '电压',
+                        'i': '电流'
+                    }
+                    
+                    display_text = meas_type_display.get(meas_type, f"未知类型({meas_type})")
+                    self.parent_window.meter_meas_type_label.setText(f"{display_text}（基于设备配置）")
+                except Exception as e:
+                    logger.error(f"更新电表测量类型失败: {str(e)}")
+                    self.parent_window.meter_meas_type_label.setText("未知（配置错误）")
+            else:
+                self.parent_window.meter_meas_type_label.setText("未选择设备")
+        
+        # 更新测量元件类型和索引信息
+        if component_type and component_idx is not None and 'meter' in self.network_items and component_idx in self.network_items['meter']:
+            try:
+                meter_item = self.network_items['meter'][component_idx]
+                element_type = meter_item.properties.get('element_type', 'bus')
+                element_index = meter_item.properties.get('element', 0)
+                side = meter_item.properties.get('side', '')
+                
+                # 更新测量元件类型
+                if hasattr(self.parent_window, 'meter_element_type_label'):
+                    # 基础类型文本
+                    type_text = f"- 测量元件类型: {element_type}"
+                    self.parent_window.meter_element_type_label.setText(type_text)
+                
+                # 更新测量位置信息
+                if hasattr(self.parent_window, 'meter_element_side_label'):
+                    side_text = ""
+                    # 根据元件类型和side属性显示不同的位置描述
+                    if element_type == 'trafo':
+                        side_text = '高压侧' if side == 'hv' else '低压侧' if side == 'lv' else '中压侧'
+                    elif element_type == 'line':
+                        side_text = '起始端(from)' if side == 'from' else '末端(to)'
+                    elif side:
+                        side_text = side
+                    
+                    self.parent_window.meter_element_side_label.setText(f"- 测量位置: {side_text}")
+                
+                # 更新测量元件索引
+                if hasattr(self.parent_window, 'meter_element_index_label'):
+                    self.parent_window.meter_element_index_label.setText(f"- 测量元件索引: {element_index}")
+            except Exception as e:
+                logger.error(f"更新电表元件信息失败: {str(e)}")
+        
+        # 更新通信状态指示器
+        self._update_comm_status_indicator('meter', component_idx)
+
     def update_switch_control_panel_info(self, component_type, component_idx):
         """更新开关设备控制面板信息"""
         if hasattr(self.parent_window, 'switch_current_device_label'):
@@ -649,6 +767,55 @@ class DataControlManager:
             else:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
     
+    def update_meter_realtime_info(self, component_idx):
+        """更新电表设备的实时测量值信息"""
+        # 获取测量值并更新显示
+        if hasattr(self.parent_window, "meter_measurement_label"):
+            try:
+                # 获取电表设备的测量类型
+                meas_type = 'p'  # 默认有功功率
+                if 'meter' in self.network_items and component_idx in self.network_items['meter']:
+                    meter_item = self.network_items['meter'][component_idx]
+                    meas_type = meter_item.properties.get('meas_type', 'p')
+                
+                # 使用get_meter_measurement_by_type获取基于设备配置的测量值
+                measurement_value = self.get_meter_measurement_by_type(component_idx)
+                
+                # 根据测量类型设置不同的单位和格式
+                if meas_type == 'p':
+                    # 有功功率: MW -> kW
+                    display_value = measurement_value * 1000
+                    unit = 'kW'
+                    format_str = f"{display_value:.1f} {unit}"
+                elif meas_type == 'q':
+                    # 无功功率: MVar -> kVar
+                    display_value = measurement_value * 1000
+                    unit = 'kVar'
+                    format_str = f"{display_value:.1f} {unit}"
+                elif meas_type == 'vm':
+                    # 电压: kV
+                    display_value = measurement_value
+                    unit = 'kV'
+                    format_str = f"{display_value:.2f} {unit}"
+                elif meas_type == 'i':
+                    # 电流: kA -> A
+                    display_value = measurement_value * 1000
+                    unit = 'A'
+                    format_str = f"{display_value:.1f} {unit}"
+                else:
+                    # 未知类型，默认按有功功率显示
+                    display_value = measurement_value * 1000
+                    unit = 'kW'
+                    format_str = f"{display_value:.1f} {unit}"
+                
+                self.parent_window.meter_measurement_label.setText(format_str)
+            except Exception as e:
+                logger.error(f"更新电表实时信息失败: {str(e)}")
+                self.parent_window.meter_measurement_label.setText("未计算")
+        
+        # 更新通信状态指示器
+        self._update_comm_status_indicator('meter', component_idx)
+        
     def update_sgen_realtime_info(self, component_idx):
         """更新光伏设备的实时信息（有功功率）"""
         if hasattr(self.parent_window, "sgen_active_power_label") and hasattr(
@@ -793,6 +960,8 @@ class DataControlManager:
             self.update_load_realtime_info(component_idx)
         elif component_type == 'charger':
             self.update_charger_realtime_info(component_idx)
+        elif component_type == 'meter':
+            self.update_meter_realtime_info(component_idx)
 
     def on_sgen_variation_changed(self, value):
         """光伏变化幅度改变时的回调"""

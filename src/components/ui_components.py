@@ -39,6 +39,7 @@ class UIComponentManager:
     def __init__(self, parent_window):
         self.parent_window = parent_window
         
+        
     def create_device_tree_panel(self, parent):
         """创建左侧设备树面板"""
         # 创建设备树容器
@@ -802,6 +803,89 @@ class UIComponentManager:
         charger_layout.addStretch()
 
         parent.setWidget(charger_widget)
+
+    def create_meter_data_panel(self, parent):
+        """创建电表设备数据面板"""
+        meter_widget = QWidget()
+        meter_layout = QVBoxLayout(meter_widget)
+
+        # 标题
+        meter_title = QLabel("电表设备数据")
+        meter_title.setFont(QFont("Arial", 12, QFont.Bold))
+        meter_layout.addWidget(meter_title)
+
+        # 当前设备信息
+        current_device_group = QGroupBox("当前设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+
+        # 设备名称显示
+        device_name_label = QLabel("设备名称: 未选择电表设备")
+        device_name_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        current_device_layout.addWidget(device_name_label)
+        self.parent_window.meter_current_device_label = device_name_label
+        
+        # 通信状态指示器
+        meter_comm_status_label = QLabel("通信状态: 未连接")
+        meter_comm_status_label.setStyleSheet("color: red; font-weight: bold;")
+        current_device_layout.addWidget(meter_comm_status_label)
+        self.parent_window.meter_comm_status_label = meter_comm_status_label
+        
+        # 通信控制按钮
+        buttons_layout = QHBoxLayout()
+        meter_power_on_button = QPushButton("开启通信")
+        meter_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
+        meter_power_off_button = QPushButton("关闭通信")
+        meter_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
+        self.parent_window.meter_power_on_button = meter_power_on_button
+        self.parent_window.meter_power_off_button = meter_power_off_button
+        
+        buttons_layout.addWidget(meter_power_on_button)
+        buttons_layout.addWidget(meter_power_off_button)
+        current_device_layout.addLayout(buttons_layout)
+        
+        meter_layout.addWidget(current_device_group)
+
+        # 电表测量结果展示
+        meter_result_group = QGroupBox("电表测量结果")
+        meter_result_layout = QFormLayout(meter_result_group)
+        
+        # 测量类型显示
+        meter_meas_type_label = QLabel("有功功率（基于设备配置）")
+        meter_meas_type_label.setStyleSheet("font-weight: bold;")
+        meter_result_layout.addRow("当前测量类型:", meter_meas_type_label)
+        self.parent_window.meter_meas_type_label = meter_meas_type_label
+        
+        # 测量值显示
+        meter_measurement_label = QLabel("-- kW")
+        meter_measurement_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        meter_result_layout.addRow("测量值:", meter_measurement_label)
+        self.parent_window.meter_measurement_label = meter_measurement_label
+        
+        # 设备配置信息标题
+        config_title = QLabel("设备配置信息:")
+        config_title.setStyleSheet("font-weight: bold;")
+        meter_result_layout.addRow(config_title)
+        
+        # 测量元件类型
+        element_type_label = QLabel("- 测量元件类型: bus")
+        meter_result_layout.addRow(element_type_label)
+        self.parent_window.meter_element_type_label = element_type_label
+        
+        # 测量位置信息
+        element_side_label = QLabel("- 测量位置: ")
+        meter_result_layout.addRow(element_side_label)
+        self.parent_window.meter_element_side_label = element_side_label
+        
+        # 测量元件索引
+        element_index_label = QLabel("- 测量元件索引: 0")
+        meter_result_layout.addRow(element_index_label)
+        self.parent_window.meter_element_index_label = element_index_label
+        
+        meter_layout.addWidget(meter_result_group)
+        
+        meter_layout.addStretch()
+        
+        parent.setWidget(meter_widget)
 
     def create_monitor_control_panel(self, parent_layout):
         """创建监控控制面板"""

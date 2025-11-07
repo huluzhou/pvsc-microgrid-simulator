@@ -199,6 +199,15 @@ class SimulationWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.charger_dock)
         self.charger_dock.hide()  # 初始隐藏
         
+        # 电表设备dockwidget
+        self.meter_dock = QDockWidget("电表设备数据", self)
+        self.meter_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.meter_dock.setMinimumWidth(300)
+        self.meter_dock.setMaximumWidth(500)
+        self.ui_manager.create_meter_data_panel(self.meter_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.meter_dock)
+        self.meter_dock.hide()  # 初始隐藏
+        
         # 开关设备dockwidget
         self.switch_dock = QDockWidget("开关设备数据", self)
         self.switch_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
@@ -1124,6 +1133,7 @@ class SimulationWindow(QMainWindow):
         self.storage_dock.hide()
         self.charger_dock.hide()
         self.switch_dock.hide()
+        self.meter_dock.hide()
         
         # 根据设备类型显示对应的dockwidget
         if component_type == 'sgen':
@@ -1137,6 +1147,8 @@ class SimulationWindow(QMainWindow):
             self.storage_dock.show()
         elif component_type == 'switch':  # 开关
             self.switch_dock.show()
+        elif component_type == 'meter':  # 电表
+            self.meter_dock.show()
         
         # 显示组件详情
         self.show_component_details(component_type, component_idx)
@@ -1166,6 +1178,9 @@ class SimulationWindow(QMainWindow):
             self.data_control_manager.update_storage_control_panel_info(component_type, component_idx)
         elif component_type == 'switch':
             self.data_control_manager.update_switch_control_panel_info(component_type, component_idx)
+        elif component_type == 'meter':
+            # 更新电表设备控制面板信息
+            self.data_control_manager.update_meter_control_panel_info(component_type, component_idx)
             
     # def show_meter_measurement_details(self, meter_idx):
     #     """显示电表设备的测量结果详情"""
