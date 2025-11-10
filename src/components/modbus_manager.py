@@ -743,7 +743,7 @@ class ModbusManager:
             slave_context.setValues(4, 839, [state_values['reg839']])  # 状态寄存器839
             slave_context.setValues(4, 408, [state_values['reg408']])  # 状态寄存器408
             slave_context.setValues(4, 0, [state_values['reg0']])      # 状态寄存器0
-            slave_context.setValues(4, 5033, [state_values['reg5033']])  # 状态寄存器5033
+            slave_context.setValues(3, 5033, [state_values['reg5033']])  # 状态寄存器5033
             # 判断设备是否可用：只有在就绪、充电、放电状态时为可用
             if current_state in ['ready', 'charge', 'discharge','halt']:
                 slave_context.setValues(4, 400, [1])  # 可用
