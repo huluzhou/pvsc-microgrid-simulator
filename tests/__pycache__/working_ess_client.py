@@ -81,7 +81,7 @@ class MultiESSClient:
                 total_charge = client.read_input_registers(address=428, count=2, device_id=1)
                 total_discharge = client.read_input_registers(address=430, count=2, device_id=1)
                 sn = client.read_input_registers(address=900, count=16, device_id=1)  # 读取SN号 (地址900-915)
-
+                charge_status = client.read_holding_registers(address=5033, count=1, device_id=1)  # 充放电状态
                 # 写入控制命令 (目前注释掉)
                 client.write_registers(address=4, values=[(-100*10)&0xFFFF], device_id=1)
                 # client.write_registers(address=4, values=[0], device_id=1)
@@ -131,6 +131,7 @@ class MultiESSClient:
                     data['state2'] = pcs_run.registers[0] if pcs_run.registers else 0
                     data['state3'] = syssta.registers[0] if syssta.registers else 0
                     data['state4'] = alarm.registers[0] if alarm.registers else 0
+                    data['charge_status'] = charge_status.registers[0] if charge_status.registers else 0
                     
                     # 拼接32位数据并进行单位转换
                     # 有功功率：地址420(低16位) + 地址421(高16位)
@@ -210,6 +211,8 @@ class MultiESSClient:
                 print(f"    累计充/放电: {data['total_charge']:6.1f}kWh / {data['total_discharge']:6.1f}kWh")
                 print(f"    SN号: {data['sn']}")  # 显示SN号
                 print(f"    并网状态: {'并网' if data['grid_connected'] else '离网'}")  # 显示并网状态
+                print(f"    充放电状态: {'放电' if data['charge_status'] == 1 else '充电' if data['charge_status'] == 2 else '未知'}")  # 显示充放电状态
+
             elif data['status'] == 'read_error':
                 print(f"  储能{i} (端口{data['port']}): 数据读取错误")
             elif data['status'] == 'exception':

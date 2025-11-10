@@ -177,6 +177,7 @@ class ModbusManager:
         storage_hold_registers[4+1] = 0  # 设置功率
         storage_hold_registers[55+1] = 243  # 开关机 默认开机
         storage_hold_registers[5095+1] = 0  # 设置PCS并离网模式：1-离网，0-并网
+        storage_hold_registers[5033+1] = 0  # PCS充放电状态 1-放电,2-充电
 
         # 将storage_input_registers字典转换为长度为1000的列表，用于ModbusSequentialDataBlock
         storage_input_registers = [0] * 1000
@@ -716,11 +717,11 @@ class ModbusManager:
 
             # 状态映射表
             state_map = {
-                "halt": {"reg840": 240, "reg409": 0, "reg1": 1},  # 停机
-                "ready": {"reg840": 243, "reg409": 1, "reg1": 1},  # 就绪
-                "charge": {"reg840": 245, "reg409": 3, "reg1": 2},  # 充电
-                "discharge": {"reg840": 245, "reg409": 4, "reg1": 3},  # 放电
-                "fault": {"reg840": 242, "reg409": 2, "reg1": 4},  # 故障
+                "halt": {"reg839": 240, "reg408": 0, "reg0": 1, "reg5033": 0},  # 停机
+                "ready": {"reg839": 243, "reg408": 1, "reg0": 1, "reg5033": 0},  # 就绪
+                "charge": {"reg839": 245, "reg408": 3, "reg0": 2, "reg5033": 2},  # 充电
+                "discharge": {"reg839": 245, "reg408": 4, "reg0": 3, "reg5033": 1},  # 放电
+                "fault": {"reg839": 242, "reg408": 2, "reg0": 4, "reg5033": 0},  # 故障
             }
 
             state_values = state_map.get(current_state, state_map['ready'])
@@ -739,10 +740,10 @@ class ModbusManager:
             slave_context.setValues(4, 430, [total_discharge_low])
             slave_context.setValues(4, 431, [total_discharge_high])
             # 设置状态相关寄存器
-            slave_context.setValues(4, 839, [state_values['reg840']])  # 状态寄存器840
-            slave_context.setValues(4, 408, [state_values['reg409']])  # 状态寄存器409
-            slave_context.setValues(4, 0, [state_values['reg1']])      # 状态寄存器1
-            # 设置可用状态寄存器400
+            slave_context.setValues(4, 839, [state_values['reg839']])  # 状态寄存器839
+            slave_context.setValues(4, 408, [state_values['reg408']])  # 状态寄存器408
+            slave_context.setValues(4, 0, [state_values['reg0']])      # 状态寄存器0
+            slave_context.setValues(3, 5033, [state_values['reg5033']])  # 状态寄存器5033
             # 判断设备是否可用：只有在就绪、充电、放电状态时为可用
             if current_state in ['ready', 'charge', 'discharge','halt']:
                 slave_context.setValues(4, 400, [1])  # 可用
@@ -752,7 +753,7 @@ class ModbusManager:
                 alarm_401 = 0
             
             logger.info(f"储能设备 {index} 状态更新: {current_state}")
-            logger.info(f"电池柜状态:{state_values['reg1']},工作状态:{state_values['reg409']},开关机状态:{state_values['reg840']},警报状态:{alarm_401}")
+            logger.info(f"电池柜状态:{state_values['reg0']},工作状态:{state_values['reg408']},开关机状态:{state_values['reg839']},警报状态:{alarm_401}")
             # 调试信息（可选，生产环境可注释掉）
             # if abs(active_power) > 0.001:
             #     logger.debug(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
