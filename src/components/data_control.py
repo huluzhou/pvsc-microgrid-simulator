@@ -27,7 +27,7 @@ class DataControlManager:
             parent_window.storage_power_changed.connect(self.on_storage_power_updated)
     
     def on_device_power_on(self):
-        """控制当前设备上电"""
+        """控制当前设备开启通信"""
         if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
             QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
             return
@@ -46,7 +46,8 @@ class DataControlManager:
             'sgen': 'static_generator',
             'load': 'load',
             'storage': 'storage',
-            'charger': 'charger'
+            'charger': 'charger',
+            'meter': 'meter'
         }
         
         component_type_key = component_type_map.get(device_type)
@@ -65,7 +66,7 @@ class DataControlManager:
         
         # 构建设备信息
         device_info = {
-            'type': device_type,
+            'type': component_type_key,
             'index': device_idx,
             'name': properties.get('component_name', f"{device_type}_{device_idx}"),
             'sn': properties.get('sn', None),
@@ -79,68 +80,131 @@ class DataControlManager:
             
         # 检查IP是否存在
         if not device_info['ip']:
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
-            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 缺少IP地址，上电失败")
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩', 'meter': '电表'}.get(device_type, device_type)
+            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 缺少IP地址，开启通信失败")
             return
             
-        # 启动Modbus服务器（上电）
+        # 启动Modbus服务器（开启通信）
         result = modbus_manager.start_modbus_server(device_info)
         if result:
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩', 'meter': '电表'}.get(device_type, device_type)
             self.parent_window.statusBar().showMessage(f"已成功启动{device_type_name}设备 {device_idx} 的Modbus服务器")
-            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已上电")
+            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已开启通信")
+            
+            # 更新通信状态指示器，基于设备的comm_status属性
+            self._update_comm_status_indicator(device_type, device_idx)
             
         else:
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩', 'meter': '电表'}.get(device_type, device_type)
             self.parent_window.statusBar().showMessage(f"启动{device_type_name}设备 {device_idx} 的Modbus服务器失败")
-            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 上电失败")
+            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 开启通信失败")
+            
+            # 更新通信状态指示器，基于设备的comm_status属性
+            self._update_comm_status_indicator(device_type, device_idx)
             
     def on_device_power_off(self):
-        """控制当前设备下电"""
-        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
-            QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
-            return
-            
-        device_type = self.parent_window.current_component_type
-        device_idx = self.parent_window.current_component_idx
-        
-        # 从全局变量network_items获取设备信息
-        component_type_map = {
+        """控制当前设备关闭通信"""
+        try:
+            # 检查必要属性是否存在
+            if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+                QMessageBox.warning(self.parent_window, "警告", "请先选择一个设备")
+                return
+                
+            device_type = self.parent_window.current_component_type
+            device_idx = self.parent_window.current_component_idx
+            device_key = f"{device_type}_{device_idx}"
+            component_type_map = {
             'sgen': 'static_generator',
             'load': 'load',
             'storage': 'storage',
-            'charger': 'charger'
-        }
+            'charger': 'charger',
+            'meter': 'meter'
+            }
         
-        component_type_key = component_type_map.get(device_type)
-        if not component_type_key:
-            QMessageBox.warning(self.parent_window, "警告", f"不支持的设备类型: {device_type}")
-            return
+            component_type_key = component_type_map.get(device_type)
+            # 映射设备类型到中文名称
+            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩', 'meter': '电表'}.get(device_type, device_type)
             
-        # 检查设备是否存在于network_items中
-        if component_type_key not in self.network_items or device_idx not in self.network_items[component_type_key]:
-            QMessageBox.warning(self.parent_window, "警告", f"设备 {device_type} {device_idx} 不存在")
-            return
+            logger.info(f"尝试关闭{device_type_name}设备 {device_idx} 的通信")
         
-        # 获取modbus_manager
-        modbus_manager = getattr(self.parent_window, 'modbus_manager', None)
-        if not modbus_manager:
-            QMessageBox.warning(self.parent_window, "警告", "Modbus管理器未初始化")
-            return
+            # 获取modbus_manager
+            modbus_manager = getattr(self.parent_window, 'modbus_manager', None)
+            if not modbus_manager:
+                logger.warning("Modbus管理器未初始化")
+                QMessageBox.warning(self.parent_window, "警告", "Modbus管理器未初始化")
+                return
+                
+            # 停止Modbus服务器（关闭通信）
+            result = modbus_manager.stop_modbus_server(component_type_key, device_idx)
             
-        # 停止Modbus服务器（下电）
-        result = modbus_manager.stop_modbus_server(component_type_key, device_idx)
-        if result:
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
-            self.parent_window.statusBar().showMessage(f"已成功停止{device_type_name}设备 {device_idx} 的Modbus服务器")
-            QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已下电")
-            self._toggle_device_data_generation(0, device_type)
-        else:
-            device_type_name = {'sgen': '光伏', 'load': '负载', 'storage': '储能', 'charger': '充电桩'}.get(device_type, device_type)
-            self.parent_window.statusBar().showMessage(f"停止{device_type_name}设备 {device_idx} 的Modbus服务器失败")
-            QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 下电失败")
+            if result:
+                # 显示成功信息
+                success_message = f"已成功停止{device_type_name}设备 {device_idx} 的Modbus服务器"
+                self.parent_window.statusBar().showMessage(success_message)
+                QMessageBox.information(self.parent_window, "成功", f"{device_type_name}设备 {device_idx} 已关闭通信")
+                logger.info(success_message)
+                
+                # 更新通信状态指示器，基于设备的comm_status属性
+                self._update_comm_status_indicator(device_type, device_idx)
+            else:
+                # 显示失败信息
+                error_message = f"停止{device_type_name}设备 {device_idx} 的Modbus服务器失败"
+                self.parent_window.statusBar().showMessage(error_message)
+                QMessageBox.warning(self.parent_window, "失败", f"{device_type_name}设备 {device_idx} 关闭通信失败")
+                logger.warning(error_message)
+                
+        except Exception as e:
+            # 捕获所有异常，确保方法不会崩溃
+            error_info = f"关闭设备通信时发生异常: {str(e)}"
+            logger.error(error_info, exc_info=True)
+            QMessageBox.critical(self.parent_window, "错误", error_info)
         
         
+    def get_meter_measurement_by_type(self, meter_id):
+        """
+        基于电表设备自身的meas_type属性获取测量值，内部调用PowerMonitor的get_meter_measurement方法
+        
+        参数:
+            meter_id (int): 电表设备的唯一标识符
+            
+        返回:
+            float: 测量值，如果获取失败则返回0.0
+        """
+        try:
+            # 检查network_items中是否存在meter类型且meter_id有效
+            if 'meter' not in self.network_items or meter_id not in self.network_items['meter']:
+                logger.warning(f"电表设备 {meter_id} 不存在")
+                return 0.0
+            
+            # 获取电表设备实例
+            meter_item = self.network_items['meter'][meter_id]
+            
+            # 获取电表设备的meas_type属性
+            meas_type = meter_item.properties.get('meas_type', 'p')
+            
+            # 根据meas_type映射到PowerMonitor支持的测量类型
+            measurement_type_map = {
+                'p': 'active_power',       # 有功功率
+                'q': 'reactive_power',     # 无功功率
+                'vm': 'voltage',           # 电压
+                'i': 'current'             # 电流
+            }
+            
+            # 获取对应的测量类型
+            power_monitor_measurement_type = measurement_type_map.get(meas_type, 'active_power')
+            
+            # 调用PowerMonitor的get_meter_measurement方法获取测量值
+            if hasattr(self.parent_window, 'power_monitor'):
+                return self.parent_window.power_monitor.get_meter_measurement(meter_id, power_monitor_measurement_type)
+            else:
+                logger.warning("PowerMonitor实例未找到")
+                # 如果无法获取测量值，返回设备的value属性值
+                return meter_item.properties.get('value', 0.0)
+                
+        except Exception as e:
+            logger.error(f"获取电表测量值时发生错误: {str(e)}", exc_info=True)
+            return 0.0
+    
     def on_storage_power_updated(self, device_idx, new_power):
         """响应储能功率变化信号，更新滑块和输入框的值"""
         # 检查是否当前选中的是该储能设备
@@ -170,33 +234,467 @@ class DataControlManager:
                 self.parent_window.storage_power_spinbox.setValue(safe_value)
                 self.parent_window.storage_power_spinbox.blockSignals(False)
                 
-    def update_storage_device_info(self, component_type, component_idx):
-        """更新储能设备信息"""
+    # 设备控制面板信息更新方法组
+    def _update_comm_status_indicator(self, device_type, device_idx=None):
+        """更新设备通信状态指示器，基于设备的comm_status属性
+        
+        Args:
+            device_type: 设备类型 (sgen, storage, load, charger)
+            device_idx: 设备索引（可选）
+        """
+        try:
+            # 构建状态指示器标签名
+            indicator_map = {
+                'sgen': 'sgen_comm_status_label',
+                'storage': 'storage_comm_status_label',
+                'load': 'load_comm_status_label',
+                'charger': 'charger_comm_status_label',
+                'meter': 'meter_comm_status_label'
+            }
+            
+            indicator_name = indicator_map.get(device_type)
+            if not indicator_name:
+                return
+                
+            # 检查状态指示器是否存在
+            if not hasattr(self.parent_window, indicator_name):
+                return
+                
+            # 获取状态指示器
+            status_label = getattr(self.parent_window, indicator_name)
+            
+            # 确定实际的设备类型键名
+            type_map = {
+                'sgen': 'static_generator',
+                'storage': 'storage',
+                'load': 'load',
+                'charger': 'charger',
+                'meter': 'meter'
+            }
+            component_type_key = type_map.get(device_type)
+            
+            # 默认状态为未连接
+            is_connected = False
+            
+            # 如果提供了设备索引且设备存在，从设备的comm_status属性获取状态
+            if device_idx is not None and component_type_key in self.network_items:
+                device_item = self.network_items[component_type_key].get(device_idx)
+                if device_item and hasattr(device_item, 'comm_status'):
+                    is_connected = device_item.comm_status
+            
+            # 更新状态指示器
+            if is_connected:
+                status_label.setText("通信状态: 已连接")
+                status_label.setStyleSheet("color: green; font-weight: bold;")
+            else:
+                status_label.setText("通信状态: 未连接")
+                status_label.setStyleSheet("color: red; font-weight: bold;")
+                
+        except Exception as e:
+            logger.warning(f"更新通信状态指示器失败: {str(e)}")
+            
+    def update_storage_control_panel_info(self, component_type, component_idx):
+        """更新储能控制面板信息"""
+        # 更新设备标签
         if hasattr(self.parent_window, 'storage_current_device_label'):
             if component_type and component_idx is not None:
                 device_name = f"储能_{component_idx}"
                 self.parent_window.storage_current_device_label.setText(f"当前设备: {device_name}")
                 
+                # 更新手动控制组件的值和范围
+                if hasattr(self.parent_window, 'network_model') and hasattr(self.parent_window.network_model, 'net'):
+                    try:
+                        # 获取储能设备的当前功率值，并从兆瓦(MW)转换为千瓦(kW)
+                        current_power = -self.parent_window.network_model.net.storage.at[component_idx, 'p_mw'] * 1000
+                        
+                        # 从network_items获取储能设备的额定功率
+                        storage_item = None
+                        rated_power_mw = 1.0  # 默认值
+                        if 'storage' in self.network_items:
+                            storage_item = self.network_items['storage'].get(component_idx)
+                            if storage_item and hasattr(storage_item, 'properties') and 'sn_mva' in storage_item.properties:
+                                # 从properties中获取sn_mva值
+                                rated_power_mw = storage_item.properties['sn_mva']
+                        
+                        # 更新储能设备的状态量显示
+                        self.update_storage_realtime_info(component_idx)
+                        
+                        # 根据额定功率动态设置滑块和输入框的范围（-150%~150%额定功率，负值表示放电）
+                        # 将兆瓦(MW)转换为千瓦(kW)
+                        max_power = rated_power_mw * 1000
+                        min_power = -max_power
+                        
+                        # 更新滑块范围和值
+                        if hasattr(self.parent_window, 'storage_power_slider'):
+                            self.parent_window.storage_power_slider.setRange(int(min_power * 10), int(max_power * 10))  # 精确到0.1kW
+                            # 确保当前值不超过新范围
+                            safe_value = max(int(min_power * 10), min(int(max_power * 10), int(current_power * 10)))
+                            self.parent_window.storage_power_slider.setValue(safe_value)
+                        
+                        # 更新输入框范围和值
+                        if hasattr(self.parent_window, 'storage_power_spinbox'):
+                            self.parent_window.storage_power_spinbox.setRange(min_power, max_power)
+                            # 确保当前值不超过新范围
+                            safe_value = max(min_power, min(max_power, current_power))
+                            self.parent_window.storage_power_spinbox.setValue(safe_value)
+                        
+                        # 根据设备的手动控制模式设置UI控件的启用/禁用状态
+                        is_manual_mode = True
+                        if storage_item and hasattr(storage_item, 'is_manual_control'):
+                            is_manual_mode = storage_item.is_manual_control
+                        
+                        # 更新复选框状态
+                        if hasattr(self.parent_window, 'storage_enable_remote'):
+                            self.parent_window.storage_enable_remote.blockSignals(True)
+                            self.parent_window.storage_enable_remote.setChecked(not is_manual_mode)
+                            self.parent_window.storage_enable_remote.blockSignals(False)
+                        
+                        # 更新手动控制面板和控件的启用/禁用状态
+                        if hasattr(self.parent_window, 'storage_manual_panel'):
+                            self.parent_window.storage_manual_panel.setEnabled(is_manual_mode)
+                        if hasattr(self.parent_window, 'storage_power_slider'):
+                            self.parent_window.storage_power_slider.setEnabled(is_manual_mode)
+                        if hasattr(self.parent_window, 'storage_power_spinbox'):
+                            self.parent_window.storage_power_spinbox.setEnabled(is_manual_mode)
+                    except Exception as e:
+                        logger.error(f"更新储能设备信息和控制时出错: {e}")
             else:
+                # 未选择设备时的处理
                 self.parent_window.storage_current_device_label.setText("未选择储能设备")
                 
-    def update_charger_device_info(self, component_type, component_idx):
-        """更新充电桩设备信息"""
+    def update_charger_control_panel_info(self, component_type, component_idx):
+        """更新充电桩控制面板信息"""
+        # 更新设备标签
         if hasattr(self.parent_window, 'charger_current_device_label'):
             if component_type and component_idx is not None:
                 device_name = f"充电桩_{component_idx}"
                 self.parent_window.charger_current_device_label.setText(f"当前设备: {device_name}")
+                
+                # 更新手动控制组件的值和范围
+                if hasattr(self.parent_window, 'network_model') and hasattr(self.parent_window.network_model, 'net'):
+                    try:
+                        # 获取充电桩设备的当前需求功率值
+                        current_power = self.parent_window.network_model.net.load.at[component_idx, 'p_mw']
+                        current_power_kw = current_power * 1000  # 转换为kW
+                        
+                        # 从network_items获取充电桩的额定功率
+                        rated_power_kw = 1000.0  # 默认值
+                        if 'charger' in self.network_items:
+                            charger_item = self.network_items['charger'].get(component_idx)
+                            if charger_item and hasattr(charger_item, 'properties'):
+                                # 从properties中获取sn_mva值并转换为kW
+                                sn_mva = float(charger_item.properties.get('sn_mva', 1.0))
+                                rated_power_kw = sn_mva * 1000  # 转换为kW
+                        
+                        # 动态设置滑块和输入框的范围（0~额定功率，支持0.1kW精度）
+                        if hasattr(self.parent_window, 'charger_required_power_slider'):
+                            max_slider_value = int(rated_power_kw * 10)  # 乘以10以支持0.1kW精度
+                            self.parent_window.charger_required_power_slider.setRange(0, max_slider_value)
+                            # 确保当前值不超过新范围，并转换为滑块值（乘以10以支持0.1kW精度）
+                            safe_value = max(0, min(max_slider_value, int(current_power_kw * 10)))
+                            self.parent_window.charger_required_power_slider.setValue(safe_value)
+                        
+                        if hasattr(self.parent_window, 'charger_required_power_spinbox'):
+                            self.parent_window.charger_required_power_spinbox.setRange(0.0, rated_power_kw)
+                            # 确保当前值不超过新范围
+                            safe_value = max(0.0, min(rated_power_kw, current_power_kw))
+                            self.parent_window.charger_required_power_spinbox.setValue(safe_value)
+                        
+                        # 更新功率限制显示
+                        if hasattr(self.parent_window, "charger_power_limit_label"):
+                            # 这里可以添加功率限制显示的更新逻辑
+                            pass
+                    except Exception as e:
+                        logger.error(f"更新充电桩设备信息和控制时出错: {e}")
             else:
                 self.parent_window.charger_current_device_label.setText("未选择充电桩设备")
     
-    def update_switch_device_info(self, component_type, component_idx):
-        """更新开关设备信息"""
+    def update_meter_control_panel_info(self, component_type, component_idx):
+        """更新电表设备控制面板信息"""
+        # 更新设备标签
+        if hasattr(self.parent_window, 'meter_current_device_label'):
+            if component_type and component_idx is not None:
+                device_name = f"电表_{component_idx}"
+                self.parent_window.meter_current_device_label.setText(f"当前设备: {device_name}")
+            else:
+                self.parent_window.meter_current_device_label.setText("未选择电表设备")
+        
+        # 更新测量类型信息
+        if hasattr(self.parent_window, 'meter_meas_type_label'):
+            if component_type and component_idx is not None and 'meter' in self.network_items and component_idx in self.network_items['meter']:
+                try:
+                    meter_item = self.network_items['meter'][component_idx]
+                    meas_type = meter_item.properties.get('meas_type', 'p')
+                    
+                    # 测量类型显示映射
+                    meas_type_display = {
+                        'p': '有功功率',
+                        'q': '无功功率',
+                        'vm': '电压',
+                        'i': '电流'
+                    }
+                    
+                    display_text = meas_type_display.get(meas_type, f"未知类型({meas_type})")
+                    self.parent_window.meter_meas_type_label.setText(f"{display_text}（基于设备配置）")
+                except Exception as e:
+                    logger.error(f"更新电表测量类型失败: {str(e)}")
+                    self.parent_window.meter_meas_type_label.setText("未知（配置错误）")
+            else:
+                self.parent_window.meter_meas_type_label.setText("未选择设备")
+        
+        # 更新测量元件类型和索引信息
+        if component_type and component_idx is not None and 'meter' in self.network_items and component_idx in self.network_items['meter']:
+            try:
+                meter_item = self.network_items['meter'][component_idx]
+                element_type = meter_item.properties.get('element_type', 'bus')
+                element_index = meter_item.properties.get('element', 0)
+                side = meter_item.properties.get('side', '')
+                
+                # 更新测量元件类型
+                if hasattr(self.parent_window, 'meter_element_type_label'):
+                    # 基础类型文本
+                    type_text = f"- 测量元件类型: {element_type}"
+                    self.parent_window.meter_element_type_label.setText(type_text)
+                
+                # 更新测量位置信息
+                if hasattr(self.parent_window, 'meter_element_side_label'):
+                    side_text = ""
+                    # 根据元件类型和side属性显示不同的位置描述
+                    if element_type == 'trafo':
+                        side_text = '高压侧' if side == 'hv' else '低压侧' if side == 'lv' else '中压侧'
+                    elif element_type == 'line':
+                        side_text = '起始端(from)' if side == 'from' else '末端(to)'
+                    elif side:
+                        side_text = side
+                    
+                    self.parent_window.meter_element_side_label.setText(f"- 测量位置: {side_text}")
+                
+                # 更新测量元件索引
+                if hasattr(self.parent_window, 'meter_element_index_label'):
+                    self.parent_window.meter_element_index_label.setText(f"- 测量元件索引: {element_index}")
+            except Exception as e:
+                logger.error(f"更新电表元件信息失败: {str(e)}")
+        
+        # 更新通信状态指示器
+        self._update_comm_status_indicator('meter', component_idx)
+
+    def update_switch_control_panel_info(self, component_type, component_idx):
+        """更新开关设备控制面板信息"""
         if hasattr(self.parent_window, 'switch_current_device_label'):
             if component_type and component_idx is not None:
                 device_name = f"开关_{component_idx}"
                 self.parent_window.switch_current_device_label.setText(f"当前设备: {device_name}")
             else:
                 self.parent_window.switch_current_device_label.setText("未选择开关设备")
+    
+    def update_sgen_control_panel_info(self, component_type, component_idx):
+        """更新光伏设备控制面板信息"""
+        # 1. 更新手动控制组件的值
+        if component_type == 'sgen' and hasattr(self.parent_window, 'network_model') and hasattr(self.parent_window.network_model, 'net'):
+            try:
+                # 获取光伏设备的当前功率值和额定功率
+                if component_idx in self.parent_window.network_model.net.sgen.index:
+                    current_power = self.parent_window.network_model.net.sgen.at[component_idx, 'p_mw']
+                    # 从network_items获取额定功率
+                    rated_power = 1.0  # 默认值
+                    if 'static_generator' in self.network_items:
+                        sgen_item = self.network_items['static_generator'].get(component_idx)
+                        if sgen_item and hasattr(sgen_item, 'properties'):
+                            rated_power = sgen_item.properties.get('sn_mva', 1.0)
+                    
+                    # 将功率从MW转换为kW
+                    current_power_kw = abs(current_power) * 1000
+                    rated_power_kw = rated_power * 1000
+                    
+                    # 更新滑块范围为0到额定功率（支持0.1kW精度）
+                    if hasattr(self.parent_window, 'sgen_power_slider'):
+                        max_slider_value = int(rated_power_kw * 10)  # 乘以10以支持0.1kW精度
+                        self.parent_window.sgen_power_slider.setRange(0, max_slider_value)
+                        self.parent_window.sgen_power_slider.setValue(int(current_power_kw * 10))  # 转换为滑块值
+                    
+                    # 更新输入框范围
+                    if hasattr(self.parent_window, 'sgen_power_spinbox'):
+                        self.parent_window.sgen_power_spinbox.setRange(0.0, rated_power_kw)
+                        self.parent_window.sgen_power_spinbox.setValue(current_power_kw)
+                    
+                    # 更新变化幅度控件
+                    if hasattr(self.parent_window, 'sgen_variation_spinbox') and hasattr(self, 'data_generator_manager'):
+                        # 获取当前设备的数据生成器参数
+                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                            component_idx, self.data_generator_manager.default_pv_generator
+                        )
+                        if hasattr(generator, 'variation'):
+                            # 避免触发信号循环
+                            self.parent_window.sgen_variation_spinbox.blockSignals(True)
+                            self.parent_window.sgen_variation_spinbox.setValue(generator.variation)
+                            self.parent_window.sgen_variation_spinbox.blockSignals(False)
+                    
+                    # 更新季节选择控件
+                    if hasattr(self.parent_window, 'season_combo') and hasattr(self, 'data_generator_manager'):
+                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                            component_idx, self.data_generator_manager.default_pv_generator
+                        )
+                        if hasattr(generator, 'season_factor'):
+                            # 季节中英文映射
+                            season_map = {
+                                'spring': '春季',
+                                'summer': '夏季',
+                                'autumn': '秋季',
+                                'winter': '冬季'
+                            }
+                            season_text = season_map.get(generator.season_factor, '夏季')
+                            # 避免触发信号循环
+                            self.parent_window.season_combo.blockSignals(True)
+                            self.parent_window.season_combo.setCurrentText(season_text)
+                            self.parent_window.season_combo.blockSignals(False)
+                    
+                    # 更新天气选择控件
+                    if hasattr(self.parent_window, 'weather_combo') and hasattr(self, 'data_generator_manager'):
+                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                            component_idx, self.data_generator_manager.default_pv_generator
+                        )
+                        if hasattr(generator, 'weather_type'):
+                            # 天气中英文映射
+                            weather_map = {
+                                'sunny': '晴朗',
+                                'cloudy': '多云',
+                                'overcast': '阴天',
+                                'rainy': '雨天'
+                            }
+                            weather_text = weather_map.get(generator.weather_type, '晴朗')
+                            # 避免触发信号循环
+                            self.parent_window.weather_combo.blockSignals(True)
+                            self.parent_window.weather_combo.setCurrentText(weather_text)
+                            self.parent_window.weather_combo.blockSignals(False)
+                    # 更新云层覆盖控件
+                    if hasattr(self.parent_window, 'cloud_cover_spinbox') and hasattr(self, 'data_generator_manager'):
+                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
+                            component_idx, self.data_generator_manager.default_pv_generator
+                        )
+                        if hasattr(generator, 'cloud_cover'):
+                            # 避免触发信号循环
+                            self.parent_window.cloud_cover_spinbox.blockSignals(True)
+                            self.parent_window.cloud_cover_spinbox.setValue(generator.cloud_cover)
+                            self.parent_window.cloud_cover_spinbox.blockSignals(False)
+            except Exception as e:
+                logger.error(f"更新光伏设备手动控制值时出错: {e}")
+        
+        # 2. 更新设备信息
+        if hasattr(self.parent_window, 'sgen_current_device_label') and hasattr(self.parent_window, 'sgen_enable_generation_checkbox'):
+            if component_type and component_idx is not None:
+                device_name = f"光伏_{component_idx}"
+                self.parent_window.sgen_current_device_label.setText(f"当前设备: {device_name}")
+                
+                # 检查当前设备是否启用了数据生成
+                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+                self.parent_window.sgen_enable_generation_checkbox.setChecked(is_enabled)
+                self.parent_window.sgen_enable_generation_checkbox.setEnabled(True)
+                # 根据数据生成状态控制手动控制面板可见性
+                if hasattr(self.parent_window, 'sgen_manual_panel'):
+                    self.parent_window.sgen_manual_panel.setVisible(not is_enabled)
+                
+            else:
+                self.parent_window.sgen_current_device_label.setText("未选择光伏设备")
+                self.parent_window.sgen_enable_generation_checkbox.setChecked(False)
+                self.parent_window.sgen_enable_generation_checkbox.setEnabled(False)
+    
+    def update_load_control_panel_info(self, component_type, component_idx):
+        """更新负载设备控制面板信息"""
+        # 1. 更新手动控制组件的值
+        if component_type == 'load' and hasattr(self.parent_window, 'network_model') and hasattr(self.parent_window.network_model, 'net'):
+            try:
+                # 获取负载设备的当前功率值
+                    if component_idx in self.parent_window.network_model.net.load.index:
+                        current_p = self.parent_window.network_model.net.load.at[component_idx, 'p_mw']
+                        current_q = self.parent_window.network_model.net.load.at[component_idx, 'q_mvar']
+                        
+                        # 从network_items获取负载设备的额定功率
+                        rated_power_mw = 1.0  # 默认值
+                        if 'load' in self.network_items:
+                            load_item = self.network_items['load'].get(component_idx)
+                            if load_item and hasattr(load_item, 'properties'):
+                                # 从properties中获取额定功率值
+                                rated_power_mw = float(load_item.properties.get('sn_mva', 1.0))
+                        
+                        # 设置功率范围（单位：kW）
+                        max_power = rated_power_mw * 1000  # 转换为kW
+                        min_power = -max_power
+                        
+                        # 更新有功功率滑块和输入框的值
+                        if hasattr(self.parent_window, 'load_power_slider'):
+                            # 设置滑块范围（单位：kW，乘以10以实现0.1kW的精度）
+                            self.parent_window.load_power_slider.setRange(int(min_power * 10), int(max_power * 10))
+                            self.parent_window.load_power_slider.setValue(int(current_p * 1000 * 10))  # 转换为滑块值（MW转kW再乘以10）
+                        if hasattr(self.parent_window, 'load_power_spinbox'):
+                            # 设置输入框范围（单位：kW）并设置步长为0.1kW
+                            self.parent_window.load_power_spinbox.setRange(min_power, max_power)
+                            self.parent_window.load_power_spinbox.setSingleStep(0.1)
+                            self.parent_window.load_power_spinbox.setValue(current_p * 1000)  # 转换为kW
+                    
+                    # 更新无功功率滑块和输入框的值（单位：kvar）
+                    if hasattr(self.parent_window, 'load_reactive_power_slider'):
+                        # 设置无功功率滑块范围（-150%~150%额定功率，乘以10以实现0.1kvar的精度）
+                        max_q_slider = int(max_power * 10)  # 因为max_power已经是kW，直接用它作为kvar的范围
+                        min_q_slider = int(min_power * 10)
+                        self.parent_window.load_reactive_power_slider.setRange(min_q_slider, max_q_slider)
+                        self.parent_window.load_reactive_power_slider.setValue(int(current_q * 1000 * 10))  # 转换为滑块值（MVar转kvar再乘以10）
+                    if hasattr(self.parent_window, 'load_reactive_power_spinbox'):
+                        # 设置无功功率输入框范围（单位：kvar）并设置步长为0.1kvar
+                        self.parent_window.load_reactive_power_spinbox.setRange(min_power, max_power)
+                        self.parent_window.load_reactive_power_spinbox.setSingleStep(0.1)
+                        self.parent_window.load_reactive_power_spinbox.setValue(current_q * 1000)  # 转换为kvar
+                    
+                    # 更新变化幅度控件
+                    if hasattr(self.parent_window, 'load_variation_spinbox') and hasattr(self, 'data_generator_manager'):
+                        # 获取当前设备的数据生成器参数
+                        generator = self.data_generator_manager.device_generators.get('load', {}).get(
+                            component_idx, self.data_generator_manager.default_load_generator
+                        )
+                        if hasattr(generator, 'variation'):
+                            # 避免触发信号循环
+                            self.parent_window.load_variation_spinbox.blockSignals(True)
+                            self.parent_window.load_variation_spinbox.setValue(generator.variation)
+                            self.parent_window.load_variation_spinbox.blockSignals(False)
+                    
+                    # 更新负载类型控件
+                    if hasattr(self.parent_window, 'load_type_combo') and hasattr(self, 'data_generator_manager'):
+                        # 获取当前设备的数据生成器参数
+                        generator = self.data_generator_manager.device_generators.get('load', {}).get(
+                            component_idx, self.data_generator_manager.default_load_generator
+                        )
+                        if hasattr(generator, 'load_type'):
+                            # 负载类型中英文映射
+                            load_type_map = {
+                                'residential': '住宅负载',
+                                'commercial': '商业负载',
+                                'industrial': '工业负载'
+                            }
+                            load_type_text = load_type_map.get(generator.load_type, '住宅负载')
+                            # 避免触发信号循环
+                            self.parent_window.load_type_combo.blockSignals(True)
+                            self.parent_window.load_type_combo.setCurrentText(load_type_text)
+                            self.parent_window.load_type_combo.blockSignals(False)
+            except Exception as e:
+                logger.error(f"更新负载设备手动控制值时出错: {e}")
+        
+        # 2. 更新设备信息
+        if hasattr(self.parent_window, 'load_current_device_label') and hasattr(self.parent_window, 'load_enable_generation_checkbox'):
+            if component_type and component_idx is not None:
+                device_name = f"负载_{component_idx}"
+                self.parent_window.load_current_device_label.setText(f"当前设备: {device_name}")
+                
+                # 检查当前设备是否启用了数据生成
+                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
+                self.parent_window.load_enable_generation_checkbox.setChecked(is_enabled)
+                self.parent_window.load_enable_generation_checkbox.setEnabled(True)
+                # 根据数据生成状态控制手动控制面板可见性
+                if hasattr(self.parent_window, 'load_manual_panel'):
+                    self.parent_window.load_manual_panel.setVisible(not is_enabled)
+                
+            else:
+                self.parent_window.load_current_device_label.setText("未选择负载设备")
+                self.parent_window.load_enable_generation_checkbox.setChecked(False)
+                self.parent_window.load_enable_generation_checkbox.setEnabled(False)
                 
     def is_device_generation_enabled(self, component_type, component_idx):
         """检查指定设备是否启用了数据生成"""
@@ -269,8 +767,57 @@ class DataControlManager:
             else:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
     
-    def update_sgen_active_power(self, component_idx):
-        """更新光伏设备的有功功率显示"""
+    def update_meter_realtime_info(self, component_idx):
+        """更新电表设备的实时测量值信息"""
+        # 获取测量值并更新显示
+        if hasattr(self.parent_window, "meter_measurement_label"):
+            try:
+                # 获取电表设备的测量类型
+                meas_type = 'p'  # 默认有功功率
+                if 'meter' in self.network_items and component_idx in self.network_items['meter']:
+                    meter_item = self.network_items['meter'][component_idx]
+                    meas_type = meter_item.properties.get('meas_type', 'p')
+                
+                # 使用get_meter_measurement_by_type获取基于设备配置的测量值
+                measurement_value = self.get_meter_measurement_by_type(component_idx)
+                
+                # 根据测量类型设置不同的单位和格式
+                if meas_type == 'p':
+                    # 有功功率: MW -> kW
+                    display_value = measurement_value * 1000
+                    unit = 'kW'
+                    format_str = f"{display_value:.1f} {unit}"
+                elif meas_type == 'q':
+                    # 无功功率: MVar -> kVar
+                    display_value = measurement_value * 1000
+                    unit = 'kVar'
+                    format_str = f"{display_value:.1f} {unit}"
+                elif meas_type == 'vm':
+                    # 电压: kV
+                    display_value = measurement_value
+                    unit = 'kV'
+                    format_str = f"{display_value:.2f} {unit}"
+                elif meas_type == 'i':
+                    # 电流: kA -> A
+                    display_value = measurement_value * 1000
+                    unit = 'A'
+                    format_str = f"{display_value:.1f} {unit}"
+                else:
+                    # 未知类型，默认按有功功率显示
+                    display_value = measurement_value * 1000
+                    unit = 'kW'
+                    format_str = f"{display_value:.1f} {unit}"
+                
+                self.parent_window.meter_measurement_label.setText(format_str)
+            except Exception as e:
+                logger.error(f"更新电表实时信息失败: {str(e)}")
+                self.parent_window.meter_measurement_label.setText("未计算")
+        
+        # 更新通信状态指示器
+        self._update_comm_status_indicator('meter', component_idx)
+        
+    def update_sgen_realtime_info(self, component_idx):
+        """更新光伏设备的实时信息（有功功率）"""
         if hasattr(self.parent_window, "sgen_active_power_label") and hasattr(
             self.parent_window, "network_model"
         ):
@@ -282,23 +829,10 @@ class DataControlManager:
                 )
             else:
                 self.parent_window.sgen_active_power_label.setText("未计算")
-
-    def update_storage_active_power(self, component_idx):
-        """更新储能设备的有功功率显示"""
-        if hasattr(self.parent_window, "storage_active_power_label") and hasattr(
-            self.parent_window, "network_model"
-        ):
-            net = self.parent_window.network_model.net
-            if hasattr(net, "res_storage") and component_idx in net.res_storage.index:
-                active_power = -net.res_storage.at[component_idx, "p_mw"]
-                self.parent_window.storage_active_power_label.setText(
-                    f"{active_power:.4f} MW"
-                )
-            else:
-                self.parent_window.storage_active_power_label.setText("未计算")
+        self._update_comm_status_indicator('sgen', component_idx)
     
-    def update_load_active_power(self, component_idx):
-        """更新负载设备的有功功率显示"""
+    def update_load_realtime_info(self, component_idx):
+        """更新负载设备的实时信息（有功功率）"""
         if hasattr(self.parent_window, "load_active_power_label") and hasattr(
             self.parent_window, "network_model"
         ):
@@ -315,9 +849,10 @@ class DataControlManager:
                 )
             else:
                 self.parent_window.load_active_power_label.setText("未计算")
+        self._update_comm_status_indicator('load', component_idx)
     
-    def update_charger_active_power(self, component_idx):
-        """更新充电桩设备的有功功率显示"""
+    def update_charger_realtime_info(self, component_idx):
+        """更新充电桩设备的实时信息（有功功率）"""
         if hasattr(self.parent_window, "charger_active_power_label") and hasattr(
             self.parent_window, "network_model"
         ):
@@ -337,9 +872,24 @@ class DataControlManager:
                 )
             else:
                 self.parent_window.charger_active_power_label.setText("未计算")
+        self._update_comm_status_indicator('charger', component_idx)
 
     def update_storage_realtime_info(self, component_idx):
-        """更新储能设备的状态量显示"""
+        """更新储能设备的实时信息（有功功率、SOC、工作状态、并网状态）"""
+        # 1. 更新有功功率显示
+        if hasattr(self.parent_window, "storage_active_power_label") and hasattr(
+            self.parent_window, "network_model"
+        ):
+            net = self.parent_window.network_model.net
+            if hasattr(net, "res_storage") and component_idx in net.res_storage.index:
+                active_power = -net.res_storage.at[component_idx, "p_mw"]
+                self.parent_window.storage_active_power_label.setText(
+                    f"{active_power:.4f} MW"
+                )
+            else:
+                self.parent_window.storage_active_power_label.setText("未计算")
+        
+        # 2. 更新其他状态量显示
         # 查找储能设备
         storage_item = None
         try:
@@ -394,7 +944,8 @@ class DataControlManager:
                 logger.error(f"更新储能并网状态失败: {str(e)}")
                 self.parent_window.storage_grid_connection_status.setText("离网")
                 self.parent_window.storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #F44336;")
-        
+        # 更新通信状态指示器
+        self._update_comm_status_indicator('storage', component_idx)
 
     def show_realtime_info(self):
         # 根据当前设备类型只调用对应的更新方法
@@ -402,14 +953,15 @@ class DataControlManager:
         component_idx = getattr(self.parent_window, 'current_component_idx', None)
         
         if component_type == 'sgen':
-            self.update_sgen_active_power(component_idx)
+            self.update_sgen_realtime_info(component_idx)
         elif component_type == 'storage':
-            self.update_storage_active_power(component_idx)
             self.update_storage_realtime_info(component_idx)
         elif component_type == 'load':
-            self.update_load_active_power(component_idx)
+            self.update_load_realtime_info(component_idx)
         elif component_type == 'charger':
-            self.update_charger_active_power(component_idx)
+            self.update_charger_realtime_info(component_idx)
+        elif component_type == 'meter':
+            self.update_meter_realtime_info(component_idx)
 
     def on_sgen_variation_changed(self, value):
         """光伏变化幅度改变时的回调"""
@@ -495,297 +1047,6 @@ class DataControlManager:
         else:
             self.data_generator_manager.set_device_type('load', None, load_type=load_type)
     
-    # 手动控制更新方法
-    def update_sgen_device(self, component_type, component_idx):
-        """更新光伏设备信息和手动控制组件的值"""
-        # 1. 更新手动控制组件的值
-        if component_type == 'sgen' and hasattr(self.parent_window, 'network_model') and hasattr(self.parent_window.network_model, 'net'):
-            try:
-                # 获取光伏设备的当前功率值
-                if component_idx in self.parent_window.network_model.net.sgen.index:
-                    current_power = self.parent_window.network_model.net.sgen.at[component_idx, 'p_mw']
-                    
-                    # 更新滑块和输入框的值
-                    if hasattr(self.parent_window, 'sgen_power_slider'):
-                        self.parent_window.sgen_power_slider.setValue(int(abs(current_power) * 10))  # 转换为滑块值
-                    if hasattr(self.parent_window, 'sgen_power_spinbox'):
-                        self.parent_window.sgen_power_spinbox.setValue(abs(current_power))
-                    
-                    # 更新变化幅度控件
-                    if hasattr(self.parent_window, 'sgen_variation_spinbox') and hasattr(self, 'data_generator_manager'):
-                        # 获取当前设备的数据生成器参数
-                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
-                            component_idx, self.data_generator_manager.default_pv_generator
-                        )
-                        if hasattr(generator, 'variation'):
-                            # 避免触发信号循环
-                            self.parent_window.sgen_variation_spinbox.blockSignals(True)
-                            self.parent_window.sgen_variation_spinbox.setValue(generator.variation)
-                            self.parent_window.sgen_variation_spinbox.blockSignals(False)
-                    
-                    # 更新季节选择控件
-                    if hasattr(self.parent_window, 'season_combo') and hasattr(self, 'data_generator_manager'):
-                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
-                            component_idx, self.data_generator_manager.default_pv_generator
-                        )
-                        if hasattr(generator, 'season_factor'):
-                            # 季节中英文映射
-                            season_map = {
-                                'spring': '春季',
-                                'summer': '夏季',
-                                'autumn': '秋季',
-                                'winter': '冬季'
-                            }
-                            season_text = season_map.get(generator.season_factor, '夏季')
-                            # 避免触发信号循环
-                            self.parent_window.season_combo.blockSignals(True)
-                            self.parent_window.season_combo.setCurrentText(season_text)
-                            self.parent_window.season_combo.blockSignals(False)
-                    
-                    # 更新天气选择控件
-                    if hasattr(self.parent_window, 'weather_combo') and hasattr(self, 'data_generator_manager'):
-                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
-                            component_idx, self.data_generator_manager.default_pv_generator
-                        )
-                        if hasattr(generator, 'weather_type'):
-                            # 天气中英文映射
-                            weather_map = {
-                                'sunny': '晴朗',
-                                'cloudy': '多云',
-                                'overcast': '阴天',
-                                'rainy': '雨天'
-                            }
-                            weather_text = weather_map.get(generator.weather_type, '晴朗')
-                            # 避免触发信号循环
-                            self.parent_window.weather_combo.blockSignals(True)
-                            self.parent_window.weather_combo.setCurrentText(weather_text)
-                            self.parent_window.weather_combo.blockSignals(False)
-                    # 更新云层覆盖控件
-                    if hasattr(self.parent_window, 'cloud_cover_spinbox') and hasattr(self, 'data_generator_manager'):
-                        generator = self.data_generator_manager.device_generators.get('sgen', {}).get(
-                            component_idx, self.data_generator_manager.default_pv_generator
-                        )
-                        if hasattr(generator, 'cloud_cover'):
-                            # 避免触发信号循环
-                            self.parent_window.cloud_cover_spinbox.blockSignals(True)
-                            self.parent_window.cloud_cover_spinbox.setValue(generator.cloud_cover)
-                            self.parent_window.cloud_cover_spinbox.blockSignals(False)
-            except Exception as e:
-                logger.error(f"更新光伏设备手动控制值时出错: {e}")
-        
-        # 2. 更新设备信息
-        if hasattr(self.parent_window, 'sgen_current_device_label') and hasattr(self.parent_window, 'sgen_enable_generation_checkbox'):
-            if component_type and component_idx is not None:
-                device_name = f"光伏_{component_idx}"
-                self.parent_window.sgen_current_device_label.setText(f"当前设备: {device_name}")
-                
-                # 检查当前设备是否启用了数据生成
-                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
-                self.parent_window.sgen_enable_generation_checkbox.setChecked(is_enabled)
-                self.parent_window.sgen_enable_generation_checkbox.setEnabled(True)
-                # 根据数据生成状态控制手动控制面板可见性
-                if hasattr(self.parent_window, 'sgen_manual_panel'):
-                    self.parent_window.sgen_manual_panel.setVisible(not is_enabled)
-                
-            else:
-                self.parent_window.sgen_current_device_label.setText("未选择光伏设备")
-                self.parent_window.sgen_enable_generation_checkbox.setChecked(False)
-                self.parent_window.sgen_enable_generation_checkbox.setEnabled(False)
-    
-    def update_load_device(self, component_type, component_idx):
-        """更新负载设备信息和手动控制组件的值"""
-        # 1. 更新手动控制组件的值
-        if component_type == 'load' and hasattr(self.parent_window, 'network_model') and hasattr(self.parent_window.network_model, 'net'):
-            try:
-                # 获取负载设备的当前功率值
-                if component_idx in self.parent_window.network_model.net.load.index:
-                    current_p = self.parent_window.network_model.net.load.at[component_idx, 'p_mw']
-                    current_q = self.parent_window.network_model.net.load.at[component_idx, 'q_mvar']
-                    
-                    # 更新有功功率滑块和输入框的值
-                    if hasattr(self.parent_window, 'load_power_slider'):
-                        self.parent_window.load_power_slider.setValue(int(current_p * 2))  # 转换为滑块值
-                    if hasattr(self.parent_window, 'load_power_spinbox'):
-                        self.parent_window.load_power_spinbox.setValue(current_p)
-                    
-                    # 更新无功功率滑块和输入框的值
-                    if hasattr(self.parent_window, 'load_reactive_power_slider'):
-                        self.parent_window.load_reactive_power_slider.setValue(int(current_q * 4))  # 转换为滑块值
-                    if hasattr(self.parent_window, 'load_reactive_power_spinbox'):
-                        self.parent_window.load_reactive_power_spinbox.setValue(current_q)
-                    
-                    # 更新变化幅度控件
-                    if hasattr(self.parent_window, 'load_variation_spinbox') and hasattr(self, 'data_generator_manager'):
-                        # 获取当前设备的数据生成器参数
-                        generator = self.data_generator_manager.device_generators.get('load', {}).get(
-                            component_idx, self.data_generator_manager.default_load_generator
-                        )
-                        if hasattr(generator, 'variation'):
-                            # 避免触发信号循环
-                            self.parent_window.load_variation_spinbox.blockSignals(True)
-                            self.parent_window.load_variation_spinbox.setValue(generator.variation)
-                            self.parent_window.load_variation_spinbox.blockSignals(False)
-                    
-                    # 更新负载类型控件
-                    if hasattr(self.parent_window, 'load_type_combo') and hasattr(self, 'data_generator_manager'):
-                        # 获取当前设备的数据生成器参数
-                        generator = self.data_generator_manager.device_generators.get('load', {}).get(
-                            component_idx, self.data_generator_manager.default_load_generator
-                        )
-                        if hasattr(generator, 'load_type'):
-                            # 负载类型中英文映射
-                            load_type_map = {
-                                'residential': '住宅负载',
-                                'commercial': '商业负载',
-                                'industrial': '工业负载'
-                            }
-                            load_type_text = load_type_map.get(generator.load_type, '住宅负载')
-                            # 避免触发信号循环
-                            self.parent_window.load_type_combo.blockSignals(True)
-                            self.parent_window.load_type_combo.setCurrentText(load_type_text)
-                            self.parent_window.load_type_combo.blockSignals(False)
-            except Exception as e:
-                logger.error(f"更新负载设备手动控制值时出错: {e}")
-        
-        # 2. 更新设备信息
-        if hasattr(self.parent_window, 'load_current_device_label') and hasattr(self.parent_window, 'load_enable_generation_checkbox'):
-            if component_type and component_idx is not None:
-                device_name = f"负载_{component_idx}"
-                self.parent_window.load_current_device_label.setText(f"当前设备: {device_name}")
-                
-                # 检查当前设备是否启用了数据生成
-                is_enabled = self.is_device_generation_enabled(component_type, component_idx)
-                self.parent_window.load_enable_generation_checkbox.setChecked(is_enabled)
-                self.parent_window.load_enable_generation_checkbox.setEnabled(True)
-                # 根据数据生成状态控制手动控制面板可见性
-                if hasattr(self.parent_window, 'load_manual_panel'):
-                    self.parent_window.load_manual_panel.setVisible(not is_enabled)
-                
-            else:
-                self.parent_window.load_current_device_label.setText("未选择负载设备")
-                self.parent_window.load_enable_generation_checkbox.setChecked(False)
-                self.parent_window.load_enable_generation_checkbox.setEnabled(False)
-
-    def update_storage_manual_controls_from_device(self):
-        """从当前储能设备更新手动控制组件的值"""
-        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
-            return
-            
-        if not self.parent_window.network_model or not hasattr(self.parent_window.network_model, 'net'):
-            return
-            
-        if self.parent_window.current_component_type != 'storage':
-            return
-            
-        try:
-            
-            # 获取储能设备的当前功率值
-            current_power = -self.parent_window.network_model.net.storage.at[self.parent_window.current_component_idx, 'p_mw']
-            
-            # 获取储能设备的额定功率
-            storage_item = self.network_items['storage'][self.parent_window.current_component_idx]
-                    
-            # 更新储能设备的状态量显示
-            self.update_storage_realtime_info(self.parent_window.current_component_idx)
-            
-            # 获取额定功率，默认为1.0 MW
-            rated_power_mw = 1.0
-            if storage_item and hasattr(storage_item, 'properties') and 'sn_mva' in storage_item.properties:
-                # 从properties中获取sn_mva值
-                rated_power_mw = storage_item.properties['sn_mva']
-            
-            # 根据额定功率动态设置滑块和输入框的范围（-150%~150%额定功率，负值表示放电）
-            max_power = rated_power_mw * 1.5
-            min_power = -max_power
-            
-            # 更新滑块范围和值
-            if hasattr(self.parent_window, 'storage_power_slider'):
-                self.parent_window.storage_power_slider.setRange(int(min_power * 100), int(max_power * 100))  # 精确到0.01MW
-                # 确保当前值不超过新范围
-                safe_value = max(int(min_power * 100), min(int(max_power * 100), int(current_power * 100)))
-                self.parent_window.storage_power_slider.setValue(safe_value)
-            
-            # 更新输入框范围和值
-            if hasattr(self.parent_window, 'storage_power_spinbox'):
-                self.parent_window.storage_power_spinbox.setRange(min_power, max_power)
-                # 确保当前值不超过新范围
-                safe_value = max(min_power, min(max_power, current_power))
-                self.parent_window.storage_power_spinbox.setValue(safe_value)
-            
-            # 根据设备的手动控制模式设置UI控件的启用/禁用状态
-            is_manual_mode = True
-            if storage_item and hasattr(storage_item, 'is_manual_control'):
-                is_manual_mode = storage_item.is_manual_control
-            
-            # 更新复选框状态
-            if hasattr(self.parent_window, 'storage_enable_remote'):
-                self.parent_window.storage_enable_remote.blockSignals(True)
-                self.parent_window.storage_enable_remote.setChecked(not is_manual_mode)
-                self.parent_window.storage_enable_remote.blockSignals(False)
-            
-            # 更新手动控制面板和控件的启用/禁用状态
-            if hasattr(self.parent_window, 'storage_manual_panel'):
-                self.parent_window.storage_manual_panel.setEnabled(is_manual_mode)
-            if hasattr(self.parent_window, 'storage_power_slider'):
-                self.parent_window.storage_power_slider.setEnabled(is_manual_mode)
-            if hasattr(self.parent_window, 'storage_power_spinbox'):
-                self.parent_window.storage_power_spinbox.setEnabled(is_manual_mode)
-        except Exception as e:
-            logger.error(f"更新储能设备手动控制值时出错: {e}")
-
-    def update_charger_manual_controls_from_device(self):
-        """从当前充电桩设备更新手动控制组件的值"""
-        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
-            return
-            
-        if not self.parent_window.network_model or not hasattr(self.parent_window.network_model, 'net'):
-            return
-            
-        if self.parent_window.current_component_type != 'charger':
-            return
-            
-        try:
-            # 获取充电桩设备的当前需求功率值
-            current_power = self.parent_window.network_model.net.load.at[self.parent_window.current_component_idx, 'p_mw']
-            current_power_kw = current_power * 1000  # 转换为kW
-            
-            # 获取充电桩的额定功率
-            from .network_items import ChargerItem
-            charger_item = None
-            for item in self.parent_window.canvas.scene.items():
-                if isinstance(item, ChargerItem) and item.component_index == self.parent_window.current_component_idx:
-                    charger_item = item
-                    break
-            
-            # 获取额定功率，默认为100kW
-            rated_power_kw = 1000.0
-            if charger_item and hasattr(charger_item, 'properties') and 'sn_mva' in charger_item.properties:
-                # 从properties中获取sn_mva值并转换为kW
-                sn_mva = charger_item.properties['sn_mva']
-                rated_power_kw = sn_mva * 1000  # 转换为kW
-            
-            # 动态设置滑块和输入框的范围（0~额定功率）
-            if hasattr(self.parent_window, 'charger_required_power_slider'):
-                self.parent_window.charger_required_power_slider.setRange(0, int(rated_power_kw))
-                # 确保当前值不超过新范围
-                safe_value = max(0, min(int(rated_power_kw), int(current_power_kw)))
-                self.parent_window.charger_required_power_slider.setValue(safe_value)
-            
-            if hasattr(self.parent_window, 'charger_required_power_spinbox'):
-                self.parent_window.charger_required_power_spinbox.setRange(0.0, rated_power_kw)
-                # 确保当前值不超过新范围
-                safe_value = max(0.0, min(rated_power_kw, current_power_kw))
-                self.parent_window.charger_required_power_spinbox.setValue(safe_value)
-            
-            # 更新功率限制显示
-            if hasattr(self.parent_window, "charger_power_limit_label"):
-                self.parent_window.charger_power_limit_label.setText(
-                    f"{charger_item.power_limit * 1000:.1f} kW"
-                )
-                
-        except Exception as e:
-            logger.error(f"更新充电桩设备手动控制值时出错: {e}")
-                
     def on_storage_control_mode_changed(self, state):
         """处理储能设备控制模式切换（手动控制/远程控制）"""
         # 确保对象和属性存在
@@ -834,8 +1095,8 @@ class DataControlManager:
     def on_sgen_power_changed(self, value):
         """光伏功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'sgen_power_spinbox'):
-            # 滑块值直接对应功率值（精确到0.01MW）
-            power_value = value / 100.0
+            # 滑块值转换为kW值（精确到0.1kW）
+            power_value = value / 10.0
             self.parent_window.sgen_power_spinbox.blockSignals(True)
             self.parent_window.sgen_power_spinbox.setValue(power_value)
             self.parent_window.sgen_power_spinbox.blockSignals(False)
@@ -843,9 +1104,9 @@ class DataControlManager:
     def on_sgen_power_spinbox_changed(self, value):
         """光伏功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'sgen_power_slider'):
-            # 功率值转换为滑块值（精确到0.01MW）
-            slider_value = int(value * 100)
-            max_slider = int(self.parent_window.sgen_power_spinbox.maximum() * 100)
+            # kW值转换为滑块值（精确到0.1kW）
+            slider_value = int(value * 10)
+            max_slider = int(self.parent_window.sgen_power_spinbox.maximum() * 10)
             slider_value = max(0, min(max_slider, slider_value))
             self.parent_window.sgen_power_slider.blockSignals(True)
             self.parent_window.sgen_power_slider.setValue(slider_value)
@@ -854,8 +1115,8 @@ class DataControlManager:
     def on_load_power_changed(self, value):
         """负载功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'load_power_spinbox'):
-            # 滑块值直接对应功率值（精确到0.01MW）
-            power_value = value / 100.0
+            # 滑块值转换为kW值（精确到0.1kW）
+            power_value = value / 10.0
             self.parent_window.load_power_spinbox.blockSignals(True)
             self.parent_window.load_power_spinbox.setValue(power_value)
             self.parent_window.load_power_spinbox.blockSignals(False)
@@ -863,8 +1124,8 @@ class DataControlManager:
     def on_load_power_spinbox_changed(self, value):
         """负载功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'load_power_slider'):
-            # 功率值转换为滑块值（精确到0.01MW）
-            slider_value = int(value * 100)
+            # kW值转换为滑块值（精确到0.1kW）
+            slider_value = int(value * 10)
             
             # 获取当前滑块范围
             min_slider = self.parent_window.load_power_slider.minimum()
@@ -878,8 +1139,8 @@ class DataControlManager:
     def on_load_reactive_power_changed(self, value):
         """负载无功功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'load_reactive_power_spinbox'):
-            # 滑块值直接对应无功功率值（精确到0.01MVar）
-            power_value = value / 100.0
+            # 滑块值转换为kvar值（精确到0.1kvar）
+            power_value = value / 10.0
             self.parent_window.load_reactive_power_spinbox.blockSignals(True)
             self.parent_window.load_reactive_power_spinbox.setValue(power_value)
             self.parent_window.load_reactive_power_spinbox.blockSignals(False)
@@ -887,8 +1148,8 @@ class DataControlManager:
     def on_load_reactive_power_spinbox_changed(self, value):
         """负载无功功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'load_reactive_power_slider'):
-            # 无功功率值转换为滑块值（精确到0.01MVar）
-            slider_value = int(value * 100)
+            # kvar值转换为滑块值（精确到0.1kvar）
+            slider_value = int(value * 10)
             
             # 获取当前滑块范围
             min_slider = self.parent_window.load_reactive_power_slider.minimum()
@@ -902,8 +1163,8 @@ class DataControlManager:
     def on_storage_power_changed(self, value):
         """储能功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'storage_power_spinbox'):
-            # 滑块值直接对应功率值（精确到0.01MW）
-            power_value = value / 100.0
+            # 滑块值转换为kW值（精确到0.1kW）
+            power_value = value / 10.0
             self.parent_window.storage_power_spinbox.blockSignals(True)
             self.parent_window.storage_power_spinbox.setValue(power_value)
             self.parent_window.storage_power_spinbox.blockSignals(False)
@@ -911,8 +1172,8 @@ class DataControlManager:
     def on_storage_power_spinbox_changed(self, value):
         """储能功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'storage_power_slider'):
-            # 功率值转换为滑块值（精确到0.01MW）
-            slider_value = int(value * 100)
+            # kW值转换为滑块值（精确到0.1kW）
+            slider_value = int(value * 10)
             
             # 获取当前滑块范围
             min_slider = self.parent_window.storage_power_slider.minimum()
@@ -926,8 +1187,8 @@ class DataControlManager:
     def on_charger_required_power_changed(self, value):
         """充电桩需求功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'charger_required_power_spinbox'):
-            # 滑块值直接对应功率值（精确到1kW）
-            power_value = float(value)
+            # 滑块值转换为kW值（精确到0.1kW）
+            power_value = value / 10.0
             self.parent_window.charger_required_power_spinbox.blockSignals(True)
             self.parent_window.charger_required_power_spinbox.setValue(power_value)
             self.parent_window.charger_required_power_spinbox.blockSignals(False)
@@ -935,8 +1196,8 @@ class DataControlManager:
     def on_charger_required_power_spinbox_changed(self, value):
         """充电桩需求功率输入框改变时的回调"""
         if hasattr(self.parent_window, 'charger_required_power_slider'):
-            # 功率值转换为滑块值（精确到1kW）
-            slider_value = int(value)
+            # kW值转换为滑块值（精确到0.1kW）
+            slider_value = int(value * 10)
             # 使用滑块的当前范围限制值
             min_slider = self.parent_window.charger_required_power_slider.minimum()
             max_slider = self.parent_window.charger_required_power_slider.maximum()
@@ -965,7 +1226,9 @@ class DataControlManager:
         
         try:
             if component_idx in self.parent_window.network_model.net.sgen.index:
-                p_mw = self.parent_window.sgen_power_spinbox.value()
+                # 输入框的值为kW，需要转换为MW
+                p_kw = self.parent_window.sgen_power_spinbox.value()
+                p_mw = p_kw / 1000  # 从kW转换为MW
                 
                 # 光伏设备的功率为负值（发电）
                 self.parent_window.network_model.net.sgen.at[component_idx, 'p_mw'] = abs(p_mw)
@@ -997,7 +1260,9 @@ class DataControlManager:
         
         try:
             if component_idx in self.parent_window.network_model.net.load.index:
-                p_mw = self.parent_window.load_power_spinbox.value()
+                # 输入框值为kW，需要转换为MW
+                p_kw = self.parent_window.load_power_spinbox.value()
+                p_mw = p_kw / 1000.0  # 转换为MW
                 q_mvar = self.parent_window.load_reactive_power_spinbox.value()
                 
                 self.parent_window.network_model.net.load.at[component_idx, 'p_mw'] = p_mw
@@ -1030,7 +1295,9 @@ class DataControlManager:
         
         try:
             if component_idx in self.parent_window.network_model.net.storage.index:
-                p_mw = self.parent_window.storage_power_spinbox.value()
+                # 输入框的值为kW，需要转换为MW
+                p_kw = self.parent_window.storage_power_spinbox.value()
+                p_mw = p_kw / 1000  # 从kW转换为MW
                 
                 # 直接更新功率值，不受工作状态限制，支持在halt状态下手动控制
                 self.parent_window.network_model.net.storage.at[component_idx, 'p_mw'] = -p_mw

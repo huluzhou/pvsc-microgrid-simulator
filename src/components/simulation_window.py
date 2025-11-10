@@ -7,7 +7,8 @@
 
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QTreeWidgetItem, QMessageBox, QDockWidget, QFileDialog
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, 
+    QTreeWidgetItem, QMessageBox, QDockWidget, QFileDialog, QStatusBar
   )
 import threading
 import time
@@ -122,8 +123,19 @@ class SimulationWindow(QMainWindow):
         self.setWindowTitle("仿真模式 - PandaPower 仿真工具")
         self.setMinimumSize(1500, 800)
         
+        # 创建主窗口部件和布局
+        self.central_widget = QWidget()
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        
         # 初始化菜单栏
         self.init_menu_bar()
+        
+        # 添加状态显示面板 - 这里使用不同的方式来确保小部件不会被销毁
+        self.init_status_indicators()
+        
+        # 将状态指示器面板添加到主布局
+        self.main_layout.addWidget(self.status_indicators_bar)
         
         # 创建中央功率曲线区域
         self.central_chart_widget = QWidget()
@@ -132,7 +144,12 @@ class SimulationWindow(QMainWindow):
         # 设置中央区域大小策略
         self.central_chart_widget.setMinimumSize(600, 400)
         self.ui_manager.create_central_image_area(layout)
-        self.setCentralWidget(self.central_chart_widget)
+        
+        # 将中央图表部件添加到主布局
+        self.main_layout.addWidget(self.central_chart_widget)
+        
+        # 设置主窗口的中央部件
+        self.setCentralWidget(self.central_widget)
         
         
         # 创建左侧设备树dockwidget
@@ -182,6 +199,15 @@ class SimulationWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.charger_dock)
         self.charger_dock.hide()  # 初始隐藏
         
+        # 电表设备dockwidget
+        self.meter_dock = QDockWidget("电表设备数据", self)
+        self.meter_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.meter_dock.setMinimumWidth(300)
+        self.meter_dock.setMaximumWidth(500)
+        self.ui_manager.create_meter_data_panel(self.meter_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.meter_dock)
+        self.meter_dock.hide()  # 初始隐藏
+        
         # 开关设备dockwidget
         self.switch_dock = QDockWidget("开关设备数据", self)
         self.switch_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
@@ -191,13 +217,81 @@ class SimulationWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.switch_dock)
         self.switch_dock.hide()  # 初始隐藏
         
-        # 创建状态栏
+        # 创建并显示状态栏
         self.statusBar().showMessage("仿真模式已就绪")
         
         # 初始化功率监控的UI组件引用
         self.power_monitor.initialize_ui_components()
         
         
+    def init_status_indicators(self):
+        """初始化状态指示器面板"""
+        from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QFrame, QStatusBar
+        from PySide6.QtCore import Qt
+        
+        # 创建一个独立的状态条小部件，而不是使用菜单栏的corner widget
+        self.status_indicators_bar = QWidget()
+        self.status_indicators_bar.setMinimumHeight(25)
+        self.status_indicators_layout = QHBoxLayout(self.status_indicators_bar)
+        self.status_indicators_layout.setContentsMargins(10, 2, 10, 2)
+        self.status_indicators_layout.setSpacing(20)
+        
+        # 创建回测状态指示器
+        self.backtest_status_indicator = QFrame()
+        self.backtest_status_indicator.setFixedSize(12, 12)
+        self.backtest_status_indicator.setFrameStyle(QFrame.Panel | QFrame.Sunken)
+        self.backtest_status_indicator.setStyleSheet("background-color: #9E9E9E;")  # 灰色表示未运行
+        
+        self.backtest_status_label = QLabel("回测: 未运行")
+        
+        # 创建记录数据状态指示器
+        self.record_status_indicator = QFrame()
+        self.record_status_indicator.setFixedSize(12, 12)
+        self.record_status_indicator.setFrameStyle(QFrame.Panel | QFrame.Sunken)
+        self.record_status_indicator.setStyleSheet("background-color: #9E9E9E;")  # 灰色表示未运行
+        
+        self.record_status_label = QLabel("记录: 未运行")
+        
+        # 将指示器添加到布局中
+        self.status_indicators_layout.addWidget(QLabel("运行状态:"))
+        self.status_indicators_layout.addWidget(self.backtest_status_indicator)
+        self.status_indicators_layout.addWidget(self.backtest_status_label)
+        self.status_indicators_layout.addWidget(self.record_status_indicator)
+        self.status_indicators_layout.addWidget(self.record_status_label)
+        
+        # 将状态指示器条添加到主布局中，放在菜单栏下方
+        # 注意：我们不在此处添加到主布局，而是在创建中央部件后添加
+    
+    def update_backtest_status(self, is_running):
+        """更新回测状态显示"""
+        # 检查对象是否存在且有效
+        if hasattr(self, 'backtest_status_label') and hasattr(self, 'backtest_status_indicator'):
+            try:
+                if is_running:
+                    self.backtest_status_label.setText("回测: 运行中")
+                    self.backtest_status_indicator.setStyleSheet("background-color: #2196F3;")  # 蓝色表示运行中
+                else:
+                    self.backtest_status_label.setText("回测: 未运行")
+                    self.backtest_status_indicator.setStyleSheet("background-color: #9E9E9E;")  # 灰色表示未运行
+            except RuntimeError:
+                # 忽略对象已被销毁的错误
+                pass
+    
+    def update_record_status(self, is_recording):
+        """更新记录数据状态显示"""
+        # 检查对象是否存在且有效
+        if hasattr(self, 'record_status_label') and hasattr(self, 'record_status_indicator'):
+            try:
+                if is_recording:
+                    self.record_status_label.setText("记录: 运行中")
+                    self.record_status_indicator.setStyleSheet("background-color: #FF9800;")  # 橙色表示运行中
+                else:
+                    self.record_status_label.setText("记录: 未运行")
+                    self.record_status_indicator.setStyleSheet("background-color: #9E9E9E;")  # 灰色表示未运行
+            except RuntimeError:
+                # 忽略对象已被销毁的错误
+                pass
+    
     def init_menu_bar(self):
         """初始化菜单栏"""
         # 创建菜单栏
@@ -581,6 +675,9 @@ class SimulationWindow(QMainWindow):
         # 设置回测标志
         self.is_backtesting = True
         
+        # 更新回测状态显示
+        self.update_backtest_status(True)
+        
         # 初始化回测状态
         self.backtest_current_step = 0
         self.backtest_start_time = time.time()
@@ -709,6 +806,10 @@ class SimulationWindow(QMainWindow):
         """停止回测过程"""
         # 不再需要停止回测定时器，因为已经移除了定时器
         self.is_backtesting = False
+        
+        # 更新回测状态显示
+        self.update_backtest_status(False)
+        
         self.statusBar().showMessage(message)
         QMessageBox.information(self, "提示", message)
         
@@ -769,6 +870,10 @@ class SimulationWindow(QMainWindow):
             
             # 创建并启动记录线程
             self.is_recording = True
+            
+            # 更新记录状态显示
+            self.update_record_status(True)
+            
             self.recording_thread = threading.Thread(target=self._record_data_loop)
             self.recording_thread.daemon = True  # 设置为守护线程，主程序退出时自动终止
             self.recording_thread.start()
@@ -785,6 +890,9 @@ class SimulationWindow(QMainWindow):
                 
             # 停止记录线程
             self.is_recording = False
+            
+            # 更新记录状态显示
+            self.update_record_status(False)
             if self.recording_thread and self.recording_thread.is_alive():
                 # 等待线程自然结束
                 self.recording_thread.join(timeout=2.0)  # 设置超时，避免死锁
@@ -1025,6 +1133,7 @@ class SimulationWindow(QMainWindow):
         self.storage_dock.hide()
         self.charger_dock.hide()
         self.switch_dock.hide()
+        self.meter_dock.hide()
         
         # 根据设备类型显示对应的dockwidget
         if component_type == 'sgen':
@@ -1038,6 +1147,8 @@ class SimulationWindow(QMainWindow):
             self.storage_dock.show()
         elif component_type == 'switch':  # 开关
             self.switch_dock.show()
+        elif component_type == 'meter':  # 电表
+            self.meter_dock.show()
         
         # 显示组件详情
         self.show_component_details(component_type, component_idx)
@@ -1057,98 +1168,99 @@ class SimulationWindow(QMainWindow):
         
         # 根据设备类型更新设备信息
         if component_type == 'sgen':
-            self.data_control_manager.update_sgen_device(component_type, component_idx)
+            self.data_control_manager.update_sgen_control_panel_info(component_type, component_idx)
         elif component_type == 'load':
-            self.data_control_manager.update_load_device(component_type, component_idx)
+            self.data_control_manager.update_load_control_panel_info(component_type, component_idx)
         elif component_type == 'charger':
-            #根据额定功率设置spinbox的范围
-            self.data_control_manager.update_charger_manual_controls_from_device()
-            self.data_control_manager.update_charger_device_info(component_type, component_idx)
+            # 根据额定功率设置spinbox的范围
+            self.data_control_manager.update_charger_control_panel_info(component_type, component_idx)
         elif component_type == 'storage':
-            self.data_control_manager.update_storage_manual_controls_from_device()
-            self.data_control_manager.update_storage_device_info(component_type, component_idx)
+            self.data_control_manager.update_storage_control_panel_info(component_type, component_idx)
         elif component_type == 'switch':
-            self.data_control_manager.update_switch_device_info(component_type, component_idx)
+            self.data_control_manager.update_switch_control_panel_info(component_type, component_idx)
+        elif component_type == 'meter':
+            # 更新电表设备控制面板信息
+            self.data_control_manager.update_meter_control_panel_info(component_type, component_idx)
             
-    def show_meter_measurement_details(self, meter_idx):
-        """显示电表设备的测量结果详情"""
-        try:
-            # 获取电表图形项
-            meter_item = self.get_meter_item_by_type_and_id('meter', meter_idx)
-            if not meter_item:
-                return {"error": f"未找到电表设备: {meter_idx}"}
+    # def show_meter_measurement_details(self, meter_idx):
+    #     """显示电表设备的测量结果详情"""
+    #     try:
+    #         # 获取电表图形项
+    #         meter_item = self.get_meter_item_by_type_and_id('meter', meter_idx)
+    #         if not meter_item:
+    #             return {"error": f"未找到电表设备: {meter_idx}"}
             
-            # 获取电表属性
-            properties = meter_item.properties
+    #         # 获取电表属性
+    #         properties = meter_item.properties
             
-            # 获取测量参数
-            element_type = properties.get('element_type', 'bus')
-            element_idx = properties.get('element', 0)
-            side = properties.get('side', None)
+    #         # 获取测量参数
+    #         element_type = properties.get('element_type', 'bus')
+    #         element_idx = properties.get('element', 0)
+    #         side = properties.get('side', None)
             
-            # 构建返回字典
-            result = {}
+    #         # 构建返回字典
+    #         result = {}
             
-            # 快速检查网络模型是否可用
-            if not self.network_model or not hasattr(self.network_model, 'net'):
-                return {"error": "网络模型不可用"}
+    #         # 快速检查网络模型是否可用
+    #         if not self.network_model or not hasattr(self.network_model, 'net'):
+    #             return {"error": "网络模型不可用"}
             
-            net = self.network_model.net
+    #         net = self.network_model.net
             
-            # 获取实时测量值 - 使用映射表避免重复的条件判断
-            measurement_mapping = {
-                'load': {'res_attr': 'res_load', 'param': 'p_mw'},
-                'sgen': {'res_attr': 'res_sgen', 'param': 'p_mw'},
-                'storage': {'res_attr': 'res_storage', 'param': 'p_mw', 'factor': -1},
-                'bus': {'res_attr': 'res_bus', 'param': 'p_mw'},
-                'line': {
-                    'res_attr': 'res_line',
-                    'params': {'from': 'p_from_mw', 'to': 'p_to_mw'},
-                    'side': side
-                },
-                'trafo': {
-                    'res_attr': 'res_trafo',
-                    'params': {'hv': 'p_hv_mw', 'lv': 'p_lv_mw'},
-                    'side': side
-                },
-                'ext_grid': {'res_attr': 'res_ext_grid', 'param': 'p_mw'}
-            }
+    #         # 获取实时测量值 - 使用映射表避免重复的条件判断
+    #         measurement_mapping = {
+    #             'load': {'res_attr': 'res_load', 'param': 'p_mw'},
+    #             'sgen': {'res_attr': 'res_sgen', 'param': 'p_mw'},
+    #             'storage': {'res_attr': 'res_storage', 'param': 'p_mw', 'factor': -1},
+    #             'bus': {'res_attr': 'res_bus', 'param': 'p_mw'},
+    #             'line': {
+    #                 'res_attr': 'res_line',
+    #                 'params': {'from': 'p_from_mw', 'to': 'p_to_mw'},
+    #                 'side': side
+    #             },
+    #             'trafo': {
+    #                 'res_attr': 'res_trafo',
+    #                 'params': {'hv': 'p_hv_mw', 'lv': 'p_lv_mw'},
+    #                 'side': side
+    #             },
+    #             'ext_grid': {'res_attr': 'res_ext_grid', 'param': 'p_mw'}
+    #         }
             
-            if element_type in measurement_mapping:
-                mapping = measurement_mapping[element_type]
-                res_attr = mapping.get('res_attr')
+    #         if element_type in measurement_mapping:
+    #             mapping = measurement_mapping[element_type]
+    #             res_attr = mapping.get('res_attr')
                 
-                # 检查结果属性是否存在
-                if hasattr(net, res_attr) and not getattr(net, res_attr).empty and element_idx in getattr(net, res_attr).index:
-                    result_set = False
-                    res_data = getattr(net, res_attr)
+    #             # 检查结果属性是否存在
+    #             if hasattr(net, res_attr) and not getattr(net, res_attr).empty and element_idx in getattr(net, res_attr).index:
+    #                 result_set = False
+    #                 res_data = getattr(net, res_attr)
                     
-                    # 处理带方向的组件（线路和变压器）
-                    if 'params' in mapping and 'side' in mapping:
-                        side_param = mapping.get('params', {}).get(mapping.get('side'))
-                        if side_param:
-                            measurement_value = res_data.at[element_idx, side_param]
-                            result[side_param] = measurement_value
-                            result_set = True
-                    # 处理普通组件
-                    elif 'param' in mapping:
-                        param = mapping.get('param')
-                        measurement_value = res_data.at[element_idx, param]
-                        # 应用可选的转换因子
-                        if 'factor' in mapping:
-                            measurement_value *= mapping.get('factor')
-                        result[param] = measurement_value
-                        result_set = True
+    #                 # 处理带方向的组件（线路和变压器）
+    #                 if 'params' in mapping and 'side' in mapping:
+    #                     side_param = mapping.get('params', {}).get(mapping.get('side'))
+    #                     if side_param:
+    #                         measurement_value = res_data.at[element_idx, side_param]
+    #                         result[side_param] = measurement_value
+    #                         result_set = True
+    #                 # 处理普通组件
+    #                 elif 'param' in mapping:
+    #                     param = mapping.get('param')
+    #                     measurement_value = res_data.at[element_idx, param]
+    #                     # 应用可选的转换因子
+    #                     if 'factor' in mapping:
+    #                         measurement_value *= mapping.get('factor')
+    #                     result[param] = measurement_value
+    #                     result_set = True
                     
-                    # 如果成功获取测量值，添加其他有用信息
-                    if result_set:
-                        result['element_type'] = element_type
-                        result['element_idx'] = element_idx
-                        result['side'] = side
+    #                 # 如果成功获取测量值，添加其他有用信息
+    #                 if result_set:
+    #                     result['element_type'] = element_type
+    #                     result['element_idx'] = element_idx
+    #                     result['side'] = side
             
-            return result if result else {"error": "无法获取测量值"}
-        except Exception as e:
-            return {"error": f"获取电表详情时出错: {str(e)}"}
+    #         return result if result else {"error": "无法获取测量值"}
+    #     except Exception as e:
+    #         return {"error": f"获取电表详情时出错: {str(e)}"}
                         
     def on_switch_close(self):
         """开关合闸操作"""
@@ -1417,7 +1529,7 @@ class SimulationWindow(QMainWindow):
             logger.info("自动计算任务停止")
 
     def power_on_all_devices(self):
-        """上电所有设备 - 启动所有Modbus服务器"""
+        """开启所有设备的通信 - 启动所有Modbus服务器"""
         try:
             if not self.network_model:
                 QMessageBox.warning(self, "警告", "没有可用的网络模型")
@@ -1437,19 +1549,19 @@ class SimulationWindow(QMainWindow):
             
             QMessageBox.information(
                 self, 
-                "上电成功", 
+                "通信开启成功", 
                 f"已成功启动 {running_services} 个设备的Modbus服务器\n"
                 f"总设备数: {device_count['total']}"
             )
             
-            self.statusBar().showMessage(f"已上电 {running_services} 个设备")
+            self.statusBar().showMessage(f"已开启 {running_services} 个设备的通信")
             
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"上电失败: {str(e)}")
-            self.statusBar().showMessage("上电操作失败")
+            QMessageBox.critical(self, "错误", f"通信开启失败: {str(e)}")
+            self.statusBar().showMessage("通信开启操作失败")
     
     def power_off_all_devices(self):
-        """下电所有设备 - 停止所有Modbus服务器"""
+        """关闭所有设备的通信 - 停止所有Modbus服务器"""
         try:
             if not self.network_model:
                 QMessageBox.warning(self, "警告", "没有可用的网络模型")
@@ -1464,15 +1576,15 @@ class SimulationWindow(QMainWindow):
             
             QMessageBox.information(
                 self, 
-                "下电成功", 
+                "通信关闭成功", 
                 f"已成功停止 {running_count} 个设备的Modbus服务器"
             )
             
-            self.statusBar().showMessage("所有设备已下电")
+            self.statusBar().showMessage(f"已关闭 {running_count} 个设备的通信")
             
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"下电失败: {str(e)}")
-            self.statusBar().showMessage("下电操作失败")
+            QMessageBox.critical(self, "错误", f"通信关闭失败: {str(e)}")
+            self.statusBar().showMessage("通信关闭操作失败")
     
     def check_and_reset_daily_data(self):
         """检查并执行每日数据重置"""

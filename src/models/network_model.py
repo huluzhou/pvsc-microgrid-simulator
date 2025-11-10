@@ -537,14 +537,14 @@ class NetworkModel:
             
             logger.info(f"网络模型创建完成，包含 {len(self.net.bus)} 个母线")
             
-            # 保存网络模型到JSON文件
-            import os
-            from pandapower.file_io import to_json
-            file_path = "network.json"
-            to_json(self.net, file_path)
-            # 获取完整保存路径
-            full_path = os.path.abspath(file_path)
-            logger.info(f"网络模型已保存到: {full_path}")
+            # # 保存网络模型到JSON文件
+            # import os
+            # from pandapower.file_io import to_json
+            # file_path = "network.json"
+            # to_json(self.net, file_path)
+            # # 获取完整保存路径
+            # full_path = os.path.abspath(file_path)
+            # logger.info(f"网络模型已保存到: {full_path}")
             
             return True
         except Exception as e:

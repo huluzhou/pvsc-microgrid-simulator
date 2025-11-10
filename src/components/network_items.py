@@ -778,7 +778,7 @@ class StorageItem(BaseNetworkItem):
             "index": self.component_index,  # 组件索引
             "sn_mva": 1.0,
             "geodata": (0, 0),
-            "p_mw": 1.0,  # 额定功率
+            "p_mw": 0.0,  # 额定功率
             "max_e_mwh": 1.0,  # 最大储能容量
             "soc_percent": 0.5,  # 荷电状态（0-1之间的值）
             "bus": None,  # 连接的母线
@@ -812,6 +812,7 @@ class StorageItem(BaseNetworkItem):
         self.is_manual_control = False  # 是否处于手动控制模式，默认关闭
         self.is_power_on = False
         self.grid_connected = True
+        self.comm_status = False  # 初始通信状态为False
         
     def update_storage_energy_and_state(self, current_power_mw, time_delta_hours=1.0):
         """
@@ -874,7 +875,7 @@ class ChargerItem(BaseNetworkItem):
             "index": self.component_index + 1000,  # 组件索引
             "geodata": (0, 0),
             "sn_mva": 1.0,
-            "p_mw": 1.0,  # 充电功率
+            "p_mw": 0.0,  # 充电功率
             "efficiency": 0.95,  # 充电效率
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
@@ -885,6 +886,7 @@ class ChargerItem(BaseNetworkItem):
         }
         self.power_limit = 1.0 
         self.required_power = 1.0 # 实际需求功率
+        self.comm_status = False  # 初始通信状态为False
         self.label.setPlainText(component_name)
         
         # 连接约束：充电站可以连接一个母线和一个电表
@@ -1062,7 +1064,7 @@ class GeneratorItem(BaseNetworkItem):
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
-            "p_mw": 50.0,  # 有功功率
+            "p_mw": 0.0,  # 有功功率
             "vm_pu": 1.0,  # 电压幅值
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
@@ -1099,7 +1101,7 @@ class LoadItem(BaseNetworkItem):
         self.properties = {
             "index": self.component_index,  # 组件索引
             "geodata": (0, 0),
-            "p_mw": 1.0,  # 有功功率
+            "p_mw": 0.0,  # 有功功率
             "q_mvar": 0.0,  # 无功功率
             "name": component_name,  # 名称
             "bus": None,  # 连接的母线
@@ -1176,7 +1178,7 @@ class StaticGeneratorItem(BaseNetworkItem):
             "use_power_factor": False,  # 使用功率因数模式
             
             # 直接功率模式参数
-            "p_mw": 1.0,  # 有功功率 (MW)
+            "p_mw": 0.0,  # 有功功率 (MW)
             "q_mvar": 0.0,  # 无功功率 (Mvar)
             
             # 功率因数模式参数
@@ -1197,6 +1199,7 @@ class StaticGeneratorItem(BaseNetworkItem):
         }
         self.today_discharge_energy = 0.0
         self.total_discharge_energy = 0.0
+        self.comm_status = False  # 初始通信状态为False
         sn_mva = self.properties.get("sn_mva", 1.0)
         self.active_power_limit_per = 110# kw (100% 额定功率)
         self.active_power_limit = sn_mva * 1000 * self.active_power_limit_per / 100  # kw (110% 额定功率)
@@ -1250,6 +1253,7 @@ class MeterItem(BaseNetworkItem):
             "port": f"{402 + self.component_index}",
         }
         self.label.setPlainText(self.properties["name"])
+        self.comm_status = False  # 初始通信状态为False
         
         # 连接约束：电表可以连接到多个组件
         self.max_connections =  1 # 允许连接多个组件

@@ -39,6 +39,7 @@ class UIComponentManager:
     def __init__(self, parent_window):
         self.parent_window = parent_window
         
+        
     def create_device_tree_panel(self, parent):
         """创建左侧设备树面板"""
         # 创建设备树容器
@@ -124,10 +125,10 @@ class UIComponentManager:
         
         # Modbus服务器控制按钮
         modbus_control_layout = QHBoxLayout()
-        self.parent_window.power_on_all_btn = QPushButton("上电所有设备")
+        self.parent_window.power_on_all_btn = QPushButton("开启所有设备通信")
         self.parent_window.power_on_all_btn.clicked.connect(self.parent_window.power_on_all_devices)
         
-        self.parent_window.power_off_all_btn = QPushButton("下电所有设备")
+        self.parent_window.power_off_all_btn = QPushButton("关闭所有设备通信")
         self.parent_window.power_off_all_btn.clicked.connect(self.parent_window.power_off_all_devices)
         
         modbus_control_layout.addWidget(self.parent_window.power_on_all_btn)
@@ -242,18 +243,33 @@ class UIComponentManager:
         device_control_layout.addWidget(sgen_enable_generation_checkbox)
         current_device_layout.addLayout(device_control_layout)
         self.parent_window.sgen_enable_generation_checkbox = sgen_enable_generation_checkbox
-         # 设备上电/下电控制
-        power_control_layout = QHBoxLayout()
-        sgen_power_on_button = QPushButton("设备上电")
+         # 设备通信控制 - 使用垂直布局重构
+        comm_control_layout = QVBoxLayout()  # 创建垂直布局
+        
+        # 添加通信状态指示器（放在上方）
+        sgen_comm_status_label = QLabel("通信状态: 未连接")
+        sgen_comm_status_label.setStyleSheet("color: red; font-weight: bold;")
+        self.parent_window.sgen_comm_status_label = sgen_comm_status_label
+        comm_control_layout.addWidget(sgen_comm_status_label)
+        
+        # 创建水平布局容纳按钮（放在下方）
+        buttons_layout = QHBoxLayout()
+        sgen_power_on_button = QPushButton("开启通信")
         sgen_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
-        sgen_power_off_button = QPushButton("设备下电")
+        sgen_power_off_button = QPushButton("关闭通信")
         sgen_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
         self.parent_window.sgen_power_on_button = sgen_power_on_button
         self.parent_window.sgen_power_off_button = sgen_power_off_button
         
-        power_control_layout.addWidget(sgen_power_on_button)
-        power_control_layout.addWidget(sgen_power_off_button)
-        current_device_layout.addLayout(power_control_layout)
+        # 添加按钮到水平布局
+        buttons_layout.addWidget(sgen_power_on_button)
+        buttons_layout.addWidget(sgen_power_off_button)
+        
+        # 将按钮水平布局添加到垂直布局
+        comm_control_layout.addLayout(buttons_layout)
+        
+        # 将垂直布局添加到当前设备布局
+        current_device_layout.addLayout(comm_control_layout)
 
         sgen_layout.addWidget(current_device_group)
 
@@ -311,35 +327,38 @@ class UIComponentManager:
 
         sgen_layout.addWidget(sgen_params_group)
         
-        # 光伏手动控制面板
-        sgen_manual_group = QGroupBox("光伏发电手动控制面板")
-        sgen_manual_layout = QFormLayout(sgen_manual_group)
+        # 手动控制面板
+        sgen_manual_group = QGroupBox("光伏手动控制")
+        sgen_manual_panel_layout = QFormLayout(sgen_manual_group)
+        
+        # 设置sgen_manual_panel属性引用，确保控制模式切换功能正常工作
         self.parent_window.sgen_manual_panel = sgen_manual_group
         
-        # 光伏功率控制
+        # 功率控制
         sgen_power_slider = QSlider(Qt.Horizontal)
-        sgen_power_slider.setRange(0, 100)  # 0-1MW
-        sgen_power_slider.setValue(50)
+        sgen_power_slider.setRange(0, 1000)  # 滑块范围：0.0到100.0kW（乘以10，支持0.1kW精度）
+        sgen_power_slider.setValue(500)  # 默认值50.0kW
         sgen_power_slider.setMinimumWidth(100)
         sgen_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_power_changed)
         self.parent_window.sgen_power_slider = sgen_power_slider
         
         sgen_power_spinbox = QDoubleSpinBox()
-        sgen_power_spinbox.setRange(0.0, 1.0)
-        sgen_power_spinbox.setValue(0.5)
-        sgen_power_spinbox.setSuffix(" MW")
+        sgen_power_spinbox.setRange(0.0, 1000.0)
+        sgen_power_spinbox.setValue(50.0)
+        sgen_power_spinbox.setSingleStep(0.1)  # 设置精度为0.1kW
+        sgen_power_spinbox.setSuffix(" kW")
         sgen_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_power_spinbox_changed)
         self.parent_window.sgen_power_spinbox = sgen_power_spinbox
         
         sgen_power_layout = QHBoxLayout()
         sgen_power_layout.addWidget(sgen_power_slider)
         sgen_power_layout.addWidget(sgen_power_spinbox)
-        sgen_manual_layout.addRow("发电功率:", sgen_power_layout)
+        sgen_manual_panel_layout.addRow("发电功率:", sgen_power_layout)
         
         # 应用按钮
         sgen_apply_button = QPushButton("应用光伏设置")
         sgen_apply_button.clicked.connect(self.parent_window.data_control_manager.apply_sgen_settings)
-        sgen_manual_layout.addRow("", sgen_apply_button)
+        sgen_manual_panel_layout.addRow("", sgen_apply_button)
         self.parent_window.sgen_apply_button = sgen_apply_button
         
         sgen_layout.addWidget(sgen_manual_group)
@@ -373,20 +392,6 @@ class UIComponentManager:
         device_control_layout.addWidget(load_enable_generation_checkbox)
         self.parent_window.load_enable_generation_checkbox = load_enable_generation_checkbox
         current_device_layout.addLayout(device_control_layout)
-
-        # 设备上电/下电控制
-        power_control_layout = QHBoxLayout()
-        load_power_on_button = QPushButton("设备上电")
-        load_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
-        load_power_off_button = QPushButton("设备下电")
-        load_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
-        self.parent_window.load_power_on_button = load_power_on_button
-        self.parent_window.load_power_off_button = load_power_off_button
-        
-        
-        power_control_layout.addWidget(load_power_on_button)
-        power_control_layout.addWidget(load_power_off_button)
-        current_device_layout.addLayout(power_control_layout)
 
         load_layout.addWidget(current_device_group)
 
@@ -431,16 +436,17 @@ class UIComponentManager:
 
         # 负载功率控制
         load_power_slider = QSlider(Qt.Horizontal)
-        load_power_slider.setRange(-100, 100)  # -1MW到1MW
-        load_power_slider.setValue(50)
+        load_power_slider.setRange(-1000, 1000)  # -100kW到100kW，乘以10以实现0.1kW精度
+        load_power_slider.setValue(500)  # 对应50kW
         load_power_slider.setMinimumWidth(100)
         load_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_load_power_changed)
         self.parent_window.load_power_slider = load_power_slider
         
         load_power_spinbox = QDoubleSpinBox()
-        load_power_spinbox.setRange(-1.0, 1.0)
-        load_power_spinbox.setValue(0.5)
-        load_power_spinbox.setSuffix(" MW")
+        load_power_spinbox.setRange(-1000.0, 1000.0)  # -1000kW到1000kW
+        load_power_spinbox.setSingleStep(0.1)  # 0.1kW精度
+        load_power_spinbox.setValue(50.0)  # 对应50kW
+        load_power_spinbox.setSuffix(" kW")  # 单位改为kW
         load_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_load_power_spinbox_changed)
         self.parent_window.load_power_spinbox = load_power_spinbox
         
@@ -451,16 +457,17 @@ class UIComponentManager:
         
         # 负载无功功率控制
         load_reactive_power_slider = QSlider(Qt.Horizontal)
-        load_reactive_power_slider.setRange(-50, 50)  # -0.5MVar到0.5MVar
-        load_reactive_power_slider.setValue(25)
+        load_reactive_power_slider.setRange(-500, 500)  # -50kvar到50kvar，乘以10以实现0.1kvar精度
+        load_reactive_power_slider.setValue(250)  # 对应25kvar
         load_reactive_power_slider.setMinimumWidth(100)
         load_reactive_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_load_reactive_power_changed)
         self.parent_window.load_reactive_power_slider = load_reactive_power_slider
         
         load_reactive_power_spinbox = QDoubleSpinBox()
-        load_reactive_power_spinbox.setRange(-0.5, 0.5)
-        load_reactive_power_spinbox.setValue(0.25)
-        load_reactive_power_spinbox.setSuffix(" MVar")
+        load_reactive_power_spinbox.setRange(-1000.0, 1000.0)  # -1000kvar到1000kvar
+        load_reactive_power_spinbox.setSingleStep(0.1)  # 0.1kvar精度
+        load_reactive_power_spinbox.setValue(25.0)  # 对应25kvar
+        load_reactive_power_spinbox.setSuffix(" kvar")  # 单位改为kvar
         self.parent_window.load_reactive_power_spinbox = load_reactive_power_spinbox
         load_reactive_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_load_reactive_power_spinbox_changed)
         
@@ -498,14 +505,33 @@ class UIComponentManager:
         current_device_layout.addWidget(storage_current_device_label)
         self.parent_window.storage_current_device_label = storage_current_device_label
         
-        # 设备上电/下电控制
-        power_control_layout = QHBoxLayout()
-        storage_power_on_button = QPushButton("设备上电")
+        # 设备通信控制 - 使用垂直布局重构
+        comm_control_layout = QVBoxLayout()  # 创建垂直布局
+        
+        # 添加通信状态指示器（放在上方）
+        storage_comm_status_label = QLabel("通信状态: 未连接")
+        storage_comm_status_label.setStyleSheet("color: red; font-weight: bold;")
+        self.parent_window.storage_comm_status_label = storage_comm_status_label
+        comm_control_layout.addWidget(storage_comm_status_label)
+        
+        # 创建水平布局容纳按钮（放在下方）
+        buttons_layout = QHBoxLayout()
+        storage_power_on_button = QPushButton("开启通信")
         storage_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
-        storage_power_off_button = QPushButton("设备下电")
+        storage_power_off_button = QPushButton("关闭通信")
         storage_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
         self.parent_window.storage_power_on_button = storage_power_on_button
         self.parent_window.storage_power_off_button = storage_power_off_button
+        
+        # 添加按钮到水平布局
+        buttons_layout.addWidget(storage_power_on_button)
+        buttons_layout.addWidget(storage_power_off_button)
+        
+        # 将按钮水平布局添加到垂直布局
+        comm_control_layout.addLayout(buttons_layout)
+        
+        # 将垂直布局添加到当前设备布局
+        current_device_layout.addLayout(comm_control_layout)
         
         # 设备并网/离网控制
         storage_grid_connection_layout = QVBoxLayout()
@@ -514,7 +540,6 @@ class UIComponentManager:
         storage_grid_connection_status = QLabel("--")
         storage_grid_connection_status.setStyleSheet("font-weight: bold; color: #FFC107;")
         
-        
         storage_grid_connection_layout.addWidget(storage_grid_connection_label)
         storage_grid_connection_layout.addWidget(storage_grid_connection_status)
         
@@ -522,9 +547,6 @@ class UIComponentManager:
         self.parent_window.storage_grid_connection_status = storage_grid_connection_status
         self.parent_window.storage_connection_label = storage_grid_connection_label
         
-        power_control_layout.addWidget(storage_power_on_button)
-        power_control_layout.addWidget(storage_power_off_button)
-        current_device_layout.addLayout(power_control_layout)
         current_device_layout.addLayout(storage_grid_connection_layout)
 
         storage_layout.addWidget(current_device_group)
@@ -584,16 +606,17 @@ class UIComponentManager:
         
         # 有功功率控制（正值为放电，负值为充电）
         storage_power_slider = QSlider(Qt.Horizontal)
-        storage_power_slider.setRange(-100, 100)  # 滑块范围：-100.0到100.0MW（乘以10）
+        storage_power_slider.setRange(-1000, 1000)  # 滑块范围：-100.0到100.0kW（乘以10，支持0.1kW精度）
         storage_power_slider.setValue(0)
         storage_power_slider.setMinimumWidth(100)
         storage_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_storage_power_changed)
         self.parent_window.storage_power_slider = storage_power_slider
         
         storage_power_spinbox = QDoubleSpinBox()
-        storage_power_spinbox.setRange(-1.0, 1.0)
+        storage_power_spinbox.setRange(-100.0, 100.0)
+        storage_power_spinbox.setSingleStep(0.1)  # 设置精度为0.1kW
         storage_power_spinbox.setValue(0.0)
-        storage_power_spinbox.setSuffix(" MW")
+        storage_power_spinbox.setSuffix(" kW")
         storage_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_storage_power_spinbox_changed)
         self.parent_window.storage_power_spinbox = storage_power_spinbox
         
@@ -695,19 +718,33 @@ class UIComponentManager:
         current_device_layout.addWidget(charger_current_device_label)
         self.parent_window.charger_current_device_label = charger_current_device_label
 
-        # 设备上电/下电控制
-        power_control_layout = QHBoxLayout()
-        charger_power_on_button = QPushButton("设备上电")
+        # 设备通信控制 - 使用垂直布局重构
+        comm_control_layout = QVBoxLayout()  # 创建垂直布局
+        
+        # 添加通信状态指示器（放在上方）
+        charger_comm_status_label = QLabel("通信状态: 未连接")
+        charger_comm_status_label.setStyleSheet("color: red; font-weight: bold;")
+        self.parent_window.charger_comm_status_label = charger_comm_status_label
+        comm_control_layout.addWidget(charger_comm_status_label)
+        
+        # 创建水平布局容纳按钮（放在下方）
+        buttons_layout = QHBoxLayout()
+        charger_power_on_button = QPushButton("开启通信")
         charger_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
-        charger_power_off_button = QPushButton("设备下电")
+        charger_power_off_button = QPushButton("关闭通信")
         charger_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
         self.parent_window.charger_power_on_button = charger_power_on_button
         self.parent_window.charger_power_off_button = charger_power_off_button
         
+        # 添加按钮到水平布局
+        buttons_layout.addWidget(charger_power_on_button)
+        buttons_layout.addWidget(charger_power_off_button)
         
-        power_control_layout.addWidget(charger_power_on_button)
-        power_control_layout.addWidget(charger_power_off_button)
-        current_device_layout.addLayout(power_control_layout)
+        # 将按钮水平布局添加到垂直布局
+        comm_control_layout.addLayout(buttons_layout)
+        
+        # 将垂直布局添加到当前设备布局
+        current_device_layout.addLayout(comm_control_layout)
 
         charger_layout.addWidget(current_device_group)
 
@@ -731,13 +768,14 @@ class UIComponentManager:
         
         # 需求功率设置
         charger_required_power_slider = QSlider(Qt.Horizontal)
-        charger_required_power_slider.setRange(0, 200)
-        charger_required_power_slider.setValue(50)
+        charger_required_power_slider.setRange(0, 2000)  # 滑块范围：0到200.0kW（乘以10，支持0.1kW精度）
+        charger_required_power_slider.setValue(500)  # 默认值50.0kW
         charger_required_power_slider.setMinimumWidth(100)
         charger_required_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_charger_required_power_changed)
         
         charger_required_power_spinbox = QDoubleSpinBox()
         charger_required_power_spinbox.setRange(0.0, 200.0)
+        charger_required_power_spinbox.setSingleStep(0.1)  # 设置精度为0.1kW
         charger_required_power_spinbox.setValue(50.0)
         charger_required_power_spinbox.setSuffix(" kW")
         charger_required_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_charger_required_power_spinbox_changed)
@@ -765,6 +803,89 @@ class UIComponentManager:
         charger_layout.addStretch()
 
         parent.setWidget(charger_widget)
+
+    def create_meter_data_panel(self, parent):
+        """创建电表设备数据面板"""
+        meter_widget = QWidget()
+        meter_layout = QVBoxLayout(meter_widget)
+
+        # 标题
+        meter_title = QLabel("电表设备数据")
+        meter_title.setFont(QFont("Arial", 12, QFont.Bold))
+        meter_layout.addWidget(meter_title)
+
+        # 当前设备信息
+        current_device_group = QGroupBox("当前设备")
+        current_device_layout = QVBoxLayout(current_device_group)
+
+        # 设备名称显示
+        device_name_label = QLabel("设备名称: 未选择电表设备")
+        device_name_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        current_device_layout.addWidget(device_name_label)
+        self.parent_window.meter_current_device_label = device_name_label
+        
+        # 通信状态指示器
+        meter_comm_status_label = QLabel("通信状态: 未连接")
+        meter_comm_status_label.setStyleSheet("color: red; font-weight: bold;")
+        current_device_layout.addWidget(meter_comm_status_label)
+        self.parent_window.meter_comm_status_label = meter_comm_status_label
+        
+        # 通信控制按钮
+        buttons_layout = QHBoxLayout()
+        meter_power_on_button = QPushButton("开启通信")
+        meter_power_on_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_on)
+        meter_power_off_button = QPushButton("关闭通信")
+        meter_power_off_button.clicked.connect(self.parent_window.data_control_manager.on_device_power_off)
+        self.parent_window.meter_power_on_button = meter_power_on_button
+        self.parent_window.meter_power_off_button = meter_power_off_button
+        
+        buttons_layout.addWidget(meter_power_on_button)
+        buttons_layout.addWidget(meter_power_off_button)
+        current_device_layout.addLayout(buttons_layout)
+        
+        meter_layout.addWidget(current_device_group)
+
+        # 电表测量结果展示
+        meter_result_group = QGroupBox("电表测量结果")
+        meter_result_layout = QFormLayout(meter_result_group)
+        
+        # 测量类型显示
+        meter_meas_type_label = QLabel("有功功率（基于设备配置）")
+        meter_meas_type_label.setStyleSheet("font-weight: bold;")
+        meter_result_layout.addRow("当前测量类型:", meter_meas_type_label)
+        self.parent_window.meter_meas_type_label = meter_meas_type_label
+        
+        # 测量值显示
+        meter_measurement_label = QLabel("-- kW")
+        meter_measurement_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        meter_result_layout.addRow("测量值:", meter_measurement_label)
+        self.parent_window.meter_measurement_label = meter_measurement_label
+        
+        # 设备配置信息标题
+        config_title = QLabel("设备配置信息:")
+        config_title.setStyleSheet("font-weight: bold;")
+        meter_result_layout.addRow(config_title)
+        
+        # 测量元件类型
+        element_type_label = QLabel("- 测量元件类型: bus")
+        meter_result_layout.addRow(element_type_label)
+        self.parent_window.meter_element_type_label = element_type_label
+        
+        # 测量位置信息
+        element_side_label = QLabel("- 测量位置: ")
+        meter_result_layout.addRow(element_side_label)
+        self.parent_window.meter_element_side_label = element_side_label
+        
+        # 测量元件索引
+        element_index_label = QLabel("- 测量元件索引: 0")
+        meter_result_layout.addRow(element_index_label)
+        self.parent_window.meter_element_index_label = element_index_label
+        
+        meter_layout.addWidget(meter_result_group)
+        
+        meter_layout.addStretch()
+        
+        parent.setWidget(meter_widget)
 
     def create_monitor_control_panel(self, parent_layout):
         """创建监控控制面板"""
