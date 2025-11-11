@@ -128,7 +128,7 @@ class MultiESSClient:
                     
                     # 处理状态数据
                     data['state1'] = clubSta.registers[0] if clubSta.registers else 0
-                    data['state2'] = pcs_run.registers[0] if pcs_run.registers else 0
+                    data['input408'] = pcs_run.registers[0] if pcs_run.registers else 0
                     data['state3'] = syssta.registers[0] if syssta.registers else 0
                     data['state4'] = alarm.registers[0] if alarm.registers else 0
                     data['charge_status'] = charge_status.registers[0] if charge_status.registers else 0
@@ -203,7 +203,7 @@ class MultiESSClient:
             
             if data['status'] == 'ok':
                 print(f"  储能{i} (端口{data['port']}):")
-                print(f"    {'可用' if data['available'] else '不可用':<12} clubsta: {data['state1']:<3} pcs_run: {data['state2']:<3} syssta: {data['state3']:<3} salarm: {data['state4']:<3}")
+                print(f"    {'可用' if data['available'] else '不可用':<12} clubsta: {data['state1']:<3} input408: {data['input408']:<3} syssta: {data['state3']:<3} salarm: {data['state4']:<3}")
                 print(f"    荷电状态(SOC): {data['soc']:6.1f}%  剩余容量: {data['remaining_capacity']:6.1f}kWh")
                 print(f"    额定容量: {data['rated_capacity']:6.1f}kWh  最大充/放电功率: {data['max_charge_power']:6.1f}/{data['max_discharge_power']:6.1f}kW")
                 print(f"    有功功率: {data['active_power']:6.1f}kW  三相电流: {data['current_a']:5.1f}A / {data['current_b']:5.1f}A / {data['current_c']:5.1f}A")
