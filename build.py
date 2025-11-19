@@ -19,38 +19,6 @@ from src.config import (
     # 辅助函数和装饰器
     is_feature_enabled, conditional_compile, import_if_enabled
 )
-try:
-    from tqdm import tqdm
-    TQDM_AVAILABLE = True
-except ImportError:
-    TQDM_AVAILABLE = False
-    print("提示: 安装tqdm可获得更好的进度显示体验: pip install tqdm")
-    
-    # 简单的进度条替代
-    class tqdm:
-        def __init__(self, total=None, desc="", unit=""):
-            self.total = total
-            self.desc = desc
-            self.current = 0
-            print(f"{desc}...")
-        
-        def update(self, n=1):
-            self.current += n
-            if self.total:
-                percent = (self.current / self.total) * 100
-                print(f"\r{self.desc}: {percent:.1f}%", end="", flush=True)
-            else:
-                print(".", end="", flush=True)
-        
-        def close(self):
-            print("\n完成!")
-        
-        def __enter__(self):
-            return self
-        
-        def __exit__(self, *args):
-            self.close()
-
 
 def check_conda_env():
     """检查是否在conda环境中"""
@@ -266,36 +234,6 @@ def build_executable():
         print(f"\n构建过程中发生异常: {e}")
         return False
 
-
-def copy_assets():
-    """复制资源文件到dist目录"""
-    dist_dir = Path('dist')
-    if not dist_dir.exists():
-        print("\ndist目录不存在，构建可能失败")
-        return False
-    
-    # 确保资源文件被正确复制
-    assets_src = Path('src/assets')
-    if assets_src.exists():
-        asset_files = list(assets_src.glob('*'))
-        
-        print(f"复制资源文件... ({len(asset_files)} 个文件)")
-        assets_dst = dist_dir / 'assets'
-        if assets_dst.exists():
-            shutil.rmtree(assets_dst)
-        assets_dst.mkdir(exist_ok=True)
-        
-        for asset_file in asset_files:
-            if asset_file.is_file():
-                shutil.copy2(asset_file, assets_dst / asset_file.name)
-        
-        print(f"资源文件复制完成")
-    else:
-        print("\n未找到资源文件目录")
-    
-    return True
-
-
 def main():
     """主函数"""
     print("=== PandaPower仿真器打包工具 ===")
@@ -316,11 +254,6 @@ def main():
     # 4. 构建可执行文件
     print("\n[4/5] 构建可执行文件...")
     if not build_executable():
-        return False
-    
-    # 5. 复制资源文件
-    print("\n[5/5] 复制资源文件...")
-    if not copy_assets():
         return False
     
     print("\n" + "="*50)
