@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 打包发布脚本
-用于自动更新版本号、调用build.py构建项目并创建7z压缩包
+用于自动更新版本号、调用build.py构建项目并创建ZIP压缩包
 """
 
 import os
@@ -13,6 +13,42 @@ import shutil
 from pathlib import Path
 import argparse
 from datetime import datetime
+import time
+
+# 尝试导入tqdm进度条库
+try:
+    from tqdm import tqdm
+except ImportError:
+    # 如果tqdm库不可用，定义一个简单的模拟进度条类
+    class tqdm:
+        def __init__(self, iterable=None, total=None, desc='', unit='it'):
+            self.iterable = iterable
+            self.total = total or len(iterable) if iterable else 0
+            self.desc = desc
+            self.unit = unit
+            self.n = 0
+            self.start_time = time.time()
+            print(f"{self.desc} {self.n}/{self.total} {self.unit}", end='', flush=True)
+        
+        def update(self, n=1):
+            self.n += n
+            elapsed = time.time() - self.start_time
+            rate = self.n / elapsed if elapsed > 0 else 0
+            print(f"\r{self.desc} {self.n}/{self.total} {self.unit} [{elapsed:.1f}s, {rate:.1f}{self.unit}/s]", end='', flush=True)
+        
+        def __enter__(self):
+            return self
+        
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            elapsed = time.time() - self.start_time
+            print(f"\r{self.desc} {self.total}/{self.total} {self.unit} [{elapsed:.1f}s, {self.total/elapsed:.1f}{self.unit}/s]\n", flush=True)
+        
+        def __iter__(self):
+            if self.iterable:
+                for item in self.iterable:
+                    yield item
+                    self.update()
+
 
 def get_current_version():
     """从main_window.py文件中获取当前版本号"""
@@ -105,79 +141,67 @@ def run_build_script():
     print("正在运行build.py脚本...")
     try:
         result = subprocess.run([sys.executable, str(build_script)], 
-                               check=True, capture_output=True, text=True)
+                                   check=True, cwd=os.getcwd())
         print("build.py脚本执行成功")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"build.py脚本执行失败: {e}")
-        print(f"错误输出: {e.stderr}")
+        print(f"build.py脚本执行失败")
         return False
     except Exception as e:
         print(f"运行build.py时发生异常: {e}")
         return False
 
-def compress_to_7z(dist_dir, output_file):
-    """将dist目录压缩成7z格式，如果不可用则使用ZIP格式
+def compress_to_zip(dist_dir, output_file):
+    """将dist目录压缩成ZIP格式
+    
+    Args:
+        dist_dir: 要压缩的目录路径
+        output_file: 输出的ZIP文件路径
     
     Returns:
         tuple: (成功标志, 实际创建的压缩包路径)
     """
+    import zipfile
+    
     dist_path = Path(dist_dir)
     if not dist_path.exists() or not dist_path.is_dir():
         print(f"错误: 找不到dist目录 {dist_dir}")
         return False, None
     
-    # 首先尝试使用py7zr库
-    try:
-        import py7zr
-        print(f"使用py7zr库创建7z压缩包: {output_file}")
-        with py7zr.SevenZipFile(output_file, 'w', filters=[{"id": py7zr.FILTER_LZMA2, "preset": 9}]) as z:
-            # 添加整个目录
-            z.writeall(dist_dir, os.path.basename(dist_dir))
-        print(f"7z压缩包创建成功: {output_file}")
-        return True, output_file
-    except ImportError:
-        print("警告: 未找到py7zr库，尝试其他压缩方法")
-        print("提示: 可以通过 'pip install py7zr' 安装py7zr库以获得更好的7z压缩支持")
-    except Exception as e:
-        print(f"使用py7zr创建压缩包时出错: {e}")
+    # 计算文件总数用于进度条
+    total_files = 0
+    for root, dirs, files in os.walk(dist_dir):
+        total_files += len(files)
     
-    # 其次检查7z命令是否可用
-    try:
-        subprocess.run(["7z", "--help"], check=False, capture_output=True)
-        has_7z = True
-    except FileNotFoundError:
-        has_7z = False
+    # 确保输出文件使用.zip扩展名
+    zip_output = output_file
     
-    if has_7z:
-        # 使用7z命令行工具
-        print(f"使用7z命令行工具创建7z压缩包: {output_file}")
-        try:
-            # 构建7z命令
-            cmd = ["7z", "a", "-t7z", "-mx=9", output_file, str(dist_path) + "/*"]
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(f"7z压缩包创建成功: {output_file}")
-            return True, output_file
-        except subprocess.CalledProcessError as e:
-            print(f"7z压缩失败: {e}")
-            print(f"错误输出: {e.stderr}")
-        except Exception as e:
-            print(f"创建7z压缩包时发生异常: {e}")
+    print(f"使用Python内置zipfile模块创建ZIP压缩包: {zip_output}")
     
-    # 最后使用Python内置的zipfile模块作为备选
-    print("尝试使用Python内置的zipfile模块")
     try:
-        import zipfile
-        zip_output = output_file.replace('.7z', '.zip')
-        print(f"创建ZIP压缩包: {zip_output}")
-        with zipfile.ZipFile(zip_output, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(dist_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, os.path.dirname(dist_dir))
-                    zipf.write(file_path, arcname)
+        with zipfile.ZipFile(zip_output, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
+            # 使用进度条显示压缩进度
+            with tqdm(total=total_files, desc="压缩进度", unit="文件") as pbar:
+                for root, dirs, files in os.walk(dist_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        # 生成相对于dist_dir的路径，而不是相对于dist_dir的父目录
+                        # 这样压缩包中将不包含顶层的dist目录
+                        arcname = os.path.relpath(file_path, dist_dir)
+                        zipf.write(file_path, arcname)
+                        pbar.update(1)
+        
         print(f"ZIP压缩包创建成功: {zip_output}")
         return True, zip_output
+    except zipfile.BadZipFile as e:
+        print(f"ZIP文件格式错误: {e}")
+        return False, None
+    except zipfile.LargeZipFile as e:
+        print(f"ZIP文件过大错误: {e}")
+        return False, None
+    except IOError as e:
+        print(f"I/O错误: {e}")
+        return False, None
     except Exception as e:
         print(f"创建ZIP压缩包时出错: {e}")
         return False, None
@@ -188,12 +212,15 @@ def main():
     
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='PandaPower仿真器发布打包工具')
-    parser.add_argument('--type', '-t', choices=['feature', 'fix'], default='feature',
-                      help='更新类型: feature(功能更新) 或 fix(修复)')
+    parser.add_argument('--type', '-t', choices=['feature', 'fix', 'none'], default='none',
+                      help='更新类型: feature(功能更新)、fix(修复) 或 none(不修改版本号)')
     args = parser.parse_args()
     
     update_type = args.type
-    update_type_text = "功能更新" if update_type == "feature" else "修复"
+    if update_type == 'none':
+        update_type_text = "不修改版本号"
+    else:
+        update_type_text = "功能更新" if update_type == "feature" else "修复"
     print(f"更新类型: {update_type_text}")
     
     # 1. 获取当前版本号
@@ -204,34 +231,39 @@ def main():
         return False
     print(f"当前版本号: {current_version}")
     
-    # 2. 计算新版本号
-    print("\n[2/5] 计算新版本号...")
-    new_version = update_version(current_version, update_type)
-    print(f"新版本号: {new_version}")
-    
-    # 3. 更新main_window.py中的版本号
-    print("\n[3/5] 更新版本号...")
-    if not update_main_window_version(new_version):
-        print("无法继续，退出")
-        return False
+    # 2. 根据更新类型决定是否修改版本号
+    if update_type == 'none':
+        print("\n[2/5] 跳过版本号修改")
+        new_version = current_version
+    else:
+        print("\n[2/5] 计算新版本号...")
+        new_version = update_version(current_version, update_type)
+        print(f"新版本号: {new_version}")
+        
+        # 3. 更新main_window.py中的版本号
+        print("\n[3/5] 更新版本号...")
+        if not update_main_window_version(new_version):
+            print("无法继续，退出")
+            return False
     
     # 4. 运行build.py脚本
     print("\n[4/5] 构建项目...")
     if not run_build_script():
-        # 构建失败，恢复版本号
-        print("构建失败，恢复版本号...")
-        update_main_window_version(current_version)
+        # 构建失败，如果修改了版本号则恢复
+        if update_type != 'none':
+            print("构建失败，恢复版本号...")
+            update_main_window_version(current_version)
         print("无法继续，退出")
         return False
     
-    # 5. 压缩成7z格式
+    # 5. 压缩成ZIP格式
     print("\n[5/5] 创建压缩包...")
     dist_dir = "dist"
-    # 创建带版本号和日期的压缩包名称
-    today = datetime.now().strftime("%Y%m%d")
-    output_file = f"pandapower_sim_v{new_version}_{today}.7z"
+    # 创建带版本号和精确到分钟的时间戳的压缩包名称
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    output_file = f"pandapower_sim_v{new_version}_{timestamp}.zip"
     
-    success, actual_output_file = compress_to_7z(dist_dir, output_file)
+    success, actual_output_file = compress_to_zip(dist_dir, output_file)
     if success:
         print("\n" + "="*60)
         print(f"打包发布完成!")
