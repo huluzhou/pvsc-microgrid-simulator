@@ -1622,7 +1622,7 @@ class SimulationWindow(QMainWindow):
                 for device_idx in valid_pv_indices:
                     try:
                         pv_item = self.network_items['static_generator'][device_idx]
-                        current_power_mw = abs(self.network_model.net.sgen.at[device_idx, 'p_mw'])
+                        current_power_mw = abs(self.network_model.net.res_sgen.at[device_idx, 'p_mw'])
                         
                         # 计算本次产生的能量（kWh）
                         energy_generated_kwh = current_power_mw * time_interval_hours * 1000
@@ -1642,7 +1642,7 @@ class SimulationWindow(QMainWindow):
                 for device_idx in valid_storage_indices:
                     try:
                         storage_item = self.network_items['storage'][device_idx]
-                        current_power_mw = -self.network_model.net.storage.at[device_idx, 'p_mw']
+                        current_power_mw = -self.network_model.net.res_storage.at[device_idx, 'p_mw']
                         
                         # 调用StorageItem的实时数据更新方法
                         storage_item.update_storage_energy_and_state(current_power_mw, time_interval_hours)
