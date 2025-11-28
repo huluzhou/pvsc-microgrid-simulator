@@ -260,11 +260,25 @@ class PropertiesPanel(QWidget):
             return widget
             
         elif prop_type == 'int':
-            widget = QSpinBox()
-            widget.setRange(prop_info.get('min', -999999), prop_info.get('max', 999999))
-            widget.setValue(int(current_value) if current_value else 0)
-            widget.valueChanged.connect(lambda value: self.on_property_changed(prop_name, value))
-            return widget
+            # 特殊处理波特率：使用可编辑的ComboBox，支持手动输入和下拉选择
+            if prop_name == 'baud_rate':
+                widget = QComboBox()
+                widget.setEditable(True)
+                # 添加常用波特率选项
+                common_baud_rates = [9600, 19200, 38400, 57600, 115200]
+                for rate in common_baud_rates:
+                    widget.addItem(str(rate))
+                # 设置当前值
+                widget.setCurrentText(str(current_value))
+                # 连接信号，转换为整数
+                widget.currentTextChanged.connect(lambda text: self.on_property_changed(prop_name, int(text) if text.isdigit() else 9600))
+                return widget
+            else:
+                widget = QSpinBox()
+                widget.setRange(prop_info.get('min', -999999), prop_info.get('max', 999999))
+                widget.setValue(int(current_value) if current_value else 0)
+                widget.valueChanged.connect(lambda value: self.on_property_changed(prop_name, value))
+                return widget
             
         elif prop_type == 'bool':
             widget = QCheckBox()
@@ -416,6 +430,12 @@ class PropertiesPanel(QWidget):
             
             # 特殊处理充电桩的use_power_factor属性改变
             if prop_name == 'use_power_factor' and self.current_item.component_type == 'charger':
+                # 重新刷新属性面板显示
+                self.update_properties(self.current_item)
+                return  # 避免重复发出信号
+            
+            # 特殊处理储能、充电桩、光伏、电表组件的通信协议属性改变
+            if prop_name == 'protocol' and self.current_item.component_type in ['storage', 'charger', 'static_generator', 'meter']:
                 # 重新刷新属性面板显示
                 self.update_properties(self.current_item)
                 return  # 避免重复发出信号
@@ -607,8 +627,11 @@ class PropertiesPanel(QWidget):
                 'max_e_mwh': {'type': 'float', 'label': '最大储能容量 (MWh)', 'default': 1.0, 'min': 0.001, 'max': 100000.0, 'decimals': 3},
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
                 'brand': {'type': 'str', 'label': '品牌', 'default': ''},
+                'protocol': {'type': 'choice', 'label': '通信协议', 'choices': [('modbus_tcp', 'modbus_tcp'), ('modbus_rtu', 'modbus_rtu')], 'default': 'modbus_tcp'},
                 'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
                 'port': {'type': 'str', 'label': '端口', 'default': ''},
+                'baud_rate': {'type': 'int', 'label': '波特率', 'default': 9600, 'min': 1},
+                'parity': {'type': 'choice', 'label': '奇偶校验位', 'choices': [('None', 'None'), ('odd', 'odd'), ('even', 'even')], 'default': 'None'},
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
                 'bus': {'type': 'readonly', 'label': '连接母线', 'default': ''}
             },
@@ -629,8 +652,11 @@ class PropertiesPanel(QWidget):
                 # 设备信息
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
                 'brand': {'type': 'str', 'label': '品牌', 'default': ''},
+                'protocol': {'type': 'choice', 'label': '通信协议', 'choices': [('modbus_tcp', 'modbus_tcp'), ('modbus_rtu', 'modbus_rtu')], 'default': 'modbus_tcp'},
                 'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
                 'port': {'type': 'str', 'label': '端口', 'default': ''},
+                'baud_rate': {'type': 'int', 'label': '波特率', 'default': 9600, 'min': 1},
+                'parity': {'type': 'choice', 'label': '奇偶校验位', 'choices': [('None', 'None'), ('odd', 'odd'), ('even', 'even')], 'default': 'None'},
                 
                 # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
@@ -679,8 +705,11 @@ class PropertiesPanel(QWidget):
                 # 设备信息
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
                 'brand': {'type': 'str', 'label': '品牌', 'default': ''},
+                'protocol': {'type': 'choice', 'label': '通信协议', 'choices': [('modbus_tcp', 'modbus_tcp'), ('modbus_rtu', 'modbus_rtu')], 'default': 'modbus_tcp'},
                 'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
                 'port': {'type': 'str', 'label': '端口', 'default': ''},
+                'baud_rate': {'type': 'int', 'label': '波特率', 'default': 9600, 'min': 1},
+                'parity': {'type': 'choice', 'label': '奇偶校验位', 'choices': [('None', 'None'), ('odd', 'odd'), ('even', 'even')], 'default': 'None'},
                 
                 # 其他参数
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
@@ -741,8 +770,11 @@ class PropertiesPanel(QWidget):
                 # 设备信息
                 'sn': {'type': 'str', 'label': '序列号', 'default': ''},
                 'brand': {'type': 'str', 'label': '品牌', 'default': ''},
+                'protocol': {'type': 'choice', 'label': '通信协议', 'choices': [('modbus_tcp', 'modbus_tcp'), ('modbus_rtu', 'modbus_rtu')], 'default': 'modbus_tcp'},
                 'ip': {'type': 'str', 'label': 'IP地址', 'default': ''},
                 'port': {'type': 'str', 'label': '端口', 'default': ''},
+                'baud_rate': {'type': 'int', 'label': '波特率', 'default': 9600, 'min': 1},
+                'parity': {'type': 'choice', 'label': '奇偶校验位', 'choices': [('None', 'None'), ('odd', 'odd'), ('even', 'even')], 'default': 'None'},
                 'in_service': {'type': 'bool', 'label': '投入运行', 'default': True},
             },
             'switch': {
