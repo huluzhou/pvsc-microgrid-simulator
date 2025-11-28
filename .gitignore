@@ -8,3 +8,5 @@ src/__pycache__
 *.log
 *.7z
 *.db
+*.pyc
+*.zip

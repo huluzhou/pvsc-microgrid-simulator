@@ -151,18 +151,17 @@ def run_build_script():
         print(f"运行build.py时发生异常: {e}")
         return False
 
-def compress_to_zip(dist_dir, output_file):
-    """将dist目录压缩成ZIP格式
+def compress(dist_dir, output_file, format="7z"):
+    """将dist目录压缩成指定格式
     
     Args:
         dist_dir: 要压缩的目录路径
-        output_file: 输出的ZIP文件路径
+        output_file: 输出的压缩包路径
+        format: 压缩格式，支持"zip"和"7z"
     
     Returns:
         tuple: (成功标志, 实际创建的压缩包路径)
     """
-    import zipfile
-    
     dist_path = Path(dist_dir)
     if not dist_path.exists() or not dist_path.is_dir():
         print(f"错误: 找不到dist目录 {dist_dir}")
@@ -173,38 +172,68 @@ def compress_to_zip(dist_dir, output_file):
     for root, dirs, files in os.walk(dist_dir):
         total_files += len(files)
     
-    # 确保输出文件使用.zip扩展名
-    zip_output = output_file
+    # 根据格式确保输出文件使用正确的扩展名
+    if format == "7z" and not output_file.endswith(".7z"):
+        output_file += ".7z"
+    elif format == "zip" and not output_file.endswith(".zip"):
+        output_file += ".zip"
     
-    print(f"使用Python内置zipfile模块创建ZIP压缩包: {zip_output}")
-    
-    try:
-        with zipfile.ZipFile(zip_output, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
-            # 使用进度条显示压缩进度
-            with tqdm(total=total_files, desc="压缩进度", unit="文件") as pbar:
-                for root, dirs, files in os.walk(dist_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        # 生成相对于dist_dir的路径，而不是相对于dist_dir的父目录
-                        # 这样压缩包中将不包含顶层的dist目录
-                        arcname = os.path.relpath(file_path, dist_dir)
-                        zipf.write(file_path, arcname)
-                        pbar.update(1)
+    if format == "7z":
+        try:
+            import py7zr
+            
+            print(f"使用py7zr库创建7z压缩包: {output_file}")
+            
+            with py7zr.SevenZipFile(output_file, 'w') as z:
+                # 使用进度条显示压缩进度
+                with tqdm(total=total_files, desc="压缩进度", unit="文件") as pbar:
+                    for root, dirs, files in os.walk(dist_dir):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            # 生成相对于dist_dir的路径
+                            arcname = os.path.relpath(file_path, dist_dir)
+                            z.write(file_path, arcname)
+                            pbar.update(1)
+            
+            print(f"7z压缩包创建成功: {output_file}")
+            return True, output_file
+        except ImportError:
+            print("错误: 找不到py7zr库，请先安装")
+            return False, None
+        except Exception as e:
+            print(f"创建7z压缩包时出错: {e}")
+            return False, None
+    else:  # zip格式
+        import zipfile
         
-        print(f"ZIP压缩包创建成功: {zip_output}")
-        return True, zip_output
-    except zipfile.BadZipFile as e:
-        print(f"ZIP文件格式错误: {e}")
-        return False, None
-    except zipfile.LargeZipFile as e:
-        print(f"ZIP文件过大错误: {e}")
-        return False, None
-    except IOError as e:
-        print(f"I/O错误: {e}")
-        return False, None
-    except Exception as e:
-        print(f"创建ZIP压缩包时出错: {e}")
-        return False, None
+        print(f"使用Python内置zipfile模块创建ZIP压缩包: {output_file}")
+        
+        try:
+            with zipfile.ZipFile(output_file, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
+                # 使用进度条显示压缩进度
+                with tqdm(total=total_files, desc="压缩进度", unit="文件") as pbar:
+                    for root, dirs, files in os.walk(dist_dir):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            # 生成相对于dist_dir的路径
+                            arcname = os.path.relpath(file_path, dist_dir)
+                            zipf.write(file_path, arcname)
+                            pbar.update(1)
+            
+            print(f"ZIP压缩包创建成功: {output_file}")
+            return True, output_file
+        except zipfile.BadZipFile as e:
+            print(f"ZIP文件格式错误: {e}")
+            return False, None
+        except zipfile.LargeZipFile as e:
+            print(f"ZIP文件过大错误: {e}")
+            return False, None
+        except IOError as e:
+            print(f"I/O错误: {e}")
+            return False, None
+        except Exception as e:
+            print(f"创建ZIP压缩包时出错: {e}")
+            return False, None
 
 def main():
     """主函数"""
@@ -212,8 +241,10 @@ def main():
     
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='PandaPower仿真器发布打包工具')
-    parser.add_argument('--type', '-t', choices=['feature', 'fix', 'none'], default='none',
+    parser.add_argument('--type', '-t', choices=['feature', 'fix', 'none'], default='feature',
                       help='更新类型: feature(功能更新)、fix(修复) 或 none(不修改版本号)')
+    parser.add_argument('--format', '-f', choices=['zip', '7z'], default='7z',
+                      help='压缩格式: zip 或 7z (默认: 7z)')
     args = parser.parse_args()
     
     update_type = args.type
@@ -222,6 +253,7 @@ def main():
     else:
         update_type_text = "功能更新" if update_type == "feature" else "修复"
     print(f"更新类型: {update_type_text}")
+    print(f"压缩格式: {args.format}")
     
     # 1. 获取当前版本号
     print("\n[1/5] 获取当前版本号...")
@@ -256,14 +288,14 @@ def main():
         print("无法继续，退出")
         return False
     
-    # 5. 压缩成ZIP格式
+    # 5. 压缩成指定格式
     print("\n[5/5] 创建压缩包...")
     dist_dir = "dist"
     # 创建带版本号和精确到分钟的时间戳的压缩包名称
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    output_file = f"pandapower_sim_v{new_version}_{timestamp}.zip"
+    output_file = f"pandapower_sim_v{new_version}_{timestamp}"
     
-    success, actual_output_file = compress_to_zip(dist_dir, output_file)
+    success, actual_output_file = compress(dist_dir, output_file, args.format)
     if success:
         print("\n" + "="*60)
         print(f"打包发布完成!")

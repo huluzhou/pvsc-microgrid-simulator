@@ -786,6 +786,9 @@ class StorageItem(BaseNetworkItem):
             "brand": "",  # 品牌
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{501 + self.component_index}",
+            "protocol": "modbus_tcp",  # 通信协议
+            "baud_rate": 9600,  # 波特率
+            "parity": "None",  # 奇偶校验位
         }
         self.label.setPlainText(component_name)
         
@@ -883,6 +886,9 @@ class ChargerItem(BaseNetworkItem):
             "brand": "",  # 品牌
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{701 + self.component_index}",
+            "protocol": "modbus_tcp",  # 通信协议
+            "baud_rate": 9600,  # 波特率
+            "parity": "None",  # 奇偶校验位
         }
         self.power_limit = 1.0 
         self.required_power = 1.0 # 实际需求功率
@@ -1196,6 +1202,9 @@ class StaticGeneratorItem(BaseNetworkItem):
             "brand": "",  # 品牌
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{601 + self.component_index}",
+            "protocol": "modbus_tcp",  # 通信协议
+            "baud_rate": 9600,  # 波特率
+            "parity": "None",  # 奇偶校验位
         }
         self.today_discharge_energy = 0.0
         self.total_discharge_energy = 0.0
@@ -1251,6 +1260,9 @@ class MeterItem(BaseNetworkItem):
             "brand": "",  # 品牌
             "ip": "0.0.0.0",  # 默认IP改为0.0.0.0
             "port": f"{402 + self.component_index}",
+            "protocol": "modbus_tcp",  # 通信协议
+            "baud_rate": 9600,  # 波特率
+            "parity": "None",  # 奇偶校验位
         }
         self.label.setPlainText(self.properties["name"])
         self.comm_status = False  # 初始通信状态为False
