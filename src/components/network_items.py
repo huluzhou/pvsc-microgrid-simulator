@@ -891,7 +891,7 @@ class ChargerItem(BaseNetworkItem):
             "parity": "None",  # 奇偶校验位
         }
         self.power_limit = 1.0 
-        self.required_power = 1.0 # 实际需求功率
+        self.required_power = 0.0 # 实际需求功率
         self.comm_status = False  # 初始通信状态为False
         self.label.setPlainText(component_name)
         

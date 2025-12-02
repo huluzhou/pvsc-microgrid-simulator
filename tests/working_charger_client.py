@@ -64,15 +64,15 @@ class MultiChargerClient:
                     
                     # 拼接32位数据并除以10还原实际值
                     # 有功功率：地址0(低16位) + 地址1(高16位)
-                    active_power_raw = (power_result.registers[1] << 16) | power_result.registers[0]
+                    active_power_raw = power_result.registers[0]
                     data['active_power'] = active_power_raw / 10.0  # 除以10还原实际值
                     
                     # 需求功率：地址2(低16位) + 地址3(高16位)  
-                    demand_power_raw = (power_result.registers[3] << 16) | power_result.registers[2]
+                    demand_power_raw = power_result.registers[2]
                     data['demand_power'] = demand_power_raw / 10.0  # 除以10还原实际值
                     
                     # 额定功率：地址4(低16位) + 地址5(高16位)
-                    rated_power_raw = (power_result.registers[5] << 16) | power_result.registers[4]
+                    rated_power_raw = power_result.registers[4]
                     data['rated_power'] = rated_power_raw # 除以10还原实际值
                     
                     # 枪状态（单16位值）
