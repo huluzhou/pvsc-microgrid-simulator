@@ -13,6 +13,53 @@ with open(topology_file, 'r', encoding='utf-8') as f:
 # 在根上添加connections字段
 connections = []
 
+# 创建set记录和开关连接的母线
+switched_buses = set()
+
+if 'Switch' in topology_data:
+    for switch in topology_data['Switch']:
+        # 获取开关信息
+        switch_index = switch['index']
+        switch_name = f"Switch_{switch_index}"
+        
+        # 获取母线信息
+        bus_index = switch['bus']
+        bus_name = f"Bus_{bus_index}"
+        
+        # 将母线添加到set中
+        switched_buses.add(bus_index)
+        
+        # 生成母线侧连接
+        bus_connection = {
+            "item1": bus_name,
+            "item2": switch_name
+        }
+        connections.append(bus_connection)
+        
+        # 根据et判断开关另一端的设备类型
+        et = switch['et']
+        element_index = switch['element']
+        
+        # 确定设备类型和名称
+        device_type = ""
+        if et == 'b':
+            device_type = "Bus"
+        elif et == 'l':
+            device_type = "Line"
+        elif et == 't':
+            device_type = "Transformer"
+        elif et == 't3':
+            device_type = "Transformer"
+        
+        if device_type:
+            device_name = f"{device_type}_{element_index}"
+            # 生成设备侧连接
+            device_connection = {
+                "item1": device_name,
+                "item2": switch_name
+            }
+            connections.append(device_connection)
+
 # 遍历变压器
 if 'Transformer' in topology_data:
     for transformer in topology_data['Transformer']:
@@ -28,19 +75,21 @@ if 'Transformer' in topology_data:
         lv_bus_index = transformer['lv_bus']
         lv_bus_name = f"Bus_{lv_bus_index}"
         
-        # 生成高压侧连接
-        hv_connection = {
-            "item1": hv_bus_name,
-            "item2": transformer_name
-        }
-        connections.append(hv_connection)
+        # 生成高压侧连接（如果母线不在switched_buses中）
+        if hv_bus_index not in switched_buses:
+            hv_connection = {
+                "item1": hv_bus_name,
+                "item2": transformer_name
+            }
+            connections.append(hv_connection)
         
-        # 生成低压侧连接
-        lv_connection = {
-            "item1": lv_bus_name,
-            "item2": transformer_name
-        }
-        connections.append(lv_connection)
+        # 生成低压侧连接（如果母线不在switched_buses中）
+        if lv_bus_index not in switched_buses:
+            lv_connection = {
+                "item1": lv_bus_name,
+                "item2": transformer_name
+            }
+            connections.append(lv_connection)
 
 # 遍历线路
 if 'Line' in topology_data:
@@ -57,19 +106,21 @@ if 'Line' in topology_data:
         to_bus_index = line['to_bus']
         to_bus_name = f"Bus_{to_bus_index}"
         
-        # 生成起始侧连接
-        from_connection = {
-            "item1": from_bus_name,
-            "item2": line_name
-        }
-        connections.append(from_connection)
+        # 生成起始侧连接（如果母线不在switched_buses中）
+        if from_bus_index not in switched_buses:
+            from_connection = {
+                "item1": from_bus_name,
+                "item2": line_name
+            }
+            connections.append(from_connection)
         
-        # 生成终止侧连接
-        to_connection = {
-            "item1": to_bus_name,
-            "item2": line_name
-        }
-        connections.append(to_connection)
+        # 生成终止侧连接（如果母线不在switched_buses中）
+        if to_bus_index not in switched_buses:
+            to_connection = {
+                "item1": to_bus_name,
+                "item2": line_name
+            }
+            connections.append(to_connection)
 
 # 遍历负载、光伏、储能、充电桩
 # 定义需要处理的设备类型映射：拓扑类型 -> 显示名称
