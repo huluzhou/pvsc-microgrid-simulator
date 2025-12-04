@@ -292,7 +292,7 @@ class NetworkCanvas(QGraphicsView):
         # 开关一端为母线,另外一端可以是母线\线路\变压器   
         if type1 == "switch" or type2 == "switch":
             # 确定哪个是开关，哪个是另一个组件
-            switch_item = item2 if type1 == "switch" else item1
+            switch_item = item1 if type1 == "switch" else item2
             other_type = type2 if type1 == "switch" else type1
             
             # 开关可以连接到母线、线路或变压器
