@@ -52,6 +52,10 @@ class NetworkModel:
         Returns:
             int: pandapower线路索引
         """
+        # 转换为整数类型
+        from_bus = int(from_bus)
+        to_bus = int(to_bus)
+        
         is_std = properties.get("use_standard_type", True)
         if is_std:
             # 使用用户选择的标准类型，而不是硬编码的默认值
@@ -96,6 +100,10 @@ class NetworkModel:
         Returns:
             int: pandapower变压器索引
         """
+        # 转换为整数类型
+        hv_bus = int(hv_bus)
+        lv_bus = int(lv_bus)
+        
         is_std = properties.get("use_standard_type", True)
         if is_std:
             # 使用用户选择的标准类型，而不是硬编码的默认值
@@ -137,6 +145,9 @@ class NetworkModel:
         Returns:
             int: pandapower发电机索引
         """
+        # 转换为整数类型
+        bus = int(bus)
+        
         gen_idx = pp.create_gen(
             self.net,
             bus=bus,
@@ -159,6 +170,9 @@ class NetworkModel:
         Returns:
             int: pandapower负载索引
         """
+        # 转换为整数类型
+        bus = int(bus)
+        
         # 根据use_power_factor参数决定使用哪种创建方式
         use_power_factor = properties.get("use_power_factor", False)
         
@@ -205,6 +219,9 @@ class NetworkModel:
         Returns:
             int: pandapower储能设备索引
         """
+        # 转换为整数类型
+        bus = int(bus)
+        
         storage_idx = pp.create_storage(
             self.net,
             bus=bus,
@@ -253,6 +270,9 @@ class NetworkModel:
         Returns:
             int: pandapower负载索引（充电站作为负载处理，但使用独立的索引）
         """
+        # 转换为整数类型
+        bus = int(bus)
+        
         # 充电站作为可控负载处理，但为了避免与负载索引冲突，使用特殊前缀
         use_power_factor = properties.get("use_power_factor", False)
         
@@ -302,6 +322,9 @@ class NetworkModel:
         Returns:
             int: pandapower外部电网索引
         """
+        # 转换为整数类型
+        bus = int(bus)
+        
         ext_grid_idx = pp.create_ext_grid(
             self.net,
             bus=bus,
@@ -319,8 +342,11 @@ class NetworkModel:
             properties: 光伏属性
         
         Returns:
-            int: pandapower光伏索引
+            int: pandapower静态发电机索引
         """
+        # 转换为整数类型
+        bus = int(bus)
+        
         # 根据use_power_factor参数决定使用哪种创建方式
         use_power_factor = properties.get("use_power_factor", False)
         
@@ -363,6 +389,9 @@ class NetworkModel:
         Returns:
             int: pandapower开关索引
         """
+        # 转换为整数类型
+        bus = int(bus)
+        
         switch_idx = pp.create_switch(
             self.net,
             bus=bus,

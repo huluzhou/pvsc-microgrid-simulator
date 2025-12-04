@@ -85,25 +85,25 @@ def update_version(current_version, update_type):
     version_parts = list(map(int, current_version.split('.')))
     
     if update_type == "feature":
-        # 功能更新：累加第三位，删除第四位（如果有）
-        if len(version_parts) >= 3:
-            version_parts[2] += 1
-            # 只保留前三位
-            version_parts = version_parts[:3]
-        else:
-            # 如果版本号少于三位，补充到三位
-            while len(version_parts) < 3:
-                version_parts.append(0)
-            version_parts[2] += 1
+        # 功能更新：累加第二位，重置第三位，确保生成三位版本号
+        # 确保至少有三位版本号
+        while len(version_parts) < 3:
+            version_parts.append(0)
+        # 累加第二位
+        version_parts[1] += 1
+        # 重置第三位为0
+        version_parts[2] = 0
+        # 只保留前三位
+        version_parts = version_parts[:3]
     elif update_type == "fix":
-        # 修复：累加第四位，如果没有第四位则添加
-        if len(version_parts) >= 4:
-            version_parts[3] += 1
-        else:
-            # 确保至少有三位，然后添加第四位
-            while len(version_parts) < 3:
-                version_parts.append(0)
-            version_parts.append(1)
+        # 修复：累加第三位，确保生成三位版本号
+        # 确保至少有三位版本号
+        while len(version_parts) < 3:
+            version_parts.append(0)
+        # 累加第三位
+        version_parts[2] += 1
+        # 只保留前三位
+        version_parts = version_parts[:3]
     
     # 转换回字符串
     return '.'.join(map(str, version_parts))
@@ -241,7 +241,7 @@ def main():
     
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='PandaPower仿真器发布打包工具')
-    parser.add_argument('--type', '-t', choices=['feature', 'fix', 'none'], default='feature',
+    parser.add_argument('--type', '-t', choices=['feature', 'fix', 'none'], default='fix',
                       help='更新类型: feature(功能更新)、fix(修复) 或 none(不修改版本号)')
     parser.add_argument('--format', '-f', choices=['zip', '7z'], default='7z',
                       help='压缩格式: zip 或 7z (默认: 7z)')
