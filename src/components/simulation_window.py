@@ -8,7 +8,8 @@
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, 
-    QTreeWidgetItem, QMessageBox, QDockWidget, QFileDialog, QStatusBar
+    QTreeWidgetItem, QMessageBox, QDockWidget, QFileDialog, QStatusBar, QInputDialog,
+    QComboBox
   )
 import threading
 import time
@@ -322,6 +323,141 @@ class SimulationWindow(QMainWindow):
         stop_record_action = record_data_menu.addAction("停止记录")
         stop_record_action.triggered.connect(self.stop_record_data)
         
+        # 添加配置菜单
+        config_menu = menubar.addMenu("配置")
+        power_unit_action = config_menu.addAction("功率单位配置")
+        power_unit_action.triggered.connect(self.configure_power_unit)
+        
+    def configure_power_unit(self):
+        """配置功率单位"""
+        try:
+            from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QFormLayout
+            from PySide6.QtCore import Qt
+            import config
+            
+            # 创建配置对话框
+            dialog = QDialog(self)
+            dialog.setWindowTitle("功率单位配置")
+            dialog.setMinimumWidth(300)
+            
+            # 创建布局
+            layout = QVBoxLayout(dialog)
+            form_layout = QFormLayout()
+            
+            # 创建功率单位下拉选择框
+            power_unit_combo = QComboBox()
+            
+            # 定义功率单位选项和对应的系数
+            power_units = {
+                'w': 1000000.0,
+                'kw': 1000.0,
+                'mw': 1.0,
+                'gw': 1000.0
+            }
+            
+            # 添加选项到下拉框
+            for unit in power_units.keys():
+                power_unit_combo.addItem(unit, power_units[unit])
+            
+            # 设置当前选中项
+            current_coefficient = config.POWER_UNIT
+            for i in range(power_unit_combo.count()):
+                if abs(power_unit_combo.itemData(i) - current_coefficient) < 0.001:
+                    power_unit_combo.setCurrentIndex(i)
+                    break
+            
+            # 添加到表单布局
+            form_layout.addRow(QLabel("功率单位:"), power_unit_combo)
+            layout.addLayout(form_layout)
+            
+            # 创建按钮布局
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+            
+            # 保存按钮
+            save_btn = QPushButton("保存")
+            save_btn.clicked.connect(dialog.accept)
+            button_layout.addWidget(save_btn)
+            
+            # 取消按钮
+            cancel_btn = QPushButton("取消")
+            cancel_btn.clicked.connect(dialog.reject)
+            button_layout.addWidget(cancel_btn)
+            
+            layout.addLayout(button_layout)
+            
+            # 显示对话框
+            if dialog.exec() == QDialog.Accepted:
+                # 获取用户选择的功率单位系数
+                new_power_unit = power_unit_combo.currentData()
+                
+                # 使用TOML文件进行配置持久化
+                import os
+                import sys
+                
+                # 检查Python版本，选择合适的TOML库
+                if sys.version_info >= (3, 11):
+                    import tomllib
+                    import tomli_w
+                else:
+                    try:
+                        import tomli as tomllib
+                        import tomli_w
+                    except ImportError:
+                        # 如果没有安装tomli，显示错误
+                        from PySide6.QtWidgets import QMessageBox
+                        QMessageBox.critical(self, "配置失败", "TOML库未安装，无法保存配置")
+                        return
+                
+                # 获取配置文件路径
+                if hasattr(sys, 'frozen'):
+                    # 打包后环境
+                    config_dir = os.path.dirname(sys.executable)
+                else:
+                    # 开发环境
+                    config_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                
+                # 创建配置文件路径
+                config_file_path = os.path.join(config_dir, 'app_config.toml')
+                
+                # 读取现有配置或使用默认配置
+                app_config = {
+                    'power': {
+                        'unit': new_power_unit
+                    }
+                }
+                
+                if os.path.exists(config_file_path):
+                    try:
+                        with open(config_file_path, 'rb') as f:
+                            existing_config = tomllib.load(f)
+                        app_config = existing_config.copy()
+                        # 更新功率单位配置
+                        if 'power' not in app_config:
+                            app_config['power'] = {}
+                        app_config['power']['unit'] = new_power_unit
+                    except Exception as e:
+                        logger.error(f"读取现有配置失败: {str(e)}")
+                
+                # 保存配置到TOML文件
+                try:
+                    with open(config_file_path, 'wb') as f:
+                        tomli_w.dump(app_config, f)
+                except Exception as e:
+                    logger.error(f"保存配置失败: {str(e)}")
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.critical(self, "配置失败", f"保存配置文件失败: {str(e)}")
+                    return
+                
+                # 显示成功消息，提示用户需要重启程序
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.information(self, "配置成功", f"功率单位已设置为: {new_power_unit}\n\n配置修改已保存，请重启程序使配置生效")
+                
+        except Exception as e:
+            logger.error(f"配置功率单位失败: {str(e)}")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "配置失败", f"配置功率单位时发生错误: {str(e)}")
+    
     def import_backtest_data(self):
         """导入回测数据"""
         try:
@@ -337,13 +473,30 @@ class SimulationWindow(QMainWindow):
                 # 用户取消选择
                 return
             
-            # 验证文件扩展名是否为.db
-            if not file_path.endswith('.db'):
-                QMessageBox.warning(self, "格式错误", "请选择SQLite数据库文件 (*.db)")
+            # 弹出数据格式选择对话框
+            data_format, ok = QInputDialog.getItem(
+                self, 
+                "选择数据格式", 
+                "请选择数据格式:", 
+                ["默认格式 (SQLite数据库)", "滁州工厂数据格式"], 
+                0, 
+                False
+            )
+            
+            if not ok:
+                # 用户取消选择
                 return
             
-            # 从SQLite数据库读取数据
-            df = self._read_backtest_data_from_db(file_path)
+            # 根据选择的数据格式读取数据
+            if data_format == "默认格式 (SQLite数据库)":
+                # 验证文件扩展名是否为.db
+                if not file_path.endswith('.db'):
+                    QMessageBox.warning(self, "格式错误", "请选择SQLite数据库文件 (*.db)")
+                    return
+                df = self._read_backtest_data_from_db(file_path)
+            elif data_format == "滁州工厂数据格式":
+                # 滁州工厂数据格式处理，具体实现留空
+                df = self._read_backtest_data_chuzhou(file_path)
             
             # 检查数据格式是否正确
             required_columns = ['timestamp', 'device_type', 'device_id', 'p_mw']
@@ -381,11 +534,161 @@ class SimulationWindow(QMainWindow):
             if reply == QMessageBox.Yes:
                 # 如果用户选择立即开始回测，可以在这里添加启动回测的代码
                 self.start_backtest()
-                
         except Exception as e:
             logger.error(f"导入回测数据失败: {str(e)}")
             QMessageBox.critical(self, "导入失败", 
                                f"导入回测数据时发生错误: {str(e)}")
+                
+    def _read_backtest_data_chuzhou(self, file_path):
+        """读取滁州工厂数据格式"""
+        try:
+            import pandas as pd
+            import sqlite3
+            
+            # 连接到数据库
+            conn = sqlite3.connect(file_path)
+            
+            # 设备列表定义
+            gateway_meter_sn = 'THMEMET000JMQQY0VKZMM'  # 关口电表，功率取负
+            pv_sns = ['THMEMET000BVRT10O6FUL', 'THMEMET000WAQC3EDNSAL', 'THMEMET000CRUSBPMM65L']  # 光伏数据，正为发电
+            storage_sn = 'THMEMET000AVVVUOEP7JL'  # 储能，正是放电
+            
+            # 存储所有设备数据的列表
+            all_data = []
+            
+            # 用于存储各设备数据的字典，直接按设备SN分类
+            device_data_by_sn = {}
+            
+            # 获取数据库中的所有表
+            tables = [table[0] for table in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()]
+            
+            # 读取每个表中的数据
+            for table in tables:
+                if table == 'cmd_data':
+                    continue
+                
+                # 读取表数据
+                df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+                if df.empty:
+                    continue
+                
+                # 处理每行数据
+                for _, row in df.iterrows():
+                    if 'device_sn' not in row or 'timestamp' not in row:
+                        continue
+                    
+                    device_sn = row['device_sn']
+                    timestamp = row['timestamp']
+                    active_power = row.get('activePower', 0.0)
+                    
+                    # 只保存指定的设备数据
+                    if device_sn == gateway_meter_sn or device_sn in pv_sns or device_sn == storage_sn:
+                        if device_sn not in device_data_by_sn:
+                            device_data_by_sn[device_sn] = []
+                        device_data_by_sn[device_sn].append({
+                            'timestamp': timestamp,
+                            'activePower': active_power
+                        })
+            
+            # 验证数据完整性
+            if not device_data_by_sn:
+                raise Exception("没有可用的设备数据")
+            
+            # 转换为DataFrame并处理每个设备
+            device_dfs = {}
+            all_timestamps = set()
+            
+            # 第一步：转换为DataFrame并收集所有时间戳
+            for device_sn, data in device_data_by_sn.items():
+                df = pd.DataFrame(data)
+                df = df.sort_values('timestamp')  # 按时间戳排序
+                device_dfs[device_sn] = df
+                # 收集所有时间戳
+                all_timestamps.update(df['timestamp'].tolist())
+            
+            # 确保时间戳列表不为空
+            if not all_timestamps:
+                raise Exception("没有可用的时间戳数据")
+            
+            # 找到最小和最大时间戳
+            min_timestamp = int(min(all_timestamps))
+            max_timestamp = int(max(all_timestamps))
+            
+            # 生成从最小到最大时间戳的完整秒序列
+            complete_timestamps = list(range(min_timestamp, max_timestamp + 1))
+            
+            # 按时间戳排序
+            sorted_timestamps = complete_timestamps
+            
+            # 第二步：对每个设备进行双向填充NaN和线性插值
+            interpolated_devices = {}
+            
+            for device_sn, df in device_dfs.items():
+                # 设置时间戳为索引
+                df = df.set_index('timestamp')
+                
+                # 双向填充NaN值
+                df = df.interpolate(method='linear', limit_direction='both')
+                
+                # 重新索引到完整时间戳序列并进行线性插值
+                df_interpolated = df.reindex(sorted_timestamps).interpolate(method='linear', limit_direction='both')
+                interpolated_devices[device_sn] = df_interpolated
+            
+            # 计算并存储数据
+            for ts in sorted_timestamps:
+                # 获取当前时间戳的各设备数据
+                gateway_power = 0.0
+                pv_total = 0.0
+                storage_power = 0.0
+                pv_data = []
+                
+                for device_sn, df_interpolated in interpolated_devices.items():
+                    if ts not in df_interpolated.index:
+                        continue
+                    
+                    active_power = df_interpolated.loc[ts]['activePower']
+                    
+                    if device_sn == gateway_meter_sn:
+                        gateway_power = -active_power  # 关口电表取负
+                    elif device_sn in pv_sns:
+                        pv_total += active_power
+                        pv_data.append((device_sn, active_power))
+                    elif device_sn == storage_sn:
+                        storage_power = active_power
+                
+                # 计算负载数据：关口电表取负数后减去光伏功率和，再减去储能功率
+                load_power = gateway_power - pv_total - storage_power
+                
+                # 添加光伏设备数据到all_data
+                for device_sn, active_power in pv_data:
+                    device_type, device_id = self._find_device_type_and_id_by_sn(device_sn, 'pv')
+                    if device_type and device_id:
+                        all_data.append({
+                            'timestamp': ts,
+                            'device_type': device_type,
+                            'device_id': device_id,
+                            'p_mw': active_power,
+                            'q_mvar': 0.0  # 默认无功功率为0
+                        })
+                
+                # 添加计算得到的负载数据到all_data
+                # 假设负载设备ID为1，可以根据实际情况调整
+                all_data.append({
+                    'timestamp': ts,
+                    'device_type': 'load',
+                    'device_id': 1,  # 负载设备ID，需要根据实际情况调整
+                    'p_mw': load_power,
+                    'q_mvar': 0.0  # 默认无功功率为0
+                })
+            
+            # 将all_data转换为DataFrame并返回
+            result_df = pd.DataFrame(all_data)
+            return result_df
+        except Exception as e:
+            logger.error(f"导入滁州工厂数据失败: {str(e)}")
+            QMessageBox.critical(self, "导入失败", 
+                               f"导入滁州工厂数据时发生错误: {str(e)}")
+            raise
             
     def _read_backtest_data_from_db(self, db_path):
         """从SQLite数据库读取回测数据"""
@@ -716,18 +1019,22 @@ class SimulationWindow(QMainWindow):
                 # 检查当前时间是否已超过回测数据的最大时间戳
                 if data_timestamp > self.backtest_max_timestamp:
                     logger.info(f"回测数据已用尽: 当前秒数={current_second}, 数据时间戳={data_timestamp}, 最大时间戳={self.backtest_max_timestamp}")
+                    # 回测数据已用尽，停止回测
+                    self._reset_all_devices_power()
+                    self.stop_backtest("回测数据已用尽，回测已停止")
+                    return
             else:
                 # 兼容旧版本逻辑，直接使用current_second
                 data_timestamp = current_second
                 if hasattr(self, 'backtest_max_timestamp') and current_second > self.backtest_max_timestamp:
                     logger.info(f"回测数据已用尽: 当前秒数={current_second}, 最大秒数={self.backtest_max_timestamp}")
-                
-                # 重置所有设备功率为零
-                self._reset_all_devices_power()
-                
-                # 停止回测
-                self.stop_backtest("回测数据已用尽")
-                return
+                    # 重置所有设备功率为零
+                    self._reset_all_devices_power()
+                    
+                    # 停止回测
+                    self.stop_backtest("回测数据已用尽，回测已停止")
+                    
+                    return
             
             # 更新设备数据，传递实际的回测时间（从开始到现在的秒数）
             self._update_devices_with_backtest_data(current_time)
