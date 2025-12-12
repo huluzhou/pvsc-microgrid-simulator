@@ -477,6 +477,57 @@ class DataControlManager:
         
         # 更新通信状态指示器
         self._update_comm_status_indicator('meter', component_idx)
+        
+        # 更新起始电量控件（直接显示并可写入四象限计数器）
+        if (hasattr(self.parent_window, 'meter_active_export_energy_start_spin') and
+            hasattr(self.parent_window, 'meter_active_import_energy_start_spin') and
+            hasattr(self.parent_window, 'meter_reactive_export_energy_start_spin') and
+            hasattr(self.parent_window, 'meter_reactive_import_energy_start_spin')):
+            try:
+                if 'meter' in self.network_items and component_idx in self.network_items['meter']:
+                    meter_item = self.network_items['meter'][component_idx]
+                    ae_export = float(getattr(meter_item, 'active_export_kwh', 0.0))
+                    ae_import = float(getattr(meter_item, 'active_import_kwh', 0.0))
+                    re_export = float(getattr(meter_item, 'reactive_export_kvarh', 0.0))
+                    re_import = float(getattr(meter_item, 'reactive_import_kvarh', 0.0))
+                    self.parent_window.meter_active_export_energy_start_spin.blockSignals(True)
+                    self.parent_window.meter_active_import_energy_start_spin.blockSignals(True)
+                    self.parent_window.meter_reactive_export_energy_start_spin.blockSignals(True)
+                    self.parent_window.meter_reactive_import_energy_start_spin.blockSignals(True)
+                    self.parent_window.meter_active_export_energy_start_spin.setValue(ae_export)
+                    self.parent_window.meter_active_import_energy_start_spin.setValue(ae_import)
+                    self.parent_window.meter_reactive_export_energy_start_spin.setValue(re_export)
+                    self.parent_window.meter_reactive_import_energy_start_spin.setValue(re_import)
+                    self.parent_window.meter_active_export_energy_start_spin.blockSignals(False)
+                    self.parent_window.meter_active_import_energy_start_spin.blockSignals(False)
+                    self.parent_window.meter_reactive_export_energy_start_spin.blockSignals(False)
+                    self.parent_window.meter_reactive_import_energy_start_spin.blockSignals(False)
+            except Exception as e:
+                logger.error(f"更新电表起始电量控件失败: {e}")
+    
+    def apply_meter_start_energy(self):
+        """应用电表起始电量设置到meter属性"""
+        try:
+            if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+                return
+            if self.parent_window.current_component_type != 'meter':
+                return
+            idx = self.parent_window.current_component_idx
+            if 'meter' in self.network_items and idx in self.network_items['meter']:
+                meter_item = self.network_items['meter'][idx]
+                ae_export = self.parent_window.meter_active_export_energy_start_spin.value() if hasattr(self.parent_window, 'meter_active_export_energy_start_spin') else 0.0
+                ae_import = self.parent_window.meter_active_import_energy_start_spin.value() if hasattr(self.parent_window, 'meter_active_import_energy_start_spin') else 0.0
+                re_export = self.parent_window.meter_reactive_export_energy_start_spin.value() if hasattr(self.parent_window, 'meter_reactive_export_energy_start_spin') else 0.0
+                re_import = self.parent_window.meter_reactive_import_energy_start_spin.value() if hasattr(self.parent_window, 'meter_reactive_import_energy_start_spin') else 0.0
+                meter_item.active_export_kwh = float(ae_export)
+                meter_item.active_import_kwh = float(ae_import)
+                meter_item.reactive_export_kvarh = float(re_export)
+                meter_item.reactive_import_kvarh = float(re_import)
+                self.parent_window.statusBar().showMessage(
+                    f"已更新电表 {idx} 起始电量: 上网有功 {ae_export:.1f} kWh, 下网有功 {ae_import:.1f} kWh, 上网无功 {re_export:.1f} kvarh, 下网无功 {re_import:.1f} kvarh"
+                )
+        except Exception as e:
+            logger.error(f"应用电表起始电量失败: {e}")
 
     def update_switch_control_panel_info(self, component_type, component_idx):
         """更新开关设备控制面板信息"""
@@ -799,30 +850,37 @@ class DataControlManager:
                 type_map = {'sgen': 'static_generator', 'load': 'load', 'storage': 'storage', 'ext_grid': 'external_grid'}
                 device_key = type_map.get(element_type)
                 device_item = self.parent_window.network_items.get(device_key, {}).get(element_idx) if device_key is not None else None
-            # 有功电量
-            if hasattr(self.parent_window, "meter_active_energy_label"):
-                if device_item and hasattr(device_item, 'active_energy_kwh'):
-                    ae = self.parent_window.power_monitor.get_meter_measurement(component_idx, 'active_energy') if hasattr(self.parent_window, 'power_monitor') else 0.0
-                    self.parent_window.meter_active_energy_label.setText(f"{ae:.1f} kWh")
-                else:
-                    self.parent_window.meter_active_energy_label.setText("不存在")
-            # 无功电量
-            if hasattr(self.parent_window, "meter_reactive_energy_label"):
-                if device_item and hasattr(device_item, 'reactive_energy_kvarh'):
-                    re = self.parent_window.power_monitor.get_meter_measurement(component_idx, 'reactive_energy') if hasattr(self.parent_window, 'power_monitor') else 0.0
-                    self.parent_window.meter_reactive_energy_label.setText(f"{re:.1f} kvarh")
-                else:
-                    self.parent_window.meter_reactive_energy_label.setText("不存在")
+            # 删除总能量标签更新，保留四象限
+            # 四象限电量
+            if 'meter' in self.network_items and component_idx in self.network_items['meter']:
+                meter_item = self.network_items['meter'][component_idx]
+                if hasattr(self.parent_window, "meter_active_export_label"):
+                    val = getattr(meter_item, 'active_export_kwh', None)
+                    self.parent_window.meter_active_export_label.setText(f"{val:.1f} kWh" if val is not None else "不存在")
+                if hasattr(self.parent_window, "meter_active_import_label"):
+                    val = getattr(meter_item, 'active_import_kwh', None)
+                    self.parent_window.meter_active_import_label.setText(f"{val:.1f} kWh" if val is not None else "不存在")
+                if hasattr(self.parent_window, "meter_reactive_export_label"):
+                    val = getattr(meter_item, 'reactive_export_kvarh', None)
+                    self.parent_window.meter_reactive_export_label.setText(f"{val:.1f} kvarh" if val is not None else "不存在")
+                if hasattr(self.parent_window, "meter_reactive_import_label"):
+                    val = getattr(meter_item, 'reactive_import_kvarh', None)
+                    self.parent_window.meter_reactive_import_label.setText(f"{val:.1f} kvarh" if val is not None else "不存在")
         except Exception as e:
             logger.error(f"更新电表实时信息失败: {str(e)}")
             if hasattr(self.parent_window, "meter_active_power_label"):
                 self.parent_window.meter_active_power_label.setText("未计算")
             if hasattr(self.parent_window, "meter_reactive_power_label"):
                 self.parent_window.meter_reactive_power_label.setText("未计算")
-            if hasattr(self.parent_window, "meter_active_energy_label"):
-                self.parent_window.meter_active_energy_label.setText("不存在")
-            if hasattr(self.parent_window, "meter_reactive_energy_label"):
-                self.parent_window.meter_reactive_energy_label.setText("不存在")
+            # 删除总能量标签异常处理
+            if hasattr(self.parent_window, "meter_active_export_label"):
+                self.parent_window.meter_active_export_label.setText("不存在")
+            if hasattr(self.parent_window, "meter_active_import_label"):
+                self.parent_window.meter_active_import_label.setText("不存在")
+            if hasattr(self.parent_window, "meter_reactive_export_label"):
+                self.parent_window.meter_reactive_export_label.setText("不存在")
+            if hasattr(self.parent_window, "meter_reactive_import_label"):
+                self.parent_window.meter_reactive_import_label.setText("不存在")
         # 更新通信状态指示器
         self._update_comm_status_indicator('meter', component_idx)
         

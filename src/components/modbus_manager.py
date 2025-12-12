@@ -14,6 +14,15 @@ from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusS
 import asyncio
 from pymodbus.server import ModbusTcpServer
 SGEN_REG_Q_PERCENT = 5040
+METER_REG_REACTIVE_POWER = 10
+METER_REG_ACTIVE_EXPORT_LOW = 15
+METER_REG_ACTIVE_EXPORT_HIGH = 16
+METER_REG_ACTIVE_IMPORT_LOW = 17
+METER_REG_ACTIVE_IMPORT_HIGH = 18
+METER_REG_REACTIVE_EXPORT_LOW = 19
+METER_REG_REACTIVE_EXPORT_HIGH = 20
+METER_REG_REACTIVE_IMPORT_LOW = 21
+METER_REG_REACTIVE_IMPORT_HIGH = 22
 
 class ModbusManager:
     """Modbus服务器管理器"""
@@ -163,11 +172,15 @@ class ModbusManager:
         meter_input_registers[7+1] = 1000   # OnGridQ 上网电量
         meter_input_registers[8+1] = 862   # GridPower  下网电量
         meter_input_registers[9+1] = 1000   # MeterActivep  组合有功总电能
-        meter_input_registers[10+1] = 0    # 无功功率kvar
-        meter_input_registers[11+1] = 0    # 有功电量低16位
-        meter_input_registers[12+1] = 0    # 有功电量高16位
-        meter_input_registers[13+1] = 0    # 无功电量低16位
-        meter_input_registers[14+1] = 0    # 无功电量高16位
+        meter_input_registers[METER_REG_REACTIVE_POWER+1] = 0
+        meter_input_registers[METER_REG_ACTIVE_EXPORT_LOW+1] = 0
+        meter_input_registers[METER_REG_ACTIVE_EXPORT_HIGH+1] = 0
+        meter_input_registers[METER_REG_ACTIVE_IMPORT_LOW+1] = 0
+        meter_input_registers[METER_REG_ACTIVE_IMPORT_HIGH+1] = 0
+        meter_input_registers[METER_REG_REACTIVE_EXPORT_LOW+1] = 0
+        meter_input_registers[METER_REG_REACTIVE_EXPORT_HIGH+1] = 0
+        meter_input_registers[METER_REG_REACTIVE_IMPORT_LOW+1] = 0
+        meter_input_registers[METER_REG_REACTIVE_IMPORT_HIGH+1] = 0
         
         # 创建ModbusSequentialDataBlock实例
         input_regs = ModbusSequentialDataBlock(0, meter_input_registers)
@@ -612,26 +625,29 @@ class ModbusManager:
         try:
             # 获取有功功率值
             power_value = self.power_monitor.get_meter_measurement(index, 'active_power')
-            power_kw = int(power_value * POWER_UNIT / 50 * 100) & 0xFFFF
+            power_kw = int(abs(power_value) * POWER_UNIT * 1000 * 10) & 0xFFFF
             
             # 写入地址0：有功功率（16位）
             slave_context.setValues(4, 0, [power_kw])
 
-            reactive_power_kvar = int(self.power_monitor.get_meter_measurement(index, 'reactive_power') * POWER_UNIT / 50 * 100) & 0xFFFF
-            slave_context.setValues(4, 10, [reactive_power_kvar])
+            reactive_power_kvar = int(abs(self.power_monitor.get_meter_measurement(index, 'reactive_power')) * POWER_UNIT * 1000 * 10) & 0xFFFF
+            slave_context.setValues(4, METER_REG_REACTIVE_POWER, [reactive_power_kvar])
             
-            active_energy_kwh = self.power_monitor.get_meter_measurement(index, 'active_energy')
-            reactive_energy_kvarh = self.power_monitor.get_meter_measurement(index, 'reactive_energy')
-            active_kwh10 = int(active_energy_kwh * 10) & 0xFFFFFFFF
-            reactive_kvarh10 = int(reactive_energy_kvarh * 10) & 0xFFFFFFFF
-            active_low = active_kwh10 & 0xFFFF
-            active_high = (active_kwh10 >> 16) & 0xFFFF
-            reactive_low = reactive_kvarh10 & 0xFFFF
-            reactive_high = (reactive_kvarh10 >> 16) & 0xFFFF
-            slave_context.setValues(4, 11, [active_low])
-            slave_context.setValues(4, 12, [active_high])
-            slave_context.setValues(4, 13, [reactive_low])
-            slave_context.setValues(4, 14, [reactive_high])
+            meter_item = None
+            if 'meter' in self.network_items and index in self.network_items['meter']:
+                meter_item = self.network_items['meter'][index]
+            ae_export10 = int(float(getattr(meter_item, 'active_export_kwh', 0.0)) * 10) & 0xFFFFFFFF
+            ae_import10 = int(float(getattr(meter_item, 'active_import_kwh', 0.0)) * 10) & 0xFFFFFFFF
+            re_export10 = int(float(getattr(meter_item, 'reactive_export_kvarh', 0.0)) * 10) & 0xFFFFFFFF
+            re_import10 = int(float(getattr(meter_item, 'reactive_import_kvarh', 0.0)) * 10) & 0xFFFFFFFF
+            slave_context.setValues(4, METER_REG_ACTIVE_EXPORT_LOW, [ae_export10 & 0xFFFF])
+            slave_context.setValues(4, METER_REG_ACTIVE_EXPORT_HIGH, [(ae_export10 >> 16) & 0xFFFF])
+            slave_context.setValues(4, METER_REG_ACTIVE_IMPORT_LOW, [ae_import10 & 0xFFFF])
+            slave_context.setValues(4, METER_REG_ACTIVE_IMPORT_HIGH, [(ae_import10 >> 16) & 0xFFFF])
+            slave_context.setValues(4, METER_REG_REACTIVE_EXPORT_LOW, [re_export10 & 0xFFFF])
+            slave_context.setValues(4, METER_REG_REACTIVE_EXPORT_HIGH, [(re_export10 >> 16) & 0xFFFF])
+            slave_context.setValues(4, METER_REG_REACTIVE_IMPORT_LOW, [re_import10 & 0xFFFF])
+            slave_context.setValues(4, METER_REG_REACTIVE_IMPORT_HIGH, [(re_import10 >> 16) & 0xFFFF])
             
             # 获取电压值（假设三相电压相同，实际应用中可能需要分别获取）
             voltage_value = self.power_monitor.get_meter_measurement(index, 'voltage')

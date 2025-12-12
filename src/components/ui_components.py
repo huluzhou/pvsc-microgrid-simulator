@@ -902,15 +902,61 @@ class UIComponentManager:
         meter_result_layout.addRow("无功功率:", meter_reactive_power_label)
         self.parent_window.meter_reactive_power_label = meter_reactive_power_label
         
-        meter_active_energy_label = QLabel("不存在")
-        meter_active_energy_label.setStyleSheet("font-weight: bold; color: #9C27B0;")
-        meter_result_layout.addRow("有功电量:", meter_active_energy_label)
-        self.parent_window.meter_active_energy_label = meter_active_energy_label
+        # 删除总能量显示，改为四象限显示
         
-        meter_reactive_energy_label = QLabel("不存在")
-        meter_reactive_energy_label.setStyleSheet("font-weight: bold; color: #9C27B0;")
-        meter_result_layout.addRow("无功电量:", meter_reactive_energy_label)
-        self.parent_window.meter_reactive_energy_label = meter_reactive_energy_label
+        meter_active_export_label = QLabel("不存在")
+        meter_active_export_label.setStyleSheet("font-weight: bold; color: #795548;")
+        meter_result_layout.addRow("上网有功电量:", meter_active_export_label)
+        self.parent_window.meter_active_export_label = meter_active_export_label
+        
+        meter_active_import_label = QLabel("不存在")
+        meter_active_import_label.setStyleSheet("font-weight: bold; color: #795548;")
+        meter_result_layout.addRow("下网有功电量:", meter_active_import_label)
+        self.parent_window.meter_active_import_label = meter_active_import_label
+        
+        meter_reactive_export_label = QLabel("不存在")
+        meter_reactive_export_label.setStyleSheet("font-weight: bold; color: #795548;")
+        meter_result_layout.addRow("上网无功电量:", meter_reactive_export_label)
+        self.parent_window.meter_reactive_export_label = meter_reactive_export_label
+        
+        meter_reactive_import_label = QLabel("不存在")
+        meter_reactive_import_label.setStyleSheet("font-weight: bold; color: #795548;")
+        meter_result_layout.addRow("下网无功电量:", meter_reactive_import_label)
+        self.parent_window.meter_reactive_import_label = meter_reactive_import_label
+        
+        # 起始电量设置
+        meter_active_export_energy_start_spin = QDoubleSpinBox()
+        meter_active_export_energy_start_spin.setRange(0.0, 1e9)
+        meter_active_export_energy_start_spin.setDecimals(1)
+        meter_active_export_energy_start_spin.setSuffix(" kWh")
+        self.parent_window.meter_active_export_energy_start_spin = meter_active_export_energy_start_spin
+        meter_result_layout.addRow("起始上网有功电量:", meter_active_export_energy_start_spin)
+        
+        meter_active_import_energy_start_spin = QDoubleSpinBox()
+        meter_active_import_energy_start_spin.setRange(0.0, 1e9)
+        meter_active_import_energy_start_spin.setDecimals(1)
+        meter_active_import_energy_start_spin.setSuffix(" kWh")
+        self.parent_window.meter_active_import_energy_start_spin = meter_active_import_energy_start_spin
+        meter_result_layout.addRow("起始下网有功电量:", meter_active_import_energy_start_spin)
+        
+        meter_reactive_export_energy_start_spin = QDoubleSpinBox()
+        meter_reactive_export_energy_start_spin.setRange(0.0, 1e9)
+        meter_reactive_export_energy_start_spin.setDecimals(1)
+        meter_reactive_export_energy_start_spin.setSuffix(" kvarh")
+        self.parent_window.meter_reactive_export_energy_start_spin = meter_reactive_export_energy_start_spin
+        meter_result_layout.addRow("起始上网无功电量:", meter_reactive_export_energy_start_spin)
+        
+        meter_reactive_import_energy_start_spin = QDoubleSpinBox()
+        meter_reactive_import_energy_start_spin.setRange(0.0, 1e9)
+        meter_reactive_import_energy_start_spin.setDecimals(1)
+        meter_reactive_import_energy_start_spin.setSuffix(" kvarh")
+        self.parent_window.meter_reactive_import_energy_start_spin = meter_reactive_import_energy_start_spin
+        meter_result_layout.addRow("起始下网无功电量:", meter_reactive_import_energy_start_spin)
+        
+        meter_apply_start_btn = QPushButton("应用起始电量")
+        meter_apply_start_btn.clicked.connect(self.parent_window.data_control_manager.apply_meter_start_energy)
+        meter_result_layout.addRow("", meter_apply_start_btn)
+        self.parent_window.meter_apply_start_btn = meter_apply_start_btn
         
         # 设备配置信息标题
         config_title = QLabel("设备配置信息:")

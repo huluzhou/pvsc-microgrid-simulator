@@ -3,14 +3,14 @@
     {
       "index": 1,
       "geodata": [
-        2566.0,
-        2281.0
+        2550.0,
+        2250.0
       ],
       "meas_type": "p",
-      "element_type": "bus",
+      "element_type": "ext_grid",
       "value": 0.0,
       "std_dev": 0.01,
-      "element": 1,
+      "element": 0,
       "side": null,
       "in_service": true,
       "name": "Meter 1",
@@ -24,48 +24,29 @@
       "custom_fields": {}
     }
   ],
-  "Storage": [
+  "External_Grid": [
     {
-      "name": "储能 1",
-      "index": 1,
-      "sn_mva": 1.0,
+      "index": 0,
       "geodata": [
-        2500.0,
-        2500.0
+        2400.0,
+        2200.0
       ],
-      "p_mw": 0.0,
-      "max_e_mwh": 1.0,
-      "soc_percent": 0.5,
-      "bus": 1,
-      "sn": "TESAR100230HT00CN230913001",
-      "brand": "",
-      "ip": "0.0.0.0",
-      "port": "502",
-      "protocol": "modbus_tcp",
-      "baud_rate": 9600,
-      "parity": "None",
-      "custom_fields": {}
-    }
-  ],
-  "Load": [
-    {
-      "index": 1,
-      "geodata": [
-        2600.0,
-        2500.0
-      ],
-      "p_mw": 0.0,
-      "q_mvar": 0.0,
-      "name": "Load 1",
+      "vm_pu": 1.0,
+      "va_degree": 0.0,
+      "name": "External Grid 0",
+      "s_sc_max_mva": 1000.0,
+      "s_sc_min_mva": 800.0,
+      "rx_max": 0.1,
+      "rx_min": 0.1,
       "bus": 1,
       "custom_fields": {}
     }
   ],
   "Static_Generator": [
     {
-      "index": 3,
+      "index": 1,
       "geodata": [
-        2400.0,
+        2200.0,
         2500.0
       ],
       "use_power_factor": false,
@@ -77,12 +58,12 @@
       "scaling": 1.0,
       "type": "wye",
       "in_service": true,
-      "name": "光伏 3",
+      "name": "光伏 1",
       "bus": 1,
-      "sn": "THMEMET000CRUSBPMM65L",
+      "sn": "THMEMET000BVRT10O6FUL",
       "brand": "",
       "ip": "0.0.0.0",
-      "port": "604",
+      "port": "602",
       "protocol": "modbus_tcp",
       "baud_rate": 9600,
       "parity": "None",
@@ -115,9 +96,9 @@
       "custom_fields": {}
     },
     {
-      "index": 1,
+      "index": 3,
       "geodata": [
-        2200.0,
+        2400.0,
         2500.0
       ],
       "use_power_factor": false,
@@ -129,33 +110,52 @@
       "scaling": 1.0,
       "type": "wye",
       "in_service": true,
-      "name": "光伏 1",
+      "name": "光伏 3",
       "bus": 1,
-      "sn": "THMEMET000BVRT10O6FUL",
+      "sn": "THMEMET000CRUSBPMM65L",
       "brand": "",
       "ip": "0.0.0.0",
-      "port": "602",
+      "port": "604",
       "protocol": "modbus_tcp",
       "baud_rate": 9600,
       "parity": "None",
       "custom_fields": {}
     }
   ],
-  "External_Grid": [
+  "Load": [
     {
-      "index": 0,
+      "index": 1,
       "geodata": [
-        2400.0,
-        2200.0
+        2600.0,
+        2500.0
       ],
-      "vm_pu": 1.0,
-      "va_degree": 0.0,
-      "name": "External Grid 0",
-      "s_sc_max_mva": 1000.0,
-      "s_sc_min_mva": 800.0,
-      "rx_max": 0.1,
-      "rx_min": 0.1,
+      "p_mw": 0.0,
+      "q_mvar": 0.0,
+      "name": "Load 1",
       "bus": 1,
+      "custom_fields": {}
+    }
+  ],
+  "Storage": [
+    {
+      "name": "储能 1",
+      "index": 1,
+      "sn_mva": 1.0,
+      "geodata": [
+        2500.0,
+        2500.0
+      ],
+      "p_mw": 0.0,
+      "max_e_mwh": 1.0,
+      "soc_percent": 0.5,
+      "bus": 1,
+      "sn": "TESAR100230HT00CN230913001",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "502",
+      "protocol": "modbus_tcp",
+      "baud_rate": 9600,
+      "parity": "None",
       "custom_fields": {}
     }
   ],

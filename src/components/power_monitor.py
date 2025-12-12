@@ -517,35 +517,19 @@ class PowerMonitor:
                 # 电流，需要特殊处理
                 return self._query_current_value(measurement_config)
             elif measurement_type == 'active_energy':
-                # 有功电量，从电表所测量设备的item读取（若存在）
                 meter_item = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
                 if not meter_item:
                     return 0.0
-                element_type = meter_item.properties.get('element_type')
-                element_idx = meter_item.properties.get('element')
-                type_map = {'sgen': 'static_generator', 'load': 'load', 'storage': 'storage', 'ext_grid': 'external_grid'}
-                device_key = type_map.get(element_type)
-                device_item = self.parent_window.network_items.get(device_key, {}).get(element_idx) if device_key is not None else None
-                if device_item and hasattr(device_item, 'active_energy_kwh'):
-                    value = device_item.active_energy_kwh
-                else:
-                    value = 0.0
-                return float(value)
+                export_val = float(getattr(meter_item, 'active_export_kwh', 0.0))
+                import_val = float(getattr(meter_item, 'active_import_kwh', 0.0))
+                return float(export_val + import_val)
             elif measurement_type == 'reactive_energy':
-                # 无功电量，从电表所测量设备的item读取（若存在）
                 meter_item = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
                 if not meter_item:
                     return 0.0
-                element_type = meter_item.properties.get('element_type')
-                element_idx = meter_item.properties.get('element')
-                type_map = {'sgen': 'static_generator', 'load': 'load', 'storage': 'storage', 'ext_grid': 'external_grid'}
-                device_key = type_map.get(element_type)
-                device_item = self.parent_window.network_items.get(device_key, {}).get(element_idx) if device_key is not None else None
-                if device_item and hasattr(device_item, 'reactive_energy_kvarh'):
-                    value = device_item.reactive_energy_kvarh
-                else:
-                    value = 0.0
-                return float(value)
+                export_val = float(getattr(meter_item, 'reactive_export_kvarh', 0.0))
+                import_val = float(getattr(meter_item, 'reactive_import_kvarh', 0.0))
+                return float(export_val + import_val)
             else:
                 logger.error(f"不支持的测量类型: {measurement_type}")
                 return 0.0

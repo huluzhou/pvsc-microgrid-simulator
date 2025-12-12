@@ -1794,6 +1794,12 @@ class SimulationWindow(QMainWindow):
             if hasattr(self, 'modbus_manager'):
                 self.modbus_manager.stop_all_modbus_servers()
             
+            # 清空能量累计数据
+            try:
+                self._reset_all_energy_counters()
+            except Exception as e:
+                logger.error(f"清空能量数据失败: {e}")
+            
             # 将所有开关设置为合闸状态
             if 'switch' in self.network_items:
                 for switch_idx, switch_item in self.network_items['switch'].items():
@@ -1822,6 +1828,19 @@ class SimulationWindow(QMainWindow):
             logger.error(f"关闭仿真窗口时发生错误: {e}")
         finally:
             event.accept()
+    def _reset_all_energy_counters(self):
+        """重置所有设备的能量累计数据"""
+        try:
+            if hasattr(self, 'network_items'):
+                # 重置电表的四象限电量（保留起始电量属性）
+                if 'meter' in self.network_items:
+                    for meter_item in self.network_items['meter'].values():
+                        meter_item.active_export_kwh = 0.0
+                        meter_item.active_import_kwh = 0.0
+                        meter_item.reactive_export_kvarh = 0.0
+                        meter_item.reactive_import_kvarh = 0.0
+        except Exception as e:
+            logger.error(f"重置能量累计数据失败: {e}")
     def clear_all_members(self):
         """清空类中所有成员变量"""
         # 保留基本属性，清空其他所有
@@ -2021,25 +2040,62 @@ class SimulationWindow(QMainWindow):
                     except Exception as e:
                         logger.error(f"批量更新储能设备 {device_idx} 能量统计时出错: {e}")
             
-            # 批量更新外部电网能量统计
-            if self.network_items['external_grid'] and hasattr(self.network_model, 'net'):
-                valid_ext_indices = [idx for idx in self.network_items['external_grid'].keys()
-                                     if idx in self.network_model.net.ext_grid.index]
-                for device_idx in valid_ext_indices:
+            # 已移除外部电网能量累积，电量统计统一由电表四象限计数维护
+            
+            # 批量更新电表四种能量统计（上网/下网有功与无功）
+            if self.network_items['meter'] and hasattr(self, 'power_monitor'):
+                for meter_idx, meter_item in self.network_items['meter'].items():
                     try:
-                        ext_item = self.network_items['external_grid'][device_idx]
-                        p_mw = self.network_model.net.res_ext_grid.at[device_idx, 'p_mw'] if hasattr(self.network_model.net, 'res_ext_grid') else 0.0
-                        q_mvar = self.network_model.net.res_ext_grid.at[device_idx, 'q_mvar'] if hasattr(self.network_model.net, 'res_ext_grid') else 0.0
-                        inc_active_kwh = abs(p_mw) * 1000.0 * time_interval_hours
-                        inc_reactive_kvarh = abs(q_mvar) * 1000.0 * time_interval_hours
-                        if not hasattr(ext_item, 'active_energy_kwh'):
-                            ext_item.active_energy_kwh = 0.0
-                        if not hasattr(ext_item, 'reactive_energy_kvarh'):
-                            ext_item.reactive_energy_kvarh = 0.0
-                        ext_item.active_energy_kwh += inc_active_kwh
-                        ext_item.reactive_energy_kvarh += inc_reactive_kvarh
+                        p_mw = self.power_monitor.get_meter_measurement(meter_idx, 'active_power')
+                        q_mvar = self.power_monitor.get_meter_measurement(meter_idx, 'reactive_power')
+                        et = meter_item.properties.get('element_type')
+                        if et == 'load':
+                            if p_mw >= 0:
+                                meter_item.active_import_kwh += p_mw * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.active_export_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                            if q_mvar >= 0:
+                                meter_item.reactive_import_kvarh += q_mvar * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.reactive_export_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
+                        elif et == 'sgen':
+                            if p_mw >= 0:
+                                meter_item.active_export_kwh += p_mw * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.active_import_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                            if q_mvar >= 0:
+                                meter_item.reactive_export_kvarh += q_mvar * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.reactive_import_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
+                        elif et == 'ext_grid':
+                            if p_mw >= 0:
+                                meter_item.active_import_kwh += p_mw * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.active_export_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                            if q_mvar >= 0:
+                                meter_item.reactive_import_kvarh += q_mvar * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.reactive_export_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
+                        elif et == 'storage':
+                            if p_mw < 0:
+                                meter_item.active_export_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.active_import_kwh += p_mw * 1000.0 * time_interval_hours
+                            if q_mvar < 0:
+                                meter_item.reactive_export_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.reactive_import_kvarh += q_mvar * 1000.0 * time_interval_hours
+                        else:
+                            if p_mw >= 0:
+                                meter_item.active_export_kwh += p_mw * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.active_import_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                            if q_mvar >= 0:
+                                meter_item.reactive_export_kvarh += q_mvar * 1000.0 * time_interval_hours
+                            else:
+                                meter_item.reactive_import_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
                     except Exception as e:
-                        logger.error(f"批量更新外部电网 {device_idx} 能量统计时出错: {e}")
+                        logger.error(f"批量更新电表 {meter_idx} 四象限能量统计时出错: {e}")
                         
         except Exception as e:
             logger.error(f"批量更新能量统计失败: {str(e)}")
