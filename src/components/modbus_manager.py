@@ -13,6 +13,7 @@ from pymodbus import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock, ModbusSequentialDataBlock
 import asyncio
 from pymodbus.server import ModbusTcpServer
+SGEN_REG_Q_PERCENT = 5040
 
 class ModbusManager:
     """Modbus服务器管理器"""
@@ -117,12 +118,15 @@ class ModbusManager:
         sgen_input_registers[5004 + 1] = 0
         sgen_input_registers[5030 + 1] = 0  # 当前功率
         sgen_input_registers[5031 + 1] = 0
+        sgen_input_registers[5032 + 1] = 0  # 无功功率
+        sgen_input_registers[5033 + 1] = 0
         
         # 保持寄存器
         sgen_hold_registers = [0] * 6000
         sgen_hold_registers[5005 + 1] = 1  # 开关机
         sgen_hold_registers[5038 + 1] = 0x7FFF  # 有功功率限制
         sgen_hold_registers[5007 + 1] = 100  # 有功功率百分比限制
+        sgen_hold_registers[SGEN_REG_Q_PERCENT + 1] = 0  # 无功补偿百分比
         
         # 创建ModbusSequentialDataBlock实例
         holding_regs = ModbusSequentialDataBlock(0, sgen_hold_registers)
@@ -148,7 +152,7 @@ class ModbusManager:
         """创建电表设备专用上下文"""
         # 电表设备寄存器映射
         # 当前功率: 0 (保持寄存器)
-        meter_input_registers = [0] * 20
+        meter_input_registers = [0] * 50
         meter_input_registers[0+1] = 0  # 当前功率
         meter_input_registers[1+1] = 220  # 电压A
         meter_input_registers[2+1] = 220  # 电压B
@@ -159,6 +163,11 @@ class ModbusManager:
         meter_input_registers[7+1] = 1000   # OnGridQ 上网电量
         meter_input_registers[8+1] = 862   # GridPower  下网电量
         meter_input_registers[9+1] = 1000   # MeterActivep  组合有功总电能
+        meter_input_registers[10+1] = 0    # 无功功率kvar
+        meter_input_registers[11+1] = 0    # 有功电量低16位
+        meter_input_registers[12+1] = 0    # 有功电量高16位
+        meter_input_registers[13+1] = 0    # 无功电量低16位
+        meter_input_registers[14+1] = 0    # 无功电量高16位
         
         # 创建ModbusSequentialDataBlock实例
         input_regs = ModbusSequentialDataBlock(0, meter_input_registers)
@@ -596,6 +605,9 @@ class ModbusManager:
         - 地址1: A相电压 (16位)
         - 地址2: B相电压 (16位)
         - 地址3: C相电压 (16位)
+        - 地址10: 无功功率 (16位)
+        - 地址11-12: 有功电量 (32位，kWh×10)
+        - 地址13-14: 无功电量 (32位，kvarh×10)
         """
         try:
             # 获取有功功率值
@@ -604,6 +616,22 @@ class ModbusManager:
             
             # 写入地址0：有功功率（16位）
             slave_context.setValues(4, 0, [power_kw])
+
+            reactive_power_kvar = int(self.power_monitor.get_meter_measurement(index, 'reactive_power') * POWER_UNIT / 50 * 100) & 0xFFFF
+            slave_context.setValues(4, 10, [reactive_power_kvar])
+            
+            active_energy_kwh = self.power_monitor.get_meter_measurement(index, 'active_energy')
+            reactive_energy_kvarh = self.power_monitor.get_meter_measurement(index, 'reactive_energy')
+            active_kwh10 = int(active_energy_kwh * 10) & 0xFFFFFFFF
+            reactive_kvarh10 = int(reactive_energy_kvarh * 10) & 0xFFFFFFFF
+            active_low = active_kwh10 & 0xFFFF
+            active_high = (active_kwh10 >> 16) & 0xFFFF
+            reactive_low = reactive_kvarh10 & 0xFFFF
+            reactive_high = (reactive_kvarh10 >> 16) & 0xFFFF
+            slave_context.setValues(4, 11, [active_low])
+            slave_context.setValues(4, 12, [active_high])
+            slave_context.setValues(4, 13, [reactive_low])
+            slave_context.setValues(4, 14, [reactive_high])
             
             # 获取电压值（假设三相电压相同，实际应用中可能需要分别获取）
             voltage_value = self.power_monitor.get_meter_measurement(index, 'voltage')
@@ -632,6 +660,7 @@ class ModbusManager:
         - 5002: 今日发电量 (kWh × 10)
         - 5003-5004: 总发电量 (32位，低16位+高16位)
         - 5030-5031: 当前功率 (32位，低16位+高16位)
+        - 5032-5033: 无功功率 (32位，低16位+高16位)
         """
         # 寄存器地址常量
         REG_TODAY_ENERGY = 5002
@@ -639,6 +668,8 @@ class ModbusManager:
         REG_TOTAL_ENERGY_HIGH = 5004
         REG_POWER_LOW = 5030
         REG_POWER_HIGH = 5031
+        REG_Q_LOW = 5032
+        REG_Q_HIGH = 5033
         INPUT_REG = 4
         MAX_32BIT_UINT = 0xFFFFFFFF
 
@@ -658,17 +689,29 @@ class ModbusManager:
             power_w = int(round(abs(power_mw) * POWER_UNIT * 1000))  # MW -> kW -> W
             total_energy_wh = int(round(pv_item.total_discharge_energy)) 
             today_energy_wh = int(round(pv_item.today_discharge_energy)) 
+            q_mvar = 0.0
+            try:
+                q_mvar = float(self.network_model.net.res_sgen.at[index, "q_mvar"])
+            except Exception:
+                q_mvar = 0.0
+            reactive_kvar = int(round(abs(q_mvar) * POWER_UNIT * 1000))
             
             # 数据范围检查
             if not (0 <= power_w <= MAX_32BIT_UINT):
                 logger.warning(f"光伏设备 {index} 功率超出范围: {power_w} W")
                 power_w = max(0, min(power_w, MAX_32BIT_UINT))
+            if reactive_kvar < 0:
+                reactive_kvar = 0
+            if reactive_kvar > MAX_32BIT_UINT:
+                reactive_kvar = MAX_32BIT_UINT
             
             # 拆分32位数据
             power_low = power_w & 0xFFFF
             power_high = (power_w >> 16) & 0xFFFF
             total_low = total_energy_wh & 0xFFFF
             total_high = (total_energy_wh >> 16) & 0xFFFF
+            q_low = reactive_kvar & 0xFFFF
+            q_high = (reactive_kvar >> 16) & 0xFFFF
             
             # 写入寄存器数据
             slave_context.setValues(INPUT_REG, REG_TODAY_ENERGY, [today_energy_wh * 10 & 0xFFFF])
@@ -676,6 +719,8 @@ class ModbusManager:
             slave_context.setValues(INPUT_REG, REG_TOTAL_ENERGY_HIGH, [total_high])
             slave_context.setValues(INPUT_REG, REG_POWER_LOW, [power_low])
             slave_context.setValues(INPUT_REG, REG_POWER_HIGH, [power_high])
+            slave_context.setValues(INPUT_REG, REG_Q_LOW, [q_low])
+            slave_context.setValues(INPUT_REG, REG_Q_HIGH, [q_high])
             
         except KeyError as e:
             raise RuntimeError(f"光伏设备数据缺失: {e}")
@@ -1083,6 +1128,7 @@ class ModbusManager:
         - 寄存器5005：开关机控制 (0=关机, 1=开机)
         - 寄存器5038：有功功率限制 (kW单位)
         - 寄存器5007：有功功率百分比限制 (0-100%)
+        - 寄存器5040：无功补偿百分比 (0-100%)
         """
         try:
             device_context = None
@@ -1116,10 +1162,18 @@ class ModbusManager:
             except (IndexError, ValueError, AttributeError):
                 power_percent_limit = None
             
+            # 读取无功补偿百分比（寄存器5040）
+            try:
+                reactive_percent_limit = device_context.getValues(3, SGEN_REG_Q_PERCENT, 1)[0]
+                reactive_percent_limit = min(100, max(0, reactive_percent_limit))
+            except (IndexError, ValueError, AttributeError):
+                reactive_percent_limit = None
+            
             return {
                 'power_on': power_on,
                 'power_limit_mw': power_limit_mw,
-                'power_percent_limit': power_percent_limit
+                'power_percent_limit': power_percent_limit,
+                'reactive_percent_limit': reactive_percent_limit
             }
             
         except Exception as e:

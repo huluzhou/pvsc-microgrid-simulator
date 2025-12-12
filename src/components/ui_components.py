@@ -282,6 +282,10 @@ class UIComponentManager:
         sgen_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
         sgen_result_layout.addRow("有功功率:", sgen_active_power_label)
         self.parent_window.sgen_active_power_label = sgen_active_power_label
+        sgen_reactive_power_value = QLabel("-- MVar")
+        sgen_reactive_power_value.setStyleSheet("font-weight: bold; color: #FF5722;")
+        sgen_result_layout.addRow("无功功率:", sgen_reactive_power_value)
+        self.parent_window.sgen_reactive_power_label = sgen_reactive_power_value
         # 添加到主布局
         sgen_layout.addWidget(sgen_result_group)
 
@@ -355,6 +359,26 @@ class UIComponentManager:
         sgen_power_layout.addWidget(sgen_power_spinbox)
         sgen_manual_panel_layout.addRow("发电功率:", sgen_power_layout)
         
+        sgen_reactive_power_slider = QSlider(Qt.Horizontal)
+        sgen_reactive_power_slider.setRange(0, 1000)
+        sgen_reactive_power_slider.setValue(0)
+        sgen_reactive_power_slider.setMinimumWidth(100)
+        sgen_reactive_power_slider.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_reactive_power_changed)
+        self.parent_window.sgen_reactive_power_slider = sgen_reactive_power_slider
+        
+        sgen_reactive_power_spinbox = QDoubleSpinBox()
+        sgen_reactive_power_spinbox.setRange(0.0, 1000.0)
+        sgen_reactive_power_spinbox.setValue(0.0)
+        sgen_reactive_power_spinbox.setSingleStep(0.1)
+        sgen_reactive_power_spinbox.setSuffix(" kvar")
+        sgen_reactive_power_spinbox.valueChanged.connect(self.parent_window.data_control_manager.on_sgen_reactive_power_spinbox_changed)
+        self.parent_window.sgen_reactive_power_spinbox = sgen_reactive_power_spinbox
+        
+        sgen_q_layout = QHBoxLayout()
+        sgen_q_layout.addWidget(sgen_reactive_power_slider)
+        sgen_q_layout.addWidget(sgen_reactive_power_spinbox)
+        sgen_manual_panel_layout.addRow("无功功率:", sgen_q_layout)
+        
         # 应用按钮
         sgen_apply_button = QPushButton("应用光伏设置")
         sgen_apply_button.clicked.connect(self.parent_window.data_control_manager.apply_sgen_settings)
@@ -404,6 +428,10 @@ class UIComponentManager:
         load_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
         load_result_layout.addRow("有功功率:", load_active_power_label)
         self.parent_window.load_active_power_label = load_active_power_label
+        load_reactive_power_value = QLabel("-- MVar")
+        load_reactive_power_value.setStyleSheet("font-weight: bold; color: #FF5722;")
+        load_result_layout.addRow("无功功率:", load_reactive_power_value)
+        self.parent_window.load_reactive_power_value = load_reactive_power_value
         
         # 添加到主布局
         load_layout.addWidget(load_result_group)
@@ -560,6 +588,10 @@ class UIComponentManager:
         storage_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
         storage_result_layout.addRow("有功功率:", storage_active_power_label)
         self.parent_window.storage_active_power_label = storage_active_power_label
+        storage_reactive_power_label = QLabel("-- MVar")
+        storage_reactive_power_label.setStyleSheet("font-weight: bold; color: #FF5722;")
+        storage_result_layout.addRow("无功功率:", storage_reactive_power_label)
+        self.parent_window.storage_reactive_power_label = storage_reactive_power_label
 
         # 荷电状态显示
         storage_soc_label = QLabel("--%")
@@ -757,6 +789,10 @@ class UIComponentManager:
         charger_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
         charger_result_layout.addRow("有功功率:", charger_active_power_label)
         self.parent_window.charger_active_power_label = charger_active_power_label 
+        charger_reactive_power_label = QLabel("-- kVar")
+        charger_reactive_power_label.setStyleSheet("font-weight: bold; color: #FF5722;")
+        charger_result_layout.addRow("无功功率:", charger_reactive_power_label)
+        self.parent_window.charger_reactive_power_label = charger_reactive_power_label 
         
         
         # 添加到主布局
@@ -855,11 +891,26 @@ class UIComponentManager:
         meter_result_layout.addRow("当前测量类型:", meter_meas_type_label)
         self.parent_window.meter_meas_type_label = meter_meas_type_label
         
-        # 测量值显示
-        meter_measurement_label = QLabel("-- kW")
-        meter_measurement_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
-        meter_result_layout.addRow("测量值:", meter_measurement_label)
-        self.parent_window.meter_measurement_label = meter_measurement_label
+        # 测量值显示（完整）
+        meter_active_power_label = QLabel("-- kW")
+        meter_active_power_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        meter_result_layout.addRow("有功功率:", meter_active_power_label)
+        self.parent_window.meter_active_power_label = meter_active_power_label
+        
+        meter_reactive_power_label = QLabel("-- kVar")
+        meter_reactive_power_label.setStyleSheet("font-weight: bold; color: #FF5722;")
+        meter_result_layout.addRow("无功功率:", meter_reactive_power_label)
+        self.parent_window.meter_reactive_power_label = meter_reactive_power_label
+        
+        meter_active_energy_label = QLabel("不存在")
+        meter_active_energy_label.setStyleSheet("font-weight: bold; color: #9C27B0;")
+        meter_result_layout.addRow("有功电量:", meter_active_energy_label)
+        self.parent_window.meter_active_energy_label = meter_active_energy_label
+        
+        meter_reactive_energy_label = QLabel("不存在")
+        meter_reactive_energy_label.setStyleSheet("font-weight: bold; color: #9C27B0;")
+        meter_result_layout.addRow("无功电量:", meter_reactive_energy_label)
+        self.parent_window.meter_reactive_energy_label = meter_reactive_energy_label
         
         # 设备配置信息标题
         config_title = QLabel("设备配置信息:")

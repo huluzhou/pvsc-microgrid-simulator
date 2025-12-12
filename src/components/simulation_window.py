@@ -2020,6 +2020,26 @@ class SimulationWindow(QMainWindow):
                         
                     except Exception as e:
                         logger.error(f"批量更新储能设备 {device_idx} 能量统计时出错: {e}")
+            
+            # 批量更新外部电网能量统计
+            if self.network_items['external_grid'] and hasattr(self.network_model, 'net'):
+                valid_ext_indices = [idx for idx in self.network_items['external_grid'].keys()
+                                     if idx in self.network_model.net.ext_grid.index]
+                for device_idx in valid_ext_indices:
+                    try:
+                        ext_item = self.network_items['external_grid'][device_idx]
+                        p_mw = self.network_model.net.res_ext_grid.at[device_idx, 'p_mw'] if hasattr(self.network_model.net, 'res_ext_grid') else 0.0
+                        q_mvar = self.network_model.net.res_ext_grid.at[device_idx, 'q_mvar'] if hasattr(self.network_model.net, 'res_ext_grid') else 0.0
+                        inc_active_kwh = abs(p_mw) * 1000.0 * time_interval_hours
+                        inc_reactive_kvarh = abs(q_mvar) * 1000.0 * time_interval_hours
+                        if not hasattr(ext_item, 'active_energy_kwh'):
+                            ext_item.active_energy_kwh = 0.0
+                        if not hasattr(ext_item, 'reactive_energy_kvarh'):
+                            ext_item.reactive_energy_kvarh = 0.0
+                        ext_item.active_energy_kwh += inc_active_kwh
+                        ext_item.reactive_energy_kvarh += inc_reactive_kvarh
+                    except Exception as e:
+                        logger.error(f"批量更新外部电网 {device_idx} 能量统计时出错: {e}")
                         
         except Exception as e:
             logger.error(f"批量更新能量统计失败: {str(e)}")
@@ -2217,6 +2237,7 @@ class SimulationWindow(QMainWindow):
                 power_on = update_data['power_on']
                 power_limit_mw = update_data['power_limit_mw']
                 power_percent_limit = update_data['power_percent_limit']
+                reactive_percent_limit = update_data.get('reactive_percent_limit', None)
                 rated_power = sgen_item.properties.get('sn_mva', 0.0)  # 从属性中获取额定功率，默认0.0
                 # 获取光伏设备的实际功率
                 try:
@@ -2241,6 +2262,14 @@ class SimulationWindow(QMainWindow):
                 # 更新光伏功率到网络模型
                 try:
                     self.network_model.net.sgen.at[device_idx, 'p_mw'] = final_power
+                except (KeyError, IndexError):
+                    pass
+                
+                # 应用无功补偿百分比到网络模型
+                try:
+                    if reactive_percent_limit is not None and rated_power is not None:
+                        q_mvar = rated_power * (reactive_percent_limit / 100.0)
+                        self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
                 except (KeyError, IndexError):
                     pass
                     
