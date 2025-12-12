@@ -142,6 +142,9 @@ def build_executable():
             "--exclude-module=distutils",
             "--exclude-module=setuptools",
             "--exclude-module=pkg_resources",
+            # 添加隐藏依赖，确保tomli_w被包含在打包中
+            "--hidden-import=tomli_w",
+            "--hidden-import=tomli",
             "src/main.py"
         ]
     else:
@@ -215,6 +218,9 @@ def build_executable():
             "--exclude-module=distutils",
             "--exclude-module=setuptools",
             "--exclude-module=pkg_resources",
+            # 添加隐藏依赖，确保tomli_w被包含在打包中
+            "--hidden-import=tomli_w",
+            "--hidden-import=tomli",
             "src/main.py"
         ]
         

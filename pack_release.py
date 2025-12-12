@@ -241,7 +241,7 @@ def main():
     
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='PandaPower仿真器发布打包工具')
-    parser.add_argument('--type', '-t', choices=['feature', 'fix', 'none'], default='fix',
+    parser.add_argument('--type', '-t', choices=['feature', 'fix', 'none'], default='none',
                       help='更新类型: feature(功能更新)、fix(修复) 或 none(不修改版本号)')
     parser.add_argument('--format', '-f', choices=['zip', '7z'], default='7z',
                       help='压缩格式: zip 或 7z (默认: 7z)')

@@ -23,3 +23,5 @@ black>=22.0.0
 # 运行时依赖
 pymodbus==3.11.1
 pyserial==3.5
+tomli>=2.0.1
+tomli-w>=1.0.0

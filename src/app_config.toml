@@ -1,0 +1,12 @@
+[features]
+simulation = true
+modbus = true
+report = true
+export = true
+
+[debug]
+mode = false
+verbose_logging = true
+
+[power]
+unit = 1.0

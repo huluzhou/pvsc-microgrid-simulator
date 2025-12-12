@@ -19,22 +19,152 @@ ASSETS_DIR = "assets"
 # 例如：FEATURE_SIMULATION = True表示启用仿真功能
 #       FEATURE_MODBUS = False表示禁用Modbus功能
 
-# 功能模块宏定义
-FEATURE_SIMULATION = True  # 仿真功能
-FEATURE_MODBUS = True      # Modbus通信功能
-FEATURE_REPORT = True      # 报告生成功能
-FEATURE_EXPORT = True      # 数据导出功能
+# 默认配置值
+_DEFAULT_FEATURE_SIMULATION = True  # 仿真功能
+_DEFAULT_FEATURE_MODBUS = True      # Modbus通信功能
+_DEFAULT_FEATURE_REPORT = True      # 报告生成功能
+_DEFAULT_FEATURE_EXPORT = True      # 数据导出功能
+_DEFAULT_DEBUG_MODE = False          # 调试模式
+_DEFAULT_VERBOSE_LOGGING = True     # 详细日志
 
-# 调试模式宏定义
-DEBUG_MODE = False          # 调试模式
-VERBOSE_LOGGING = True     # 详细日志
+# 实际使用的配置值，将从TOML文件加载
+FEATURE_SIMULATION = _DEFAULT_FEATURE_SIMULATION
+FEATURE_MODBUS = _DEFAULT_FEATURE_MODBUS
+FEATURE_REPORT = _DEFAULT_FEATURE_REPORT
+FEATURE_EXPORT = _DEFAULT_FEATURE_EXPORT
+DEBUG_MODE = _DEFAULT_DEBUG_MODE
+VERBOSE_LOGGING = _DEFAULT_VERBOSE_LOGGING
 
-# 性能优化宏定义
-ENABLE_CACHING = True      # 启用缓存
-OPTIMIZE_RENDERING = True  # 优化渲染
 
-# 兼容性宏定义
-COMPAT_OLD_VERSION = False  # 兼容旧版本数据格式
+
+# 默认功率单位配置
+_DEFAULT_POWER_UNIT = 1.0
+
+# 实际使用的功率单位配置，将从TOML文件加载
+POWER_UNIT = _DEFAULT_POWER_UNIT
+
+# 尝试从TOML配置文件加载配置
+import os
+import sys
+
+# 检查Python版本，选择合适的TOML库
+if sys.version_info >= (3, 11):
+    import tomllib
+    import tomli_w
+else:
+    try:
+        import tomli as tomllib
+        import tomli_w
+    except ImportError:
+        # 如果没有安装tomli，使用默认配置
+        tomllib = None
+        tomli_w = None
+
+# 获取配置文件路径
+if hasattr(sys, 'frozen'):
+    # 打包后环境
+    config_dir = os.path.dirname(sys.executable)
+else:
+    # 开发环境
+    config_dir = os.path.dirname(os.path.abspath(__file__))
+
+# 创建配置文件路径
+config_file_path = os.path.join(config_dir, 'app_config.toml')
+
+# 默认配置
+DEFAULT_CONFIG = {
+    'features': {
+        'simulation': _DEFAULT_FEATURE_SIMULATION,
+        'modbus': _DEFAULT_FEATURE_MODBUS,
+        'report': _DEFAULT_FEATURE_REPORT,
+        'export': _DEFAULT_FEATURE_EXPORT
+    },
+    'debug': {
+        'mode': _DEFAULT_DEBUG_MODE,
+        'verbose_logging': _DEFAULT_VERBOSE_LOGGING
+    },
+    'power': {
+        'unit': _DEFAULT_POWER_UNIT
+    }
+}
+
+# 读取配置文件
+if tomllib and os.path.exists(config_file_path):
+    try:
+        with open(config_file_path, 'rb') as f:
+            app_config = tomllib.load(f)
+        
+        # 更新功能模块配置
+        if 'features' in app_config:
+            if 'simulation' in app_config['features']:
+                FEATURE_SIMULATION = app_config['features']['simulation']
+            if 'modbus' in app_config['features']:
+                FEATURE_MODBUS = app_config['features']['modbus']
+            if 'report' in app_config['features']:
+                FEATURE_REPORT = app_config['features']['report']
+            if 'export' in app_config['features']:
+                FEATURE_EXPORT = app_config['features']['export']
+        
+        # 更新调试模式配置
+        if 'debug' in app_config:
+            if 'mode' in app_config['debug']:
+                DEBUG_MODE = app_config['debug']['mode']
+            if 'verbose_logging' in app_config['debug']:
+                VERBOSE_LOGGING = app_config['debug']['verbose_logging']
+        
+        # 更新功率单位配置
+        if 'power' in app_config and 'unit' in app_config['power']:
+            POWER_UNIT = app_config['power']['unit']
+    except Exception as e:
+        print(f"加载配置文件失败: {e}")
+        # 使用当前配置并创建配置文件
+        if tomli_w:
+            try:
+                # 使用当前配置创建配置文件
+                current_config = {
+                    'features': {
+                        'simulation': FEATURE_SIMULATION,
+                        'modbus': FEATURE_MODBUS,
+                        'report': FEATURE_REPORT,
+                        'export': FEATURE_EXPORT
+                    },
+                    'debug': {
+                        'mode': DEBUG_MODE,
+                        'verbose_logging': VERBOSE_LOGGING
+                    },
+                    'power': {
+                        'unit': POWER_UNIT
+                    }
+                }
+                with open(config_file_path, 'wb') as f:
+                    tomli_w.dump(current_config, f)
+            except Exception as e:
+                print(f"创建配置文件失败: {e}")
+else:
+    # 配置文件不存在，使用当前配置并创建配置文件
+    if tomli_w:
+        try:
+            # 使用当前配置创建配置文件
+            current_config = {
+                'features': {
+                    'simulation': FEATURE_SIMULATION,
+                    'modbus': FEATURE_MODBUS,
+                    'report': FEATURE_REPORT,
+                    'export': FEATURE_EXPORT
+                },
+                'debug': {
+                    'mode': DEBUG_MODE,
+                    'verbose_logging': VERBOSE_LOGGING
+                },
+                'power': {
+                    'unit': POWER_UNIT
+                }
+            }
+            with open(config_file_path, 'wb') as f:
+                tomli_w.dump(current_config, f)
+        except Exception as e:
+            print(f"创建配置文件失败: {e}")
+
 
 # 条件编译辅助函数
 

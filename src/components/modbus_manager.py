@@ -8,6 +8,7 @@ Modbus服务器管理模块
 
 import threading
 from utils.logger import logger
+from config import POWER_UNIT
 from pymodbus import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusSparseDataBlock, ModbusSequentialDataBlock
 import asyncio
@@ -599,7 +600,7 @@ class ModbusManager:
         try:
             # 获取有功功率值
             power_value = self.power_monitor.get_meter_measurement(index, 'active_power')
-            power_kw = int(power_value * 1000 / 50 * 100) & 0xFFFF
+            power_kw = int(power_value * POWER_UNIT / 50 * 100) & 0xFFFF
             
             # 写入地址0：有功功率（16位）
             slave_context.setValues(4, 0, [power_kw])
@@ -654,7 +655,7 @@ class ModbusManager:
                 raise RuntimeError(f"未找到光伏设备 {index} 的图形项")
             
             # 数据转换和验证
-            power_w = int(round(abs(power_mw) * 1000 * 1000))  # MW -> kW -> W
+            power_w = int(round(abs(power_mw) * POWER_UNIT * 1000))  # MW -> kW -> W
             total_energy_wh = int(round(pv_item.total_discharge_energy)) 
             today_energy_wh = int(round(pv_item.today_discharge_energy)) 
             
@@ -705,7 +706,7 @@ class ModbusManager:
             active_power_raw = float(
                 -self.network_model.net.res_storage.at[index, "p_mw"]
             )
-            active_power = int(active_power_raw * 1000 * 10)
+            active_power = int(active_power_raw * POWER_UNIT * 10)
             # 计算电流 - 修正单相220V计算逻辑
             # 电流(A) = 功率(kW) * 1000 / 电压(V)
             # 转换为0.1A单位：* 10
@@ -837,8 +838,8 @@ class ModbusManager:
                 raise RuntimeError(f"未找到充电桩设备 {index} 的图形项")
             
             # 数据转换和验证
-            active_power_kw = int(round(abs(power_mw) * 1000*10))  # MW -> kW
-            required_power_kw = int(round(charger_item.required_power * 1000 *10))  # 最大需求功率
+            active_power_kw = int(round(abs(power_mw) * POWER_UNIT * 10))  # MW -> kW
+            required_power_kw = int(round(charger_item.required_power * POWER_UNIT * 10))  # 最大需求功率
             
 
             # 数据范围检查
@@ -1017,7 +1018,7 @@ class ModbusManager:
                 if power_setpoint > 32767:  # 检查最高位是否为1（表示负数）
                     power_setpoint = power_setpoint - 65536  # 转换为负数
                 
-                power_setpoint = power_setpoint / 10.0 / 1000.0  # kW -> MW
+                power_setpoint = power_setpoint / 10.0 / POWER_UNIT  
             except (IndexError, ValueError, AttributeError):
                 power_setpoint = None
                 
@@ -1067,7 +1068,7 @@ class ModbusManager:
                 try:
                     result = device_context.getValues(3, 0, 1)
                     if isinstance(result, list) and len(result) > 0:
-                        power_limit = result[0] / 1000.0  # Convert kW to MW
+                        power_limit = result[0] / POWER_UNIT   
                 except (TypeError, IndexError):
                     pass
         except Exception:
@@ -1104,7 +1105,7 @@ class ModbusManager:
             try:
                 power_limit_kw = device_context.getValues(3, 5038, 1)[0]
                 # 先将kW转换为MW，再除以10进行额外缩放（根据设备通信协议要求）
-                power_limit_mw = power_limit_kw / 1000.0 / 10  # kW -> 缩放后的MW值
+                power_limit_mw = power_limit_kw / POWER_UNIT / 10  
             except (IndexError, ValueError, AttributeError):
                 power_limit_mw = None
                 
