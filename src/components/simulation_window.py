@@ -9,7 +9,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, 
     QTreeWidgetItem, QMessageBox, QDockWidget, QFileDialog, QStatusBar, QInputDialog,
-    QComboBox
+    QComboBox, QProgressDialog
   )
 import threading
 import time
@@ -34,6 +34,9 @@ class SimulationWindow(QMainWindow):
     """仿真界面窗口"""
     # 定义信号，参数为设备索引和新的功率值
     storage_power_changed = Signal(int, float)
+    backtest_import_progress = Signal(int)
+    backtest_import_done = Signal(object)
+    backtest_import_failed = Signal(str)
     
     def __init__(self, canvas, parent=None):
         super().__init__(parent)
@@ -477,85 +480,43 @@ class SimulationWindow(QMainWindow):
             QMessageBox.critical(self, "配置失败", f"配置功率单位时发生错误: {str(e)}")
     
     def import_backtest_data(self):
-        """导入回测数据"""
         try:
-            # 打开文件选择对话框，只支持SQLite数据库文件
             file_path, _ = QFileDialog.getOpenFileName(
-                self, 
-                "选择回测数据文件", 
-                "", 
+                self,
+                "选择回测数据文件",
+                "",
                 "SQLite数据库 (*.db);;所有文件 (*.*)"
             )
-            
             if not file_path:
-                # 用户取消选择
                 return
-            
-            # 弹出数据格式选择对话框
             data_format, ok = QInputDialog.getItem(
-                self, 
-                "选择数据格式", 
-                "请选择数据格式:", 
-                ["默认格式 (SQLite数据库)", "滁州工厂数据格式"], 
-                0, 
+                self,
+                "选择数据格式",
+                "请选择数据格式:",
+                ["默认格式 (SQLite数据库)", "滁州工厂数据格式"],
+                0,
                 False
             )
-            
             if not ok:
-                # 用户取消选择
                 return
-            
-            # 根据选择的数据格式读取数据
-            if data_format == "默认格式 (SQLite数据库)":
-                # 验证文件扩展名是否为.db
-                if not file_path.endswith('.db'):
-                    QMessageBox.warning(self, "格式错误", "请选择SQLite数据库文件 (*.db)")
-                    return
-                df = self._read_backtest_data_from_db(file_path)
-            elif data_format == "滁州工厂数据格式":
-                # 滁州工厂数据格式处理，具体实现留空
-                df = self._read_backtest_data_chuzhou(file_path)
-            
-            # 检查数据格式是否正确
-            required_columns = ['timestamp', 'device_type', 'device_id', 'p_mw']
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            
-            if missing_columns:
-                QMessageBox.warning(self, "格式错误", 
-                                   f"文件缺少必要的列: {', '.join(missing_columns)}")
+            if data_format == "默认格式 (SQLite数据库)" and not file_path.endswith('.db'):
+                QMessageBox.warning(self, "格式错误", "请选择SQLite数据库文件 (*.db)")
                 return
-            
-            # 显示数据预览对话框
-            preview_text = "成功导入回测数据文件\n"
-            preview_text += f"数据总行数: {len(df)}\n"
-            
-            # 统计设备类型
-            device_types = df['device_type'].unique()
-            preview_text += f"包含设备类型: {', '.join(device_types)}\n"
-            
-            # 统计设备数量（使用device_type和device_id组合唯一标识设备）
-            device_count = len(df.groupby(['device_type', 'device_id']).size())
-            preview_text += f"设备总数: {device_count} 个\n"
-            
-            # 存储回测数据到实例变量
-            self.backtest_data = df
-            # 注意：is_backtesting标志将在开始回测时设置，而不是导入时
-            
-            # 准备回测数据的索引结构，优化查询性能
-            self._prepare_backtest_data_index()
-            
-            # 提示用户开始回测
-            reply = QMessageBox.question(self, "导入成功", 
-                                        f"{preview_text}\n是否立即开始回测？",
-                                        QMessageBox.Yes | QMessageBox.No)
-            
-            if reply == QMessageBox.Yes:
-                # 如果用户选择立即开始回测，可以在这里添加启动回测的代码
-                self.start_backtest()
+            self._backtest_import_cancelled = False
+            self.backtest_progress_dialog = QProgressDialog("正在导入回测数据...", "取消", 0, 100, self)
+            self.backtest_progress_dialog.setWindowModality(Qt.WindowModal)
+            self.backtest_progress_dialog.setAutoClose(True)
+            self.backtest_progress_dialog.canceled.connect(self._set_backtest_import_cancelled)
+            self.backtest_import_progress.connect(self.backtest_progress_dialog.setValue)
+            self.backtest_import_done.connect(self._on_backtest_import_done)
+            self.backtest_import_failed.connect(self._on_backtest_import_failed)
+            self.backtest_progress_dialog.show()
+            t = threading.Thread(target=self._import_backtest_data_worker, args=(file_path, data_format))
+            t.daemon = True
+            t.start()
         except Exception as e:
             logger.error(f"导入回测数据失败: {str(e)}")
-            QMessageBox.critical(self, "导入失败", 
-                               f"导入回测数据时发生错误: {str(e)}")
+            QMessageBox.critical(self, "导入失败", f"导入回测数据时发生错误: {str(e)}")
                 
     def _read_backtest_data_chuzhou(self, file_path):
         """读取滁州工厂数据格式"""
@@ -945,6 +906,91 @@ class SimulationWindow(QMainWindow):
         total_data_points = sum(sum(len(data_points) for data_points in devices.values()) 
                                for devices in self.backtest_data_index.values())
         logger.info(f"回测数据索引准备完成: 设备总数={total_devices}, 数据点总数={total_data_points}, 最大时间戳={self.backtest_max_timestamp}秒")
+
+    def _build_backtest_index(self, df):
+        index = {}
+        max_ts = 0
+        if df is None or df.empty:
+            return index, max_ts
+        for (device_type, device_id), group in df.groupby(['device_type', 'device_id']):
+            ts_arr = group['timestamp'].astype(float).astype(int).tolist()
+            p_arr = group['p_mw'].tolist()
+            q_arr = group['q_mvar'].tolist() if 'q_mvar' in group.columns else [0.0] * len(ts_arr)
+            if device_type not in index:
+                index[device_type] = {}
+            if device_id not in index[device_type]:
+                index[device_type][device_id] = {}
+            local_max = max(ts_arr) if ts_arr else 0
+            if local_max > max_ts:
+                max_ts = local_max
+            for ts, p, q in zip(ts_arr, p_arr, q_arr):
+                index[device_type][device_id][ts] = {
+                    'timestamp': ts,
+                    'p_mw': p,
+                    'q_mvar': q
+                }
+        return index, max_ts
+
+    def _import_backtest_data_worker(self, file_path, data_format):
+        try:
+            self.backtest_import_progress.emit(5)
+            if data_format == "默认格式 (SQLite数据库)":
+                df = self._read_backtest_data_from_db(file_path)
+            else:
+                df = self._read_backtest_data_chuzhou(file_path)
+            if self._backtest_import_cancelled:
+                self.backtest_import_failed.emit("已取消")
+                return
+            self.backtest_import_progress.emit(70)
+            required = ['timestamp', 'device_type', 'device_id', 'p_mw']
+            missing = [c for c in required if c not in df.columns]
+            if missing:
+                self.backtest_import_failed.emit(f"文件缺少必要的列: {', '.join(missing)}")
+                return
+            index, max_ts = self._build_backtest_index(df)
+            if self._backtest_import_cancelled:
+                self.backtest_import_failed.emit("已取消")
+                return
+            self.backtest_import_progress.emit(95)
+            payload = {'df': df, 'index': index, 'max_ts': max_ts}
+            self.backtest_import_done.emit(payload)
+            self.backtest_import_progress.emit(100)
+        except Exception as e:
+            self.backtest_import_failed.emit(str(e))
+
+    def _on_backtest_import_done(self, payload):
+        try:
+            if hasattr(self, 'backtest_progress_dialog'):
+                self.backtest_progress_dialog.close()
+            self.backtest_data = payload.get('df')
+            self.backtest_data_index = payload.get('index')
+            self.backtest_max_timestamp = payload.get('max_ts', 0)
+            df = self.backtest_data
+            preview_text = "成功导入回测数据文件\n"
+            preview_text += f"数据总行数: {len(df)}\n"
+            device_types = df['device_type'].unique()
+            preview_text += f"包含设备类型: {', '.join(device_types)}\n"
+            device_count = len(df.groupby(['device_type', 'device_id']).size())
+            preview_text += f"设备总数: {device_count} 个\n"
+            reply = QMessageBox.question(self, "导入成功", f"{preview_text}\n是否立即开始回测？", QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.start_backtest()
+        except Exception as e:
+            QMessageBox.critical(self, "导入失败", f"处理回测数据时发生错误: {str(e)}")
+
+    def _on_backtest_import_failed(self, msg):
+        try:
+            if hasattr(self, 'backtest_progress_dialog'):
+                self.backtest_progress_dialog.close()
+            if msg == "已取消":
+                self.statusBar().showMessage("导入已取消")
+                return
+            QMessageBox.critical(self, "导入失败", msg)
+        except Exception:
+            pass
+
+    def _set_backtest_import_cancelled(self):
+        self._backtest_import_cancelled = True
     
     def _find_device_type_and_id_by_sn(self, device_sn, table_device_type=None):
         """通过device_sn在network_items中查找对应的设备类型和ID
