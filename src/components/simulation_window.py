@@ -396,18 +396,36 @@ class SimulationWindow(QMainWindow):
                 import sys
                 
                 # 检查Python版本，选择合适的TOML库
-                if sys.version_info >= (3, 11):
-                    import tomllib
-                    import tomli_w
-                else:
-                    try:
+                tomllib = None
+                tomli_w = None
+                
+                try:
+                    if sys.version_info >= (3, 11):
+                        # Python 3.11+，使用内置的tomllib
+                        import tomllib
+                    else:
+                        # Python 3.10及以下，尝试使用tomli
                         import tomli as tomllib
-                        import tomli_w
+                except ImportError:
+                    pass
+                
+                # 尝试导入tomli_w（无论Python版本）
+                try:
+                    import tomli_w
+                except ImportError:
+                    # 尝试使用其他名称导入
+                    try:
+                        from tomli_w import tomli_w as tomli_w_module
+                        tomli_w = tomli_w_module
                     except ImportError:
-                        # 如果没有安装tomli，显示错误
-                        from PySide6.QtWidgets import QMessageBox
-                        QMessageBox.critical(self, "配置失败", "TOML库未安装，无法保存配置")
-                        return
+                        pass
+                
+                # 检查是否成功导入了必要的库
+                if tomllib is None or tomli_w is None:
+                    # 如果无法导入TOML库，显示错误
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.critical(self, "配置失败", "TOML库未安装，无法保存配置")
+                    return
                 
                 # 获取配置文件路径
                 if hasattr(sys, 'frozen'):
