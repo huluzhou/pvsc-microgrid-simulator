@@ -559,6 +559,19 @@ class DataControlManager:
                     current_q_kvar = max(0.0, current_q * 1000)
                     rated_power_kw = rated_power * 1000
                     
+                    is_remote_reactive = False
+                    if hasattr(sgen_item, 'is_remote_reactive_control'):
+                        is_remote_reactive = sgen_item.is_remote_reactive_control
+                    if hasattr(self.parent_window, 'sgen_enable_remote_reactive'):
+                        self.parent_window.sgen_enable_remote_reactive.blockSignals(True)
+                        self.parent_window.sgen_enable_remote_reactive.setChecked(is_remote_reactive)
+                        self.parent_window.sgen_enable_remote_reactive.blockSignals(False)
+                    if hasattr(self.parent_window, 'sgen_manual_panel'):
+                        self.parent_window.sgen_manual_panel.setEnabled(not is_remote_reactive)
+                    if hasattr(self.parent_window, 'sgen_reactive_power_slider'):
+                        self.parent_window.sgen_reactive_power_slider.setEnabled(not is_remote_reactive)
+                    if hasattr(self.parent_window, 'sgen_reactive_power_spinbox'):
+                        self.parent_window.sgen_reactive_power_spinbox.setEnabled(not is_remote_reactive)
                     # 更新滑块范围为0到额定功率（支持0.1kW精度）
                     if hasattr(self.parent_window, 'sgen_power_slider'):
                         max_slider_value = int(rated_power_kw * 10)  # 乘以10以支持0.1kW精度
@@ -903,6 +916,26 @@ class DataControlManager:
                 if hasattr(self.parent_window, "sgen_reactive_power_label"):
                     self.parent_window.sgen_reactive_power_label.setText("未计算")
         self._update_comm_status_indicator('sgen', component_idx)
+
+    def on_sgen_reactive_control_mode_changed(self, state):
+        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+            return
+        if self.parent_window.current_component_type != 'sgen':
+            return
+        component_idx = self.parent_window.current_component_idx
+        if 'static_generator' not in self.network_items or component_idx not in self.network_items['static_generator']:
+            return
+        sgen_item = self.network_items['static_generator'][component_idx]
+        is_remote_enabled = False
+        if hasattr(self.parent_window, 'sgen_enable_remote_reactive'):
+            is_remote_enabled = self.parent_window.sgen_enable_remote_reactive.isChecked()
+        sgen_item.is_remote_reactive_control = is_remote_enabled
+        if hasattr(self.parent_window, 'sgen_manual_panel'):
+            self.parent_window.sgen_manual_panel.setEnabled(not is_remote_enabled)
+        if hasattr(self.parent_window, 'sgen_reactive_power_slider'):
+            self.parent_window.sgen_reactive_power_slider.setEnabled(not is_remote_enabled)
+        if hasattr(self.parent_window, 'sgen_reactive_power_spinbox'):
+            self.parent_window.sgen_reactive_power_spinbox.setEnabled(not is_remote_enabled)
     
     def update_load_realtime_info(self, component_idx):
         """更新负载设备的实时信息（有功/无功功率）"""

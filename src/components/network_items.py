@@ -1208,7 +1208,8 @@ class StaticGeneratorItem(BaseNetworkItem):
         }
         self.today_discharge_energy = 0.0
         self.total_discharge_energy = 0.0
-        self.comm_status = False  # 初始通信状态为False
+        self.comm_status = False
+        self.is_remote_reactive_control = True
         sn_mva = self.properties.get("sn_mva", 1.0)
         self.active_power_limit_per = 110# kw (100% 额定功率)
         self.active_power_limit = sn_mva * 1000 * self.active_power_limit_per / 100  # kw (110% 额定功率)

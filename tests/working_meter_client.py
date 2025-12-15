@@ -46,8 +46,7 @@ class MultiMeterClient:
         """读取所有电表的有功功率（32位数据，高低位组合）"""
         for meter_name, client in self.clients.items():
             try:
-                # 读取两个连续的16位寄存器（地址0和地址1）
-                result = client.read_input_registers(address=0, count=10, device_id=1)
+                result = client.read_input_registers(address=0, count=21, device_id=1)
                 # voltage_a = client.read_input_registers(address=1, count=1, device_id=1)
                 # voltage_b = client.read_input_registers(address=2, count=1, device_id=1)
                 # voltage_c = client.read_input_registers(address=3, count=1, device_id=1)
@@ -66,9 +65,11 @@ class MultiMeterClient:
                     self.meter_data[meter_name]['current_a'] = result.registers[4]
                     self.meter_data[meter_name]['current_b'] = result.registers[5]
                     self.meter_data[meter_name]['current_c'] = result.registers[6]
-                    self.meter_data[meter_name]['up_energy'] = result.registers[7]
-                    self.meter_data[meter_name]['down_energy'] = result.registers[8]
-                    self.meter_data[meter_name]['total_energy'] = result.registers[9]
+                    self.meter_data[meter_name]['active_export'] = result.registers[7]
+                    self.meter_data[meter_name]['active_import'] = result.registers[8]
+                    self.meter_data[meter_name]['reactive_export'] = result.registers[10]
+                    self.meter_data[meter_name]['reactive_import'] = result.registers[11]
+                    self.meter_data[meter_name]['reactive_power'] = result.registers[20] * 0.5
                 else:
                     self.meter_data[meter_name]['status'] = 'read_error'
                     self.meter_data[meter_name]['power'] = 0.0
@@ -96,13 +97,15 @@ class MultiMeterClient:
             current_a = data['current_a']
             current_b = data['current_b']
             current_c = data['current_c']
-            up_energy = data['up_energy']
-            down_energy = data['down_energy']
-            total_energy = data['total_energy']
+            active_export = data['active_export']
+            active_import = data['active_import']
+            reactive_export = data['reactive_export']
+            reactive_import = data['reactive_import']
+            reactive_power = data['reactive_power']
 
             if status == 'ok':
                 print(
-                    f"电表{i}:{power:6.2f}kW | 状态: {status} | Vab:{voltage_a:6.2f}V | Vbc:{voltage_b:6.2f}V | Vca:{voltage_c:6.2f}V | Iab:{current_a:6.2f}A | Ibc:{current_b:6.2f}A | Ica:{current_c:6.2f}A | Up:{up_energy:6.2f}kWh | Down:{down_energy:6.2f}kWh | Total:{total_energy:6.2f}kWh"
+                    f"电表{i}:{power:6.2f}kW | 状态: {status} | Vab:{voltage_a:6.2f}V | Vbc:{voltage_b:6.2f}V | Vca:{voltage_c:6.2f}V | Iab:{current_a:6.2f}A | Ibc:{current_b:6.2f}A | Ica:{current_c:6.2f}A | ActUp:{active_export:6.2f} | ActDown:{active_import:6.2f} | ReactUp:{reactive_export:6.2f} | ReactDown:{reactive_import:6.2f} | Q:{reactive_power:6.2f}"
                 )
                 total_power += power
                 active_meters += 1

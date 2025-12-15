@@ -2042,58 +2042,59 @@ class SimulationWindow(QMainWindow):
             
             # 已移除外部电网能量累积，电量统计统一由电表四象限计数维护
             
-            # 批量更新电表四种能量统计（上网/下网有功与无功）
             if self.network_items['meter'] and hasattr(self, 'power_monitor'):
                 for meter_idx, meter_item in self.network_items['meter'].items():
                     try:
                         p_mw = self.power_monitor.get_meter_measurement(meter_idx, 'active_power')
                         q_mvar = self.power_monitor.get_meter_measurement(meter_idx, 'reactive_power')
                         et = meter_item.properties.get('element_type')
+                        energy_factor = 1000.0 * time_interval_hours
+                        reactive_energy_factor = 1000.0 * time_interval_hours
                         if et == 'load':
                             if p_mw >= 0:
-                                meter_item.active_import_kwh += p_mw * 1000.0 * time_interval_hours
+                                meter_item.active_import_kwh += p_mw * energy_factor
                             else:
-                                meter_item.active_export_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                                meter_item.active_export_kwh += (-p_mw) * energy_factor
                             if q_mvar >= 0:
-                                meter_item.reactive_import_kvarh += q_mvar * 1000.0 * time_interval_hours
+                                meter_item.reactive_import_kvarh += q_mvar * reactive_energy_factor
                             else:
-                                meter_item.reactive_export_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
+                                meter_item.reactive_export_kvarh += (-q_mvar) * reactive_energy_factor
                         elif et == 'sgen':
                             if p_mw >= 0:
-                                meter_item.active_export_kwh += p_mw * 1000.0 * time_interval_hours
+                                meter_item.active_export_kwh += p_mw * energy_factor
                             else:
-                                meter_item.active_import_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                                meter_item.active_import_kwh += (-p_mw) * energy_factor
                             if q_mvar >= 0:
-                                meter_item.reactive_export_kvarh += q_mvar * 1000.0 * time_interval_hours
+                                meter_item.reactive_export_kvarh += q_mvar * reactive_energy_factor
                             else:
-                                meter_item.reactive_import_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
+                                meter_item.reactive_import_kvarh += (-q_mvar) * reactive_energy_factor
                         elif et == 'ext_grid':
                             if p_mw >= 0:
-                                meter_item.active_import_kwh += p_mw * 1000.0 * time_interval_hours
+                                meter_item.active_import_kwh += p_mw * energy_factor
                             else:
-                                meter_item.active_export_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                                meter_item.active_export_kwh += (-p_mw) * energy_factor
                             if q_mvar >= 0:
-                                meter_item.reactive_import_kvarh += q_mvar * 1000.0 * time_interval_hours
+                                meter_item.reactive_import_kvarh += q_mvar * reactive_energy_factor
                             else:
-                                meter_item.reactive_export_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
+                                meter_item.reactive_export_kvarh += (-q_mvar) * reactive_energy_factor
                         elif et == 'storage':
                             if p_mw < 0:
-                                meter_item.active_export_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                                meter_item.active_export_kwh += (-p_mw) * energy_factor
                             else:
-                                meter_item.active_import_kwh += p_mw * 1000.0 * time_interval_hours
+                                meter_item.active_import_kwh += p_mw * energy_factor
                             if q_mvar < 0:
-                                meter_item.reactive_export_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
+                                meter_item.reactive_export_kvarh += (-q_mvar) * reactive_energy_factor
                             else:
-                                meter_item.reactive_import_kvarh += q_mvar * 1000.0 * time_interval_hours
+                                meter_item.reactive_import_kvarh += q_mvar * reactive_energy_factor
                         else:
                             if p_mw >= 0:
-                                meter_item.active_export_kwh += p_mw * 1000.0 * time_interval_hours
+                                meter_item.active_export_kwh += p_mw * energy_factor
                             else:
-                                meter_item.active_import_kwh += (-p_mw) * 1000.0 * time_interval_hours
+                                meter_item.active_import_kwh += (-p_mw) * energy_factor
                             if q_mvar >= 0:
-                                meter_item.reactive_export_kvarh += q_mvar * 1000.0 * time_interval_hours
+                                meter_item.reactive_export_kvarh += q_mvar * reactive_energy_factor
                             else:
-                                meter_item.reactive_import_kvarh += (-q_mvar) * 1000.0 * time_interval_hours
+                                meter_item.reactive_import_kvarh += (-q_mvar) * reactive_energy_factor
                     except Exception as e:
                         logger.error(f"批量更新电表 {meter_idx} 四象限能量统计时出错: {e}")
                         
@@ -2321,9 +2322,12 @@ class SimulationWindow(QMainWindow):
                 except (KeyError, IndexError):
                     pass
                 
-                # 应用无功补偿百分比到网络模型
                 try:
-                    if reactive_percent_limit is not None and rated_power is not None:
+                    sgen_item = self.network_items['static_generator'].get(device_idx)
+                    is_remote_reactive = False
+                    if sgen_item is not None and hasattr(sgen_item, 'is_remote_reactive_control'):
+                        is_remote_reactive = sgen_item.is_remote_reactive_control
+                    if is_remote_reactive and reactive_percent_limit is not None and rated_power is not None:
                         q_mvar = rated_power * (reactive_percent_limit / 100.0)
                         self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
                 except (KeyError, IndexError):
