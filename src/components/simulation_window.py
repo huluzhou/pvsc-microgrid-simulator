@@ -1794,6 +1794,12 @@ class SimulationWindow(QMainWindow):
             if hasattr(self, 'modbus_manager'):
                 self.modbus_manager.stop_all_modbus_servers()
             
+            # 清空能量累计数据
+            try:
+                self._reset_all_energy_counters()
+            except Exception as e:
+                logger.error(f"清空能量数据失败: {e}")
+            
             # 将所有开关设置为合闸状态
             if 'switch' in self.network_items:
                 for switch_idx, switch_item in self.network_items['switch'].items():
@@ -1822,6 +1828,19 @@ class SimulationWindow(QMainWindow):
             logger.error(f"关闭仿真窗口时发生错误: {e}")
         finally:
             event.accept()
+    def _reset_all_energy_counters(self):
+        """重置所有设备的能量累计数据"""
+        try:
+            if hasattr(self, 'network_items'):
+                # 重置电表的四象限电量（保留起始电量属性）
+                if 'meter' in self.network_items:
+                    for meter_item in self.network_items['meter'].values():
+                        meter_item.active_export_kwh = 0.0
+                        meter_item.active_import_kwh = 0.0
+                        meter_item.reactive_export_kvarh = 0.0
+                        meter_item.reactive_import_kvarh = 0.0
+        except Exception as e:
+            logger.error(f"重置能量累计数据失败: {e}")
     def clear_all_members(self):
         """清空类中所有成员变量"""
         # 保留基本属性，清空其他所有
@@ -2020,6 +2039,64 @@ class SimulationWindow(QMainWindow):
                         
                     except Exception as e:
                         logger.error(f"批量更新储能设备 {device_idx} 能量统计时出错: {e}")
+            
+            # 已移除外部电网能量累积，电量统计统一由电表四象限计数维护
+            
+            if self.network_items['meter'] and hasattr(self, 'power_monitor'):
+                for meter_idx, meter_item in self.network_items['meter'].items():
+                    try:
+                        p_mw = self.power_monitor.get_meter_measurement(meter_idx, 'active_power')
+                        q_mvar = self.power_monitor.get_meter_measurement(meter_idx, 'reactive_power')
+                        et = meter_item.properties.get('element_type')
+                        energy_factor = 1000.0 * time_interval_hours
+                        reactive_energy_factor = 1000.0 * time_interval_hours
+                        if et == 'load':
+                            if p_mw >= 0:
+                                meter_item.active_import_kwh += p_mw * energy_factor
+                            else:
+                                meter_item.active_export_kwh += (-p_mw) * energy_factor
+                            if q_mvar >= 0:
+                                meter_item.reactive_import_kvarh += q_mvar * reactive_energy_factor
+                            else:
+                                meter_item.reactive_export_kvarh += (-q_mvar) * reactive_energy_factor
+                        elif et == 'sgen':
+                            if p_mw >= 0:
+                                meter_item.active_export_kwh += p_mw * energy_factor
+                            else:
+                                meter_item.active_import_kwh += (-p_mw) * energy_factor
+                            if q_mvar >= 0:
+                                meter_item.reactive_export_kvarh += q_mvar * reactive_energy_factor
+                            else:
+                                meter_item.reactive_import_kvarh += (-q_mvar) * reactive_energy_factor
+                        elif et == 'ext_grid':
+                            if p_mw >= 0:
+                                meter_item.active_import_kwh += p_mw * energy_factor
+                            else:
+                                meter_item.active_export_kwh += (-p_mw) * energy_factor
+                            if q_mvar >= 0:
+                                meter_item.reactive_import_kvarh += q_mvar * reactive_energy_factor
+                            else:
+                                meter_item.reactive_export_kvarh += (-q_mvar) * reactive_energy_factor
+                        elif et == 'storage':
+                            if p_mw < 0:
+                                meter_item.active_export_kwh += (-p_mw) * energy_factor
+                            else:
+                                meter_item.active_import_kwh += p_mw * energy_factor
+                            if q_mvar < 0:
+                                meter_item.reactive_export_kvarh += (-q_mvar) * reactive_energy_factor
+                            else:
+                                meter_item.reactive_import_kvarh += q_mvar * reactive_energy_factor
+                        else:
+                            if p_mw >= 0:
+                                meter_item.active_export_kwh += p_mw * energy_factor
+                            else:
+                                meter_item.active_import_kwh += (-p_mw) * energy_factor
+                            if q_mvar >= 0:
+                                meter_item.reactive_export_kvarh += q_mvar * reactive_energy_factor
+                            else:
+                                meter_item.reactive_import_kvarh += (-q_mvar) * reactive_energy_factor
+                    except Exception as e:
+                        logger.error(f"批量更新电表 {meter_idx} 四象限能量统计时出错: {e}")
                         
         except Exception as e:
             logger.error(f"批量更新能量统计失败: {str(e)}")
@@ -2217,6 +2294,7 @@ class SimulationWindow(QMainWindow):
                 power_on = update_data['power_on']
                 power_limit_mw = update_data['power_limit_mw']
                 power_percent_limit = update_data['power_percent_limit']
+                reactive_percent_limit = update_data.get('reactive_percent_limit', None)
                 rated_power = sgen_item.properties.get('sn_mva', 0.0)  # 从属性中获取额定功率，默认0.0
                 # 获取光伏设备的实际功率
                 try:
@@ -2241,6 +2319,17 @@ class SimulationWindow(QMainWindow):
                 # 更新光伏功率到网络模型
                 try:
                     self.network_model.net.sgen.at[device_idx, 'p_mw'] = final_power
+                except (KeyError, IndexError):
+                    pass
+                
+                try:
+                    sgen_item = self.network_items['static_generator'].get(device_idx)
+                    is_remote_reactive = False
+                    if sgen_item is not None and hasattr(sgen_item, 'is_remote_reactive_control'):
+                        is_remote_reactive = sgen_item.is_remote_reactive_control
+                    if is_remote_reactive and reactive_percent_limit is not None and rated_power is not None:
+                        q_mvar = rated_power * (reactive_percent_limit / 100.0)
+                        self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
                 except (KeyError, IndexError):
                     pass
                     
