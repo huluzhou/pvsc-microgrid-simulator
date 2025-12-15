@@ -1208,7 +1208,8 @@ class StaticGeneratorItem(BaseNetworkItem):
         }
         self.today_discharge_energy = 0.0
         self.total_discharge_energy = 0.0
-        self.comm_status = False  # 初始通信状态为False
+        self.comm_status = False
+        self.is_remote_reactive_control = True
         sn_mva = self.properties.get("sn_mva", 1.0)
         self.active_power_limit_per = 110# kw (100% 额定功率)
         self.active_power_limit = sn_mva * 1000 * self.active_power_limit_per / 100  # kw (110% 额定功率)
@@ -1263,9 +1264,14 @@ class MeterItem(BaseNetworkItem):
             "protocol": "modbus_tcp",  # 通信协议
             "baud_rate": 9600,  # 波特率
             "parity": "None",  # 奇偶校验位
+            
         }
         self.label.setPlainText(self.properties["name"])
         self.comm_status = False  # 初始通信状态为False
+        self.active_export_kwh = 0.0
+        self.active_import_kwh = 0.0
+        self.reactive_export_kvarh = 0.0
+        self.reactive_import_kvarh = 0.0
         
         # 连接约束：电表可以连接到多个组件
         self.max_connections =  1 # 允许连接多个组件

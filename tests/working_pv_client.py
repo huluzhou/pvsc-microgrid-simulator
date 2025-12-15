@@ -32,10 +32,12 @@ class MultiPVClient:
                     self.pv_data[f"pv_{i+1}"] = {
                         'port': port,
                         'active_power': 0.0,
+                        'reactive_power': 0.0,
                         'sn': '',
                         'rated_power': 0.0,
                         'today_energy': 0,
                         'total_energy': 0,
+                        'reactive_percent_limit': 0,
                         'status': 'connected'
                     }
                     print(f"✅ 光伏{i+1} (端口{port}) - 连接成功")
@@ -52,31 +54,22 @@ class MultiPVClient:
         for pv_name, client in self.clients.items():
             try:
                 test = client.read_input_registers(address=0, count=1, device_id=1)
-                # SN号存储在8个寄存器中(4989-4996)，需要读取所有8个寄存器
+                # # SN号存储在8个寄存器中(4989-4996)，需要读取所有8个寄存器
                 sn = client.read_input_registers(address=4989, count=8, device_id=1)
                 rated_power = client.read_input_registers(address=5000, count=1, device_id=1)
-                #电量
+                # #电量
                 energy_result = client.read_input_registers(address=5002, count=3, device_id=1)
                 power_result = client.read_input_registers(address=5030, count=2, device_id=1)
+                q_result = client.read_input_registers(address=5032, count=2, device_id=1)
+                reactive_percent = client.read_holding_registers(address=5040, count=1, device_id=1)
                 
-                client.write_registers(address=5005, values=[1], device_id=1)
-                # client.write_registers(address=5038, values=[400], device_id=1)
-                client.write_registers(address=5007, values=[10], device_id=1)
+                # client.write_registers(address=5005, values=[1], device_id=1)
+                # # client.write_registers(address=5038, values=[400], device_id=1)
+                # client.write_registers(address=5007, values=[10], device_id=1)
+                client.write_registers(address=5040, values=[50], device_id=1)
 
                 # 分别检查每个寄存器的读取结果
                 error_registers = []
-                if test.isError():
-                    error_registers.append("测试寄存器(地址0)")
-                if sn.isError():
-                    error_registers.append("SN号(地址4989-4996)")
-                if rated_power.isError():
-                    error_registers.append("额定功率(地址5000)")
-                if energy_result.isError():
-                    error_registers.append("电量(地址5002-5004)")
-                if power_result.isError():
-                    error_registers.append("有功功率(地址5030-5031)")
-                if test.isError():
-                    error_registers.append("测试寄存器(地址0)")
                 if not error_registers:
                     data = self.pv_data[pv_name]
                     
@@ -95,6 +88,9 @@ class MultiPVClient:
                     data['rated_power'] = rated_power.registers[0] / 10.0  # 除以10还原实际值 (kW)
                     data['today_energy'] = energy_result.registers[0] / 10.0  # 除以10还原实际值 (kWh)
                     data['total_energy'] = (energy_result.registers[2]<<16) | energy_result.registers[1]
+                    reactive_power_raw = (q_result.registers[1] << 16) | q_result.registers[0]
+                    data['reactive_power'] = reactive_power_raw
+                    data['reactive_percent_limit'] = reactive_percent.registers[0]
                     data['status'] = 'ok'
                 else:
                     self.pv_data[pv_name]['status'] = 'read_error'
@@ -118,8 +114,10 @@ class MultiPVClient:
                 print(f"    SN号: {data['sn']}")
                 print(f"    额定功率: {data['rated_power']:6.1f}kW")
                 print(f"    有功功率: {data['active_power']:6.1f}KW")
+                print(f"    无功功率: {data['reactive_power']:6.1f}kVar")
                 print(f"    今日发电量: {data['today_energy']:6.1f}kWh")
                 print(f"    总发电量: {data['total_energy']:6.1f}kWh")
+                print(f"    无功补偿百分比: {data['reactive_percent_limit']:3d}%")
             else:
                 print(f"  光伏{i} (端口{data['port']}): 离线")
         print("-" * 60)
@@ -132,21 +130,8 @@ class MultiPVClient:
 
 def main():
     """主函数 - 多光伏数据监控"""
-    print("☀️ 多光伏数据监控系统")
-    print("=" * 60)
-    print("服务器: 127.0.0.1")
-    print(f"端口: {602}-{602+3} (四个光伏设备)")
-    print("寄存器: 输入寄存器")
-    print("  - SN号: 地址4989-4996 (8个寄存器)")
-    print("  - 额定功率: 地址5000 (1个寄存器)")
-    print("  - 今日发电量: 地址5002 (1个寄存器)")
-    print("  - 总发电量: 地址5003-5004 (2个寄存器)")
-    print("  - 有功功率: 地址5030-5031 (2个寄存器)")
-    print("-" * 60)
-    print("📊 开始监控... 按 Ctrl+C 停止")
-    print()
     
-    multi_client = MultiPVClient(base_port=602, pv_count=4)
+    multi_client = MultiPVClient(base_port=602, pv_count=1)
     
     try:
         if not multi_client.connect_all_pvs():

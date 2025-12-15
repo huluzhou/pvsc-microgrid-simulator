@@ -477,6 +477,57 @@ class DataControlManager:
         
         # 更新通信状态指示器
         self._update_comm_status_indicator('meter', component_idx)
+        
+        # 更新起始电量控件（直接显示并可写入四象限计数器）
+        if (hasattr(self.parent_window, 'meter_active_export_energy_start_spin') and
+            hasattr(self.parent_window, 'meter_active_import_energy_start_spin') and
+            hasattr(self.parent_window, 'meter_reactive_export_energy_start_spin') and
+            hasattr(self.parent_window, 'meter_reactive_import_energy_start_spin')):
+            try:
+                if 'meter' in self.network_items and component_idx in self.network_items['meter']:
+                    meter_item = self.network_items['meter'][component_idx]
+                    ae_export = float(getattr(meter_item, 'active_export_kwh', 0.0))
+                    ae_import = float(getattr(meter_item, 'active_import_kwh', 0.0))
+                    re_export = float(getattr(meter_item, 'reactive_export_kvarh', 0.0))
+                    re_import = float(getattr(meter_item, 'reactive_import_kvarh', 0.0))
+                    self.parent_window.meter_active_export_energy_start_spin.blockSignals(True)
+                    self.parent_window.meter_active_import_energy_start_spin.blockSignals(True)
+                    self.parent_window.meter_reactive_export_energy_start_spin.blockSignals(True)
+                    self.parent_window.meter_reactive_import_energy_start_spin.blockSignals(True)
+                    self.parent_window.meter_active_export_energy_start_spin.setValue(ae_export)
+                    self.parent_window.meter_active_import_energy_start_spin.setValue(ae_import)
+                    self.parent_window.meter_reactive_export_energy_start_spin.setValue(re_export)
+                    self.parent_window.meter_reactive_import_energy_start_spin.setValue(re_import)
+                    self.parent_window.meter_active_export_energy_start_spin.blockSignals(False)
+                    self.parent_window.meter_active_import_energy_start_spin.blockSignals(False)
+                    self.parent_window.meter_reactive_export_energy_start_spin.blockSignals(False)
+                    self.parent_window.meter_reactive_import_energy_start_spin.blockSignals(False)
+            except Exception as e:
+                logger.error(f"更新电表起始电量控件失败: {e}")
+    
+    def apply_meter_start_energy(self):
+        """应用电表起始电量设置到meter属性"""
+        try:
+            if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+                return
+            if self.parent_window.current_component_type != 'meter':
+                return
+            idx = self.parent_window.current_component_idx
+            if 'meter' in self.network_items and idx in self.network_items['meter']:
+                meter_item = self.network_items['meter'][idx]
+                ae_export = self.parent_window.meter_active_export_energy_start_spin.value() if hasattr(self.parent_window, 'meter_active_export_energy_start_spin') else 0.0
+                ae_import = self.parent_window.meter_active_import_energy_start_spin.value() if hasattr(self.parent_window, 'meter_active_import_energy_start_spin') else 0.0
+                re_export = self.parent_window.meter_reactive_export_energy_start_spin.value() if hasattr(self.parent_window, 'meter_reactive_export_energy_start_spin') else 0.0
+                re_import = self.parent_window.meter_reactive_import_energy_start_spin.value() if hasattr(self.parent_window, 'meter_reactive_import_energy_start_spin') else 0.0
+                meter_item.active_export_kwh = float(ae_export)
+                meter_item.active_import_kwh = float(ae_import)
+                meter_item.reactive_export_kvarh = float(re_export)
+                meter_item.reactive_import_kvarh = float(re_import)
+                self.parent_window.statusBar().showMessage(
+                    f"已更新电表 {idx} 起始电量: 上网有功 {ae_export:.1f} kWh, 下网有功 {ae_import:.1f} kWh, 上网无功 {re_export:.1f} kvarh, 下网无功 {re_import:.1f} kvarh"
+                )
+        except Exception as e:
+            logger.error(f"应用电表起始电量失败: {e}")
 
     def update_switch_control_panel_info(self, component_type, component_idx):
         """更新开关设备控制面板信息"""
@@ -495,6 +546,7 @@ class DataControlManager:
                 # 获取光伏设备的当前功率值和额定功率
                 if component_idx in self.parent_window.network_model.net.sgen.index:
                     current_power = self.parent_window.network_model.net.sgen.at[component_idx, 'p_mw']
+                    current_q = self.parent_window.network_model.net.sgen.at[component_idx, 'q_mvar']
                     # 从network_items获取额定功率
                     rated_power = 1.0  # 默认值
                     if 'static_generator' in self.network_items:
@@ -504,8 +556,22 @@ class DataControlManager:
                     
                     # 将功率从MW转换为kW
                     current_power_kw = abs(current_power) * 1000
+                    current_q_kvar = max(0.0, current_q * 1000)
                     rated_power_kw = rated_power * 1000
                     
+                    is_remote_reactive = False
+                    if hasattr(sgen_item, 'is_remote_reactive_control'):
+                        is_remote_reactive = sgen_item.is_remote_reactive_control
+                    if hasattr(self.parent_window, 'sgen_enable_remote_reactive'):
+                        self.parent_window.sgen_enable_remote_reactive.blockSignals(True)
+                        self.parent_window.sgen_enable_remote_reactive.setChecked(is_remote_reactive)
+                        self.parent_window.sgen_enable_remote_reactive.blockSignals(False)
+                    if hasattr(self.parent_window, 'sgen_manual_panel'):
+                        self.parent_window.sgen_manual_panel.setEnabled(not is_remote_reactive)
+                    if hasattr(self.parent_window, 'sgen_reactive_power_slider'):
+                        self.parent_window.sgen_reactive_power_slider.setEnabled(not is_remote_reactive)
+                    if hasattr(self.parent_window, 'sgen_reactive_power_spinbox'):
+                        self.parent_window.sgen_reactive_power_spinbox.setEnabled(not is_remote_reactive)
                     # 更新滑块范围为0到额定功率（支持0.1kW精度）
                     if hasattr(self.parent_window, 'sgen_power_slider'):
                         max_slider_value = int(rated_power_kw * 10)  # 乘以10以支持0.1kW精度
@@ -516,6 +582,17 @@ class DataControlManager:
                     if hasattr(self.parent_window, 'sgen_power_spinbox'):
                         self.parent_window.sgen_power_spinbox.setRange(0.0, rated_power_kw)
                         self.parent_window.sgen_power_spinbox.setValue(current_power_kw)
+                    
+                    # 更新无功功率滑块与输入框范围（单位：kvar）
+                    if hasattr(self.parent_window, 'sgen_reactive_power_slider'):
+                        min_q_slider = 0
+                        max_q_slider = int(rated_power_kw * 10)
+                        self.parent_window.sgen_reactive_power_slider.setRange(min_q_slider, max_q_slider)
+                        self.parent_window.sgen_reactive_power_slider.setValue(int(current_q_kvar * 10))
+                    if hasattr(self.parent_window, 'sgen_reactive_power_spinbox'):
+                        self.parent_window.sgen_reactive_power_spinbox.setRange(0.0, rated_power_kw)
+                        self.parent_window.sgen_reactive_power_spinbox.setSingleStep(0.1)
+                        self.parent_window.sgen_reactive_power_spinbox.setValue(current_q_kvar)
                     
                     # 更新变化幅度控件
                     if hasattr(self.parent_window, 'sgen_variation_spinbox') and hasattr(self, 'data_generator_manager'):
@@ -768,56 +845,60 @@ class DataControlManager:
                 self.parent_window.statusBar().showMessage(f"设备 {device_name} 未在数据生成列表中")
     
     def update_meter_realtime_info(self, component_idx):
-        """更新电表设备的实时测量值信息"""
-        # 获取测量值并更新显示
-        if hasattr(self.parent_window, "meter_measurement_label"):
-            try:
-                # 获取电表设备的测量类型
-                meas_type = 'p'  # 默认有功功率
-                if 'meter' in self.network_items and component_idx in self.network_items['meter']:
-                    meter_item = self.network_items['meter'][component_idx]
-                    meas_type = meter_item.properties.get('meas_type', 'p')
-                
-                # 使用get_meter_measurement_by_type获取基于设备配置的测量值
-                measurement_value = self.get_meter_measurement_by_type(component_idx)
-                
-                # 根据测量类型设置不同的单位和格式
-                if meas_type == 'p':
-                    # 有功功率: MW -> kW
-                    display_value = measurement_value * 1000
-                    unit = 'kW'
-                    format_str = f"{display_value:.1f} {unit}"
-                elif meas_type == 'q':
-                    # 无功功率: MVar -> kVar
-                    display_value = measurement_value * 1000
-                    unit = 'kVar'
-                    format_str = f"{display_value:.1f} {unit}"
-                elif meas_type == 'vm':
-                    # 电压: kV
-                    display_value = measurement_value
-                    unit = 'kV'
-                    format_str = f"{display_value:.2f} {unit}"
-                elif meas_type == 'i':
-                    # 电流: kA -> A
-                    display_value = measurement_value * 1000
-                    unit = 'A'
-                    format_str = f"{display_value:.1f} {unit}"
-                else:
-                    # 未知类型，默认按有功功率显示
-                    display_value = measurement_value * 1000
-                    unit = 'kW'
-                    format_str = f"{display_value:.1f} {unit}"
-                
-                self.parent_window.meter_measurement_label.setText(format_str)
-            except Exception as e:
-                logger.error(f"更新电表实时信息失败: {str(e)}")
-                self.parent_window.meter_measurement_label.setText("未计算")
-        
+        """更新电表设备的实时测量值信息（有功/无功功率与有功/无功电量）"""
+        try:
+            # 功率
+            if hasattr(self.parent_window, "meter_active_power_label"):
+                p_mw = self.parent_window.power_monitor.get_meter_measurement(component_idx, 'active_power') if hasattr(self.parent_window, 'power_monitor') else 0.0
+                self.parent_window.meter_active_power_label.setText(f"{p_mw*1000:.1f} kW")
+            if hasattr(self.parent_window, "meter_reactive_power_label"):
+                q_mvar = self.parent_window.power_monitor.get_meter_measurement(component_idx, 'reactive_power') if hasattr(self.parent_window, 'power_monitor') else 0.0
+                self.parent_window.meter_reactive_power_label.setText(f"{q_mvar*1000:.1f} kVar")
+            # 电量（如果不存在则显示'不存在'）
+            device_item = None
+            if 'meter' in self.network_items and component_idx in self.network_items['meter']:
+                meter_item = self.network_items['meter'][component_idx]
+                element_type = meter_item.properties.get('element_type')
+                element_idx = meter_item.properties.get('element')
+                type_map = {'sgen': 'static_generator', 'load': 'load', 'storage': 'storage', 'ext_grid': 'external_grid'}
+                device_key = type_map.get(element_type)
+                device_item = self.parent_window.network_items.get(device_key, {}).get(element_idx) if device_key is not None else None
+            # 删除总能量标签更新，保留四象限
+            # 四象限电量
+            if 'meter' in self.network_items and component_idx in self.network_items['meter']:
+                meter_item = self.network_items['meter'][component_idx]
+                if hasattr(self.parent_window, "meter_active_export_label"):
+                    val = getattr(meter_item, 'active_export_kwh', None)
+                    self.parent_window.meter_active_export_label.setText(f"{val:.1f} kWh" if val is not None else "不存在")
+                if hasattr(self.parent_window, "meter_active_import_label"):
+                    val = getattr(meter_item, 'active_import_kwh', None)
+                    self.parent_window.meter_active_import_label.setText(f"{val:.1f} kWh" if val is not None else "不存在")
+                if hasattr(self.parent_window, "meter_reactive_export_label"):
+                    val = getattr(meter_item, 'reactive_export_kvarh', None)
+                    self.parent_window.meter_reactive_export_label.setText(f"{val:.1f} kvarh" if val is not None else "不存在")
+                if hasattr(self.parent_window, "meter_reactive_import_label"):
+                    val = getattr(meter_item, 'reactive_import_kvarh', None)
+                    self.parent_window.meter_reactive_import_label.setText(f"{val:.1f} kvarh" if val is not None else "不存在")
+        except Exception as e:
+            logger.error(f"更新电表实时信息失败: {str(e)}")
+            if hasattr(self.parent_window, "meter_active_power_label"):
+                self.parent_window.meter_active_power_label.setText("未计算")
+            if hasattr(self.parent_window, "meter_reactive_power_label"):
+                self.parent_window.meter_reactive_power_label.setText("未计算")
+            # 删除总能量标签异常处理
+            if hasattr(self.parent_window, "meter_active_export_label"):
+                self.parent_window.meter_active_export_label.setText("不存在")
+            if hasattr(self.parent_window, "meter_active_import_label"):
+                self.parent_window.meter_active_import_label.setText("不存在")
+            if hasattr(self.parent_window, "meter_reactive_export_label"):
+                self.parent_window.meter_reactive_export_label.setText("不存在")
+            if hasattr(self.parent_window, "meter_reactive_import_label"):
+                self.parent_window.meter_reactive_import_label.setText("不存在")
         # 更新通信状态指示器
         self._update_comm_status_indicator('meter', component_idx)
         
     def update_sgen_realtime_info(self, component_idx):
-        """更新光伏设备的实时信息（有功功率）"""
+        """更新光伏设备的实时信息（有功/无功功率）"""
         if hasattr(self.parent_window, "sgen_active_power_label") and hasattr(
             self.parent_window, "network_model"
         ):
@@ -827,12 +908,37 @@ class DataControlManager:
                 self.parent_window.sgen_active_power_label.setText(
                     f"{active_power:.4f} MW"
                 )
+                if hasattr(self.parent_window, "sgen_reactive_power_label"):
+                    reactive_power = net.res_sgen.at[component_idx, "q_mvar"]
+                    self.parent_window.sgen_reactive_power_label.setText(f"{reactive_power:.4f} MVar")
             else:
                 self.parent_window.sgen_active_power_label.setText("未计算")
+                if hasattr(self.parent_window, "sgen_reactive_power_label"):
+                    self.parent_window.sgen_reactive_power_label.setText("未计算")
         self._update_comm_status_indicator('sgen', component_idx)
+
+    def on_sgen_reactive_control_mode_changed(self, state):
+        if not hasattr(self.parent_window, 'current_component_type') or not hasattr(self.parent_window, 'current_component_idx'):
+            return
+        if self.parent_window.current_component_type != 'sgen':
+            return
+        component_idx = self.parent_window.current_component_idx
+        if 'static_generator' not in self.network_items or component_idx not in self.network_items['static_generator']:
+            return
+        sgen_item = self.network_items['static_generator'][component_idx]
+        is_remote_enabled = False
+        if hasattr(self.parent_window, 'sgen_enable_remote_reactive'):
+            is_remote_enabled = self.parent_window.sgen_enable_remote_reactive.isChecked()
+        sgen_item.is_remote_reactive_control = is_remote_enabled
+        if hasattr(self.parent_window, 'sgen_manual_panel'):
+            self.parent_window.sgen_manual_panel.setEnabled(not is_remote_enabled)
+        if hasattr(self.parent_window, 'sgen_reactive_power_slider'):
+            self.parent_window.sgen_reactive_power_slider.setEnabled(not is_remote_enabled)
+        if hasattr(self.parent_window, 'sgen_reactive_power_spinbox'):
+            self.parent_window.sgen_reactive_power_spinbox.setEnabled(not is_remote_enabled)
     
     def update_load_realtime_info(self, component_idx):
-        """更新负载设备的实时信息（有功功率）"""
+        """更新负载设备的实时信息（有功/无功功率）"""
         if hasattr(self.parent_window, "load_active_power_label") and hasattr(
             self.parent_window, "network_model"
         ):
@@ -840,6 +946,8 @@ class DataControlManager:
             # 检查component_idx是否为None
             if component_idx is None:
                 self.parent_window.load_active_power_label.setText("未计算")
+                if hasattr(self.parent_window, "load_reactive_power_value"):
+                    self.parent_window.load_reactive_power_value.setText("未计算")
                 return
             
             if hasattr(net, "res_load") and component_idx in net.res_load.index:
@@ -847,12 +955,17 @@ class DataControlManager:
                 self.parent_window.load_active_power_label.setText(
                     f"{active_power:.4f} MW"
                 )
+                if hasattr(self.parent_window, "load_reactive_power_value"):
+                    reactive_power = net.res_load.at[component_idx, "q_mvar"]
+                    self.parent_window.load_reactive_power_value.setText(f"{reactive_power:.4f} MVar")
             else:
                 self.parent_window.load_active_power_label.setText("未计算")
+                if hasattr(self.parent_window, "load_reactive_power_value"):
+                    self.parent_window.load_reactive_power_value.setText("未计算")
         self._update_comm_status_indicator('load', component_idx)
     
     def update_charger_realtime_info(self, component_idx):
-        """更新充电桩设备的实时信息（有功功率）"""
+        """更新充电桩设备的实时信息（有功/无功功率）"""
         if hasattr(self.parent_window, "charger_active_power_label") and hasattr(
             self.parent_window, "network_model"
         ):
@@ -860,6 +973,8 @@ class DataControlManager:
             # 检查component_idx是否为None
             if component_idx is None:
                 self.parent_window.charger_active_power_label.setText("未计算")
+                if hasattr(self.parent_window, "charger_reactive_power_label"):
+                    self.parent_window.charger_reactive_power_label.setText("未计算")
                 return
             
             # 充电桩在模型中作为负载处理，索引有+1000的偏移
@@ -870,12 +985,17 @@ class DataControlManager:
                 self.parent_window.charger_active_power_label.setText(
                     f"{active_power_kw:.1f} kW"
                 )
+                if hasattr(self.parent_window, "charger_reactive_power_label"):
+                    reactive_power_kvar = net.res_load.at[component_idx, "q_mvar"] * 1000
+                    self.parent_window.charger_reactive_power_label.setText(f"{reactive_power_kvar:.1f} kVar")
             else:
                 self.parent_window.charger_active_power_label.setText("未计算")
+                if hasattr(self.parent_window, "charger_reactive_power_label"):
+                    self.parent_window.charger_reactive_power_label.setText("未计算")
         self._update_comm_status_indicator('charger', component_idx)
 
     def update_storage_realtime_info(self, component_idx):
-        """更新储能设备的实时信息（有功功率、SOC、工作状态、并网状态）"""
+        """更新储能设备的实时信息（有功/无功功率、SOC、工作状态、并网状态）"""
         # 1. 更新有功功率显示
         if hasattr(self.parent_window, "storage_active_power_label") and hasattr(
             self.parent_window, "network_model"
@@ -886,8 +1006,13 @@ class DataControlManager:
                 self.parent_window.storage_active_power_label.setText(
                     f"{active_power:.4f} MW"
                 )
+                if hasattr(self.parent_window, "storage_reactive_power_label"):
+                    reactive_power = net.res_storage.at[component_idx, "q_mvar"]
+                    self.parent_window.storage_reactive_power_label.setText(f"{reactive_power:.4f} MVar")
             else:
                 self.parent_window.storage_active_power_label.setText("未计算")
+                if hasattr(self.parent_window, "storage_reactive_power_label"):
+                    self.parent_window.storage_reactive_power_label.setText("未计算")
         
         # 2. 更新其他状态量显示
         # 查找储能设备
@@ -1112,6 +1237,25 @@ class DataControlManager:
             self.parent_window.sgen_power_slider.setValue(slider_value)
             self.parent_window.sgen_power_slider.blockSignals(False)
     
+    def on_sgen_reactive_power_changed(self, value):
+        """光伏无功功率滑块改变时的回调"""
+        if hasattr(self.parent_window, 'sgen_reactive_power_spinbox'):
+            power_value = value / 10.0
+            self.parent_window.sgen_reactive_power_spinbox.blockSignals(True)
+            self.parent_window.sgen_reactive_power_spinbox.setValue(power_value)
+            self.parent_window.sgen_reactive_power_spinbox.blockSignals(False)
+    
+    def on_sgen_reactive_power_spinbox_changed(self, value):
+        """光伏无功功率输入框改变时的回调"""
+        if hasattr(self.parent_window, 'sgen_reactive_power_slider'):
+            slider_value = int(value * 10)
+            min_slider = self.parent_window.sgen_reactive_power_slider.minimum()
+            max_slider = self.parent_window.sgen_reactive_power_slider.maximum()
+            slider_value = max(min_slider, min(max_slider, slider_value))
+            self.parent_window.sgen_reactive_power_slider.blockSignals(True)
+            self.parent_window.sgen_reactive_power_slider.setValue(slider_value)
+            self.parent_window.sgen_reactive_power_slider.blockSignals(False)
+    
     def on_load_power_changed(self, value):
         """负载功率滑块改变时的回调"""
         if hasattr(self.parent_window, 'load_power_spinbox'):
@@ -1229,12 +1373,17 @@ class DataControlManager:
                 # 输入框的值为kW，需要转换为MW
                 p_kw = self.parent_window.sgen_power_spinbox.value()
                 p_mw = p_kw / 1000  # 从kW转换为MW
+                q_kvar = 0.0
+                if hasattr(self.parent_window, 'sgen_reactive_power_spinbox'):
+                    q_kvar = self.parent_window.sgen_reactive_power_spinbox.value()
+                q_mvar = max(0.0, q_kvar / 1000.0)
                 
                 # 光伏设备的功率为负值（发电）
                 self.parent_window.network_model.net.sgen.at[component_idx, 'p_mw'] = abs(p_mw)
+                self.parent_window.network_model.net.sgen.at[component_idx, 'q_mvar'] = q_mvar
                 
-                self.parent_window.statusBar().showMessage(f"已更新光伏设备 {component_idx} 的功率设置: P={p_mw:.2f}MW")
-                logger.debug(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW")
+                self.parent_window.statusBar().showMessage(f"已更新光伏设备 {component_idx} 的功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
+                logger.debug(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
             else:
                 QMessageBox.warning(self.parent_window, "错误", f"光伏设备 {component_idx} 不存在")
                 
@@ -1263,7 +1412,8 @@ class DataControlManager:
                 # 输入框值为kW，需要转换为MW
                 p_kw = self.parent_window.load_power_spinbox.value()
                 p_mw = p_kw / 1000.0  # 转换为MW
-                q_mvar = self.parent_window.load_reactive_power_spinbox.value()
+                q_kvar = self.parent_window.load_reactive_power_spinbox.value()
+                q_mvar = q_kvar / 1000.0
                 
                 self.parent_window.network_model.net.load.at[component_idx, 'p_mw'] = p_mw
                 self.parent_window.network_model.net.load.at[component_idx, 'q_mvar'] = q_mvar
