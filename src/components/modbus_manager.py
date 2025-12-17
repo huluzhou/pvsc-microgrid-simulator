@@ -6,6 +6,7 @@ Modbus服务器管理模块
 负责管理电表、储能、光伏、充电桩等设备的Modbus服务器功能
 """
 
+from pickle import INT
 import threading
 from utils.logger import logger
 from config import POWER_UNIT
@@ -270,12 +271,12 @@ class ModbusManager:
             slave_context = context[1]
             
             # 从设备信息中获取配置参数，使用合理的默认值
-            rated_power = int(device_info.get('sn_mva', 1.0) * 1000)*10  # 额定功率 (kW)
-            rated_capacity = int(device_info.get('max_e_mwh', 1.0) * 1000)# 额定容量 (kWh)
+            rated_power = int(device_info.get('sn_mva', 1.0) * POWER_UNIT)*10  # 额定功率 (kW)
+            rated_capacity = int(device_info.get('max_e_mwh', 1.0) * POWER_UNIT)# 额定容量 (kWh)
             pcs_num = int(device_info.get('pcs_num', 1))  # PCS数量
             battery_cluster_num = int(device_info.get('battery_cluster_num', 2))  # 电池簇数量
-            battery_cluster_capacity = int(device_info.get('battery_cluster_capacity', 1000))  # 电池簇容量 (kWh)
-            battery_cluster_power = int(device_info.get('battery_cluster_power', 500))  # 电池簇功率 (kW)
+            battery_cluster_capacity = int(device_info.get('battery_cluster_capacity', 1000)) * POWER_UNIT  # 电池簇容量 (kWh)
+            battery_cluster_power = int(device_info.get('battery_cluster_power', 500)) * POWER_UNIT  # 电池簇功率 (kW)
             
             # 确保值在16位寄存器范围内 (0-65535)
             rated_power = max(0, min(65535, rated_power))
@@ -373,7 +374,7 @@ class ModbusManager:
             slave_context = context[1]
             
             # 写入额定功率 (单位: kW，32位无符号整数)
-            rated_power = int(device_info.get('sn_mva', 1.0) * 1000)  # 转换为kW
+            rated_power = int(device_info.get('sn_mva', 1.0) * POWER_UNIT)  # 转换为kW
             
             # 分高低位写入（地址4:低16位 + 地址5:高16位）
             rated_power_low = rated_power & 0xFFFF
