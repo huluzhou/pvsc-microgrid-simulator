@@ -629,10 +629,10 @@ class ModbusManager:
             meter_item = None
             if 'meter' in self.network_items and index in self.network_items['meter']:
                 meter_item = self.network_items['meter'][index]
-            ae_export = int(float(getattr(meter_item, 'active_export_kwh', 0.0)) / 1000 * POWER_UNIT) & 0xFFFF
-            ae_import = int(float(getattr(meter_item, 'active_import_kwh', 0.0)) / 1000 * POWER_UNIT) & 0xFFFF
-            re_export = int(float(getattr(meter_item, 'reactive_export_kvarh', 0.0)) / 1000 * POWER_UNIT) & 0xFFFF
-            re_import = int(float(getattr(meter_item, 'reactive_import_kvarh', 0.0)) / 1000 * POWER_UNIT) & 0xFFFF
+            ae_export = int(float(getattr(meter_item, 'active_export_mwh', 0.0)) * POWER_UNIT) & 0xFFFF
+            ae_import = int(float(getattr(meter_item, 'active_import_mwh', 0.0)) * POWER_UNIT) & 0xFFFF
+            re_export = int(float(getattr(meter_item, 'reactive_export_mvarh', 0.0)) * POWER_UNIT) & 0xFFFF
+            re_import = int(float(getattr(meter_item, 'reactive_import_mvarh', 0.0)) * POWER_UNIT) & 0xFFFF
             slave_context.setValues(4, METER_REG_ACTIVE_EXPORT, [ae_export & 0xFFFF])
             slave_context.setValues(4, METER_REG_ACTIVE_IMPORT, [ae_import & 0xFFFF])
             slave_context.setValues(4, METER_REG_REACTIVE_EXPORT, [re_export & 0xFFFF])
@@ -692,8 +692,8 @@ class ModbusManager:
             
             # 数据转换和验证
             power_w = int(round(abs(power_mw) * POWER_UNIT * 1000))  # MW -> kW -> W
-            total_energy_wh = int(round(pv_item.total_discharge_energy)) 
-            today_energy_wh = int(round(pv_item.today_discharge_energy)) 
+            total_energy_wh = int(round(pv_item.total_discharge_energy) * POWER_UNIT) 
+            today_energy_wh = int(round(pv_item.today_discharge_energy) * POWER_UNIT) 
             q_mvar = 0.0
             try:
                 q_mvar = float(self.network_model.net.res_sgen.at[index, "q_mvar"])
@@ -766,10 +766,10 @@ class ModbusManager:
             else:
                 current_value = 0
             # 从network_item获取能量统计数据，确保非负
-            today_charge_energy = max(0.0, storage_item.today_charge_energy)
-            today_discharge_energy = max(0.0, storage_item.today_discharge_energy)
-            total_charge_energy = max(0.0, storage_item.total_charge_energy)
-            total_discharge_energy = max(0.0, storage_item.total_discharge_energy)
+            today_charge_energy = max(0.0, storage_item.today_charge_energy) * POWER_UNIT
+            today_discharge_energy = max(0.0, storage_item.today_discharge_energy) * POWER_UNIT
+            total_charge_energy = max(0.0, storage_item.total_charge_energy) * POWER_UNIT
+            total_discharge_energy = max(0.0, storage_item.total_discharge_energy) * POWER_UNIT
 
             # 剩余可放电容量 (kWh * 10，保留1位小数)
             # 日充电量 (kWh * 10，保留1位小数)

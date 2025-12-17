@@ -520,15 +520,15 @@ class PowerMonitor:
                 meter_item = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
                 if not meter_item:
                     return 0.0
-                export_val = float(getattr(meter_item, 'active_export_kwh', 0.0))
-                import_val = float(getattr(meter_item, 'active_import_kwh', 0.0))
+                export_val = float(getattr(meter_item, 'active_export_mwh', 0.0))
+                import_val = float(getattr(meter_item, 'active_import_mwh', 0.0))
                 return float(export_val + import_val)
             elif measurement_type == 'reactive_energy':
                 meter_item = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
                 if not meter_item:
                     return 0.0
-                export_val = float(getattr(meter_item, 'reactive_export_kvarh', 0.0))
-                import_val = float(getattr(meter_item, 'reactive_import_kvarh', 0.0))
+                export_val = float(getattr(meter_item, 'reactive_export_mvarh', 0.0))
+                import_val = float(getattr(meter_item, 'reactive_import_mvarh', 0.0))
                 return float(export_val + import_val)
             else:
                 logger.error(f"不支持的测量类型: {measurement_type}")

@@ -486,10 +486,10 @@ class DataControlManager:
             try:
                 if 'meter' in self.network_items and component_idx in self.network_items['meter']:
                     meter_item = self.network_items['meter'][component_idx]
-                    ae_export = float(getattr(meter_item, 'active_export_kwh', 0.0))
-                    ae_import = float(getattr(meter_item, 'active_import_kwh', 0.0))
-                    re_export = float(getattr(meter_item, 'reactive_export_kvarh', 0.0))
-                    re_import = float(getattr(meter_item, 'reactive_import_kvarh', 0.0))
+                    ae_export = float(getattr(meter_item, 'active_export_mwh', 0.0))
+                    ae_import = float(getattr(meter_item, 'active_import_mwh', 0.0))
+                    re_export = float(getattr(meter_item, 'reactive_export_mvarh', 0.0))
+                    re_import = float(getattr(meter_item, 'reactive_import_mvarh', 0.0))
                     self.parent_window.meter_active_export_energy_start_spin.blockSignals(True)
                     self.parent_window.meter_active_import_energy_start_spin.blockSignals(True)
                     self.parent_window.meter_reactive_export_energy_start_spin.blockSignals(True)
@@ -519,12 +519,12 @@ class DataControlManager:
                 ae_import = self.parent_window.meter_active_import_energy_start_spin.value() if hasattr(self.parent_window, 'meter_active_import_energy_start_spin') else 0.0
                 re_export = self.parent_window.meter_reactive_export_energy_start_spin.value() if hasattr(self.parent_window, 'meter_reactive_export_energy_start_spin') else 0.0
                 re_import = self.parent_window.meter_reactive_import_energy_start_spin.value() if hasattr(self.parent_window, 'meter_reactive_import_energy_start_spin') else 0.0
-                meter_item.active_export_kwh = float(ae_export)
-                meter_item.active_import_kwh = float(ae_import)
-                meter_item.reactive_export_kvarh = float(re_export)
-                meter_item.reactive_import_kvarh = float(re_import)
+                meter_item.active_export_mwh = float(ae_export)
+                meter_item.active_import_mwh = float(ae_import)
+                meter_item.reactive_export_mvarh = float(re_export)
+                meter_item.reactive_import_mvarh = float(re_import)
                 self.parent_window.statusBar().showMessage(
-                    f"已更新电表 {idx} 起始电量: 上网有功 {ae_export:.1f} kWh, 下网有功 {ae_import:.1f} kWh, 上网无功 {re_export:.1f} kvarh, 下网无功 {re_import:.1f} kvarh"
+                    f"已更新电表 {idx} 起始电量: 上网有功 {ae_export:.3f} MWh, 下网有功 {ae_import:.3f} MWh, 上网无功 {re_export:.3f} MVarh, 下网无功 {re_import:.3f} MVarh"
                 )
         except Exception as e:
             logger.error(f"应用电表起始电量失败: {e}")
@@ -874,10 +874,10 @@ class DataControlManager:
                     val = getattr(meter_item, 'active_import_kwh', None)
                     self.parent_window.meter_active_import_label.setText(f"{val:.1f} kWh" if val is not None else "不存在")
                 if hasattr(self.parent_window, "meter_reactive_export_label"):
-                    val = getattr(meter_item, 'reactive_export_kvarh', None)
+                    val = getattr(meter_item, 'reactive_export_mvarh', None)
                     self.parent_window.meter_reactive_export_label.setText(f"{val:.1f} kvarh" if val is not None else "不存在")
                 if hasattr(self.parent_window, "meter_reactive_import_label"):
-                    val = getattr(meter_item, 'reactive_import_kvarh', None)
+                    val = getattr(meter_item, 'reactive_import_mvarh', None)
                     self.parent_window.meter_reactive_import_label.setText(f"{val:.1f} kvarh" if val is not None else "不存在")
         except Exception as e:
             logger.error(f"更新电表实时信息失败: {str(e)}")
