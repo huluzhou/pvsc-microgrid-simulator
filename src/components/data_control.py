@@ -868,17 +868,17 @@ class DataControlManager:
             if 'meter' in self.network_items and component_idx in self.network_items['meter']:
                 meter_item = self.network_items['meter'][component_idx]
                 if hasattr(self.parent_window, "meter_active_export_label"):
-                    val = getattr(meter_item, 'active_export_kwh', None)
-                    self.parent_window.meter_active_export_label.setText(f"{val:.1f} kWh" if val is not None else "不存在")
+                    val = getattr(meter_item, 'active_export_mwh', None)
+                    self.parent_window.meter_active_export_label.setText(f"{val:.3f} MWh" if val is not None else "不存在")
                 if hasattr(self.parent_window, "meter_active_import_label"):
-                    val = getattr(meter_item, 'active_import_kwh', None)
-                    self.parent_window.meter_active_import_label.setText(f"{val:.1f} kWh" if val is not None else "不存在")
+                    val = getattr(meter_item, 'active_import_mwh', None)
+                    self.parent_window.meter_active_import_label.setText(f"{val:.3f} MWh" if val is not None else "不存在")
                 if hasattr(self.parent_window, "meter_reactive_export_label"):
                     val = getattr(meter_item, 'reactive_export_mvarh', None)
-                    self.parent_window.meter_reactive_export_label.setText(f"{val:.1f} kvarh" if val is not None else "不存在")
+                    self.parent_window.meter_reactive_export_label.setText(f"{val:.3f} MVarh" if val is not None else "不存在")
                 if hasattr(self.parent_window, "meter_reactive_import_label"):
                     val = getattr(meter_item, 'reactive_import_mvarh', None)
-                    self.parent_window.meter_reactive_import_label.setText(f"{val:.1f} kvarh" if val is not None else "不存在")
+                    self.parent_window.meter_reactive_import_label.setText(f"{val:.3f} MVarh" if val is not None else "不存在")
         except Exception as e:
             logger.error(f"更新电表实时信息失败: {str(e)}")
             if hasattr(self.parent_window, "meter_active_power_label"):

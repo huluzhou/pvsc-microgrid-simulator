@@ -931,29 +931,29 @@ class UIComponentManager:
         # 起始电量设置
         meter_active_export_energy_start_spin = QDoubleSpinBox()
         meter_active_export_energy_start_spin.setRange(0.0, 1e9)
-        meter_active_export_energy_start_spin.setDecimals(1)
-        meter_active_export_energy_start_spin.setSuffix(" kWh")
+        meter_active_export_energy_start_spin.setDecimals(3)
+        meter_active_export_energy_start_spin.setSuffix(" MWh")
         self.parent_window.meter_active_export_energy_start_spin = meter_active_export_energy_start_spin
         meter_result_layout.addRow("起始上网有功电量:", meter_active_export_energy_start_spin)
         
         meter_active_import_energy_start_spin = QDoubleSpinBox()
         meter_active_import_energy_start_spin.setRange(0.0, 1e9)
-        meter_active_import_energy_start_spin.setDecimals(1)
-        meter_active_import_energy_start_spin.setSuffix(" kWh")
+        meter_active_import_energy_start_spin.setDecimals(3)
+        meter_active_import_energy_start_spin.setSuffix(" MWh")
         self.parent_window.meter_active_import_energy_start_spin = meter_active_import_energy_start_spin
         meter_result_layout.addRow("起始下网有功电量:", meter_active_import_energy_start_spin)
         
         meter_reactive_export_energy_start_spin = QDoubleSpinBox()
         meter_reactive_export_energy_start_spin.setRange(0.0, 1e9)
-        meter_reactive_export_energy_start_spin.setDecimals(1)
-        meter_reactive_export_energy_start_spin.setSuffix(" kvarh")
+        meter_reactive_export_energy_start_spin.setDecimals(3)
+        meter_reactive_export_energy_start_spin.setSuffix(" MVarh")
         self.parent_window.meter_reactive_export_energy_start_spin = meter_reactive_export_energy_start_spin
         meter_result_layout.addRow("起始上网无功电量:", meter_reactive_export_energy_start_spin)
         
         meter_reactive_import_energy_start_spin = QDoubleSpinBox()
         meter_reactive_import_energy_start_spin.setRange(0.0, 1e9)
-        meter_reactive_import_energy_start_spin.setDecimals(1)
-        meter_reactive_import_energy_start_spin.setSuffix(" kvarh")
+        meter_reactive_import_energy_start_spin.setDecimals(3)
+        meter_reactive_import_energy_start_spin.setSuffix(" MVarh")
         self.parent_window.meter_reactive_import_energy_start_spin = meter_reactive_import_energy_start_spin
         meter_result_layout.addRow("起始下网无功电量:", meter_reactive_import_energy_start_spin)
         

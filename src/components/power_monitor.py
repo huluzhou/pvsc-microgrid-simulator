@@ -480,8 +480,8 @@ class PowerMonitor:
                 - 'reactive_power': 无功功率（单位：MVar）
                 - 'voltage': 电压（单位：kV）
                 - 'current': 电流（单位：kA）
-                - 'active_energy': 有功电量（单位：kWh）
-                - 'reactive_energy': 无功电量（单位：kvarh）
+                - 'active_energy': 有功电量（单位：MWh）
+                - 'reactive_energy': 无功电量（单位：MVarh）
                 默认为'active_power'
                 
         返回:
