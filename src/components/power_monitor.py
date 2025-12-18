@@ -480,8 +480,8 @@ class PowerMonitor:
                 - 'reactive_power': 无功功率（单位：MVar）
                 - 'voltage': 电压（单位：kV）
                 - 'current': 电流（单位：kA）
-                - 'active_energy': 有功电量（单位：kWh）
-                - 'reactive_energy': 无功电量（单位：kvarh）
+                - 'active_energy': 有功电量（单位：MWh）
+                - 'reactive_energy': 无功电量（单位：MVarh）
                 默认为'active_power'
                 
         返回:
@@ -520,15 +520,15 @@ class PowerMonitor:
                 meter_item = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
                 if not meter_item:
                     return 0.0
-                export_val = float(getattr(meter_item, 'active_export_kwh', 0.0))
-                import_val = float(getattr(meter_item, 'active_import_kwh', 0.0))
+                export_val = float(getattr(meter_item, 'active_export_mwh', 0.0))
+                import_val = float(getattr(meter_item, 'active_import_mwh', 0.0))
                 return float(export_val + import_val)
             elif measurement_type == 'reactive_energy':
                 meter_item = self.parent_window.get_meter_item_by_type_and_id('meter', meter_id)
                 if not meter_item:
                     return 0.0
-                export_val = float(getattr(meter_item, 'reactive_export_kvarh', 0.0))
-                import_val = float(getattr(meter_item, 'reactive_import_kvarh', 0.0))
+                export_val = float(getattr(meter_item, 'reactive_export_mvarh', 0.0))
+                import_val = float(getattr(meter_item, 'reactive_import_mvarh', 0.0))
                 return float(export_val + import_val)
             else:
                 logger.error(f"不支持的测量类型: {measurement_type}")

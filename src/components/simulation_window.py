@@ -1835,10 +1835,10 @@ class SimulationWindow(QMainWindow):
                 # 重置电表的四象限电量（保留起始电量属性）
                 if 'meter' in self.network_items:
                     for meter_item in self.network_items['meter'].values():
-                        meter_item.active_export_kwh = 0.0
-                        meter_item.active_import_kwh = 0.0
-                        meter_item.reactive_export_kvarh = 0.0
-                        meter_item.reactive_import_kvarh = 0.0
+                        meter_item.active_export_mwh = 0.0
+                        meter_item.active_import_mwh = 0.0
+                        meter_item.reactive_export_mvarh = 0.0
+                        meter_item.reactive_import_mvarh = 0.0
         except Exception as e:
             logger.error(f"重置能量累计数据失败: {e}")
     def clear_all_members(self):
@@ -2014,12 +2014,10 @@ class SimulationWindow(QMainWindow):
                         pv_item = self.network_items['static_generator'][device_idx]
                         current_power_mw = abs(self.network_model.net.res_sgen.at[device_idx, 'p_mw'])
                         
-                        # 计算本次产生的能量（kWh）
-                        energy_generated_kwh = current_power_mw * time_interval_hours * 1000
+                        energy_generated_mwh = current_power_mw * time_interval_hours
                         
-                        # 更新今日发电量和总发电量
-                        pv_item.today_discharge_energy += energy_generated_kwh
-                        pv_item.total_discharge_energy += energy_generated_kwh
+                        pv_item.today_discharge_energy += energy_generated_mwh
+                        pv_item.total_discharge_energy += energy_generated_mwh
                         
                     except Exception as e:
                         logger.error(f"批量更新光伏设备 {device_idx} 能量统计时出错: {e}")
@@ -2048,53 +2046,51 @@ class SimulationWindow(QMainWindow):
                         p_mw = self.power_monitor.get_meter_measurement(meter_idx, 'active_power')
                         q_mvar = self.power_monitor.get_meter_measurement(meter_idx, 'reactive_power')
                         et = meter_item.properties.get('element_type')
-                        energy_factor = 1000.0 * time_interval_hours
-                        reactive_energy_factor = 1000.0 * time_interval_hours
                         if et == 'load':
                             if p_mw >= 0:
-                                meter_item.active_import_kwh += p_mw * energy_factor
+                                meter_item.active_import_mwh += p_mw * time_interval_hours
                             else:
-                                meter_item.active_export_kwh += (-p_mw) * energy_factor
+                                meter_item.active_export_mwh += (-p_mw) * time_interval_hours
                             if q_mvar >= 0:
-                                meter_item.reactive_import_kvarh += q_mvar * reactive_energy_factor
+                                meter_item.reactive_import_mvarh += q_mvar * time_interval_hours
                             else:
-                                meter_item.reactive_export_kvarh += (-q_mvar) * reactive_energy_factor
+                                meter_item.reactive_export_mvarh += (-q_mvar) * time_interval_hours
                         elif et == 'sgen':
                             if p_mw >= 0:
-                                meter_item.active_export_kwh += p_mw * energy_factor
+                                meter_item.active_export_mwh += p_mw * time_interval_hours
                             else:
-                                meter_item.active_import_kwh += (-p_mw) * energy_factor
+                                meter_item.active_import_mwh += (-p_mw) * time_interval_hours
                             if q_mvar >= 0:
-                                meter_item.reactive_export_kvarh += q_mvar * reactive_energy_factor
+                                meter_item.reactive_export_mvarh += q_mvar * time_interval_hours
                             else:
-                                meter_item.reactive_import_kvarh += (-q_mvar) * reactive_energy_factor
+                                meter_item.reactive_import_mvarh += (-q_mvar) * time_interval_hours
                         elif et == 'ext_grid':
                             if p_mw >= 0:
-                                meter_item.active_import_kwh += p_mw * energy_factor
+                                meter_item.active_import_mwh += p_mw * time_interval_hours
                             else:
-                                meter_item.active_export_kwh += (-p_mw) * energy_factor
+                                meter_item.active_export_mwh += (-p_mw) * time_interval_hours
                             if q_mvar >= 0:
-                                meter_item.reactive_import_kvarh += q_mvar * reactive_energy_factor
+                                meter_item.reactive_import_mvarh += q_mvar * time_interval_hours
                             else:
-                                meter_item.reactive_export_kvarh += (-q_mvar) * reactive_energy_factor
+                                meter_item.reactive_export_mvarh += (-q_mvar) * time_interval_hours
                         elif et == 'storage':
                             if p_mw < 0:
-                                meter_item.active_export_kwh += (-p_mw) * energy_factor
+                                meter_item.active_export_mwh += (-p_mw) * time_interval_hours
                             else:
-                                meter_item.active_import_kwh += p_mw * energy_factor
+                                meter_item.active_import_mwh += p_mw * time_interval_hours
                             if q_mvar < 0:
-                                meter_item.reactive_export_kvarh += (-q_mvar) * reactive_energy_factor
+                                meter_item.reactive_export_mvarh += (-q_mvar) * time_interval_hours
                             else:
-                                meter_item.reactive_import_kvarh += q_mvar * reactive_energy_factor
+                                meter_item.reactive_import_mvarh += q_mvar * time_interval_hours
                         else:
                             if p_mw >= 0:
-                                meter_item.active_export_kwh += p_mw * energy_factor
+                                meter_item.active_export_mwh += p_mw * time_interval_hours
                             else:
-                                meter_item.active_import_kwh += (-p_mw) * energy_factor
+                                meter_item.active_import_mwh += (-p_mw) * time_interval_hours
                             if q_mvar >= 0:
-                                meter_item.reactive_export_kvarh += q_mvar * reactive_energy_factor
+                                meter_item.reactive_export_mvarh += q_mvar * time_interval_hours
                             else:
-                                meter_item.reactive_import_kvarh += (-q_mvar) * reactive_energy_factor
+                                meter_item.reactive_import_mvarh += (-q_mvar) * time_interval_hours
                     except Exception as e:
                         logger.error(f"批量更新电表 {meter_idx} 四象限能量统计时出错: {e}")
                         
