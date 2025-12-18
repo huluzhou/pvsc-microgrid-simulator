@@ -825,22 +825,18 @@ class StorageItem(BaseNetworkItem):
             current_power_mw: 当前功率 (MW)，正值为充电，负值为放电
             time_delta_hours: 时间间隔 (小时)
         """
-        # 功率转换为 kW
-        current_power_kw = current_power_mw * 1000
-        
-        # 计算电量变化 (kWh)
-        energy_delta = abs(current_power_kw) * time_delta_hours
+        energy_delta = abs(current_power_mw) * time_delta_hours
         
         # 更新SOC
-        max_energy_kwh = self.properties.get("max_e_mwh", 1.0) * 1000
+        max_energy_mwh = self.properties.get("max_e_mwh", 1.0)
         if self.is_power_on:
-            if current_power_kw > 0:  # 放电
-                self.soc_percent = min(1.0, max(0.0, self.soc_percent - (energy_delta / max_energy_kwh)))
+            if current_power_mw > 0:
+                self.soc_percent = min(1.0, max(0.0, self.soc_percent - (energy_delta / max_energy_mwh)))
                 self.today_discharge_energy += energy_delta
                 self.total_discharge_energy += energy_delta
                 self.state = 'discharge'
-            elif current_power_kw < 0:  # 充电
-                self.soc_percent = min(1.0, max(0.0, self.soc_percent + (energy_delta / max_energy_kwh)))
+            elif current_power_mw < 0:
+                self.soc_percent = min(1.0, max(0.0, self.soc_percent + (energy_delta / max_energy_mwh)))
                 self.today_charge_energy += energy_delta
                 self.total_charge_energy += energy_delta
                 self.state = 'charge'
@@ -1268,10 +1264,10 @@ class MeterItem(BaseNetworkItem):
         }
         self.label.setPlainText(self.properties["name"])
         self.comm_status = False  # 初始通信状态为False
-        self.active_export_kwh = 0.0
-        self.active_import_kwh = 0.0
-        self.reactive_export_kvarh = 0.0
-        self.reactive_import_kvarh = 0.0
+        self.active_export_mwh = 0.0
+        self.active_import_mwh = 0.0
+        self.reactive_export_mvarh = 0.0
+        self.reactive_import_mvarh = 0.0
         
         # 连接约束：电表可以连接到多个组件
         self.max_connections =  1 # 允许连接多个组件

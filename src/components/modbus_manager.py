@@ -6,6 +6,7 @@ Modbus服务器管理模块
 负责管理电表、储能、光伏、充电桩等设备的Modbus服务器功能
 """
 
+from pickle import INT
 import threading
 from utils.logger import logger
 from config import POWER_UNIT
@@ -270,12 +271,12 @@ class ModbusManager:
             slave_context = context[1]
             
             # 从设备信息中获取配置参数，使用合理的默认值
-            rated_power = int(device_info.get('sn_mva', 1.0) * 1000)*10  # 额定功率 (kW)
-            rated_capacity = int(device_info.get('max_e_mwh', 1.0) * 1000)# 额定容量 (kWh)
+            rated_power = int(device_info.get('sn_mva', 1.0) * POWER_UNIT)*10  # 额定功率 (kW)
+            rated_capacity = int(device_info.get('max_e_mwh', 1.0) * POWER_UNIT)# 额定容量 (kWh)
             pcs_num = int(device_info.get('pcs_num', 1))  # PCS数量
             battery_cluster_num = int(device_info.get('battery_cluster_num', 2))  # 电池簇数量
-            battery_cluster_capacity = int(device_info.get('battery_cluster_capacity', 1000))  # 电池簇容量 (kWh)
-            battery_cluster_power = int(device_info.get('battery_cluster_power', 500))  # 电池簇功率 (kW)
+            battery_cluster_capacity = int(device_info.get('battery_cluster_capacity', 1000)) * POWER_UNIT  # 电池簇容量 (kWh)
+            battery_cluster_power = int(device_info.get('battery_cluster_power', 500)) * POWER_UNIT  # 电池簇功率 (kW)
             
             # 确保值在16位寄存器范围内 (0-65535)
             rated_power = max(0, min(65535, rated_power))
@@ -373,7 +374,7 @@ class ModbusManager:
             slave_context = context[1]
             
             # 写入额定功率 (单位: kW，32位无符号整数)
-            rated_power = int(device_info.get('sn_mva', 1.0) * 1000)  # 转换为kW
+            rated_power = int(device_info.get('sn_mva', 1.0) * POWER_UNIT)  # 转换为kW
             
             # 分高低位写入（地址4:低16位 + 地址5:高16位）
             rated_power_low = rated_power & 0xFFFF
@@ -628,10 +629,10 @@ class ModbusManager:
             meter_item = None
             if 'meter' in self.network_items and index in self.network_items['meter']:
                 meter_item = self.network_items['meter'][index]
-            ae_export = int(float(getattr(meter_item, 'active_export_kwh', 0.0)) / 1000 * POWER_UNIT) & 0xFFFF
-            ae_import = int(float(getattr(meter_item, 'active_import_kwh', 0.0)) / 1000 * POWER_UNIT) & 0xFFFF
-            re_export = int(float(getattr(meter_item, 'reactive_export_kvarh', 0.0)) / 1000 * POWER_UNIT) & 0xFFFF
-            re_import = int(float(getattr(meter_item, 'reactive_import_kvarh', 0.0)) / 1000 * POWER_UNIT) & 0xFFFF
+            ae_export = int(float(getattr(meter_item, 'active_export_mwh', 0.0)) * POWER_UNIT) & 0xFFFF
+            ae_import = int(float(getattr(meter_item, 'active_import_mwh', 0.0)) * POWER_UNIT) & 0xFFFF
+            re_export = int(float(getattr(meter_item, 'reactive_export_mvarh', 0.0)) * POWER_UNIT) & 0xFFFF
+            re_import = int(float(getattr(meter_item, 'reactive_import_mvarh', 0.0)) * POWER_UNIT) & 0xFFFF
             slave_context.setValues(4, METER_REG_ACTIVE_EXPORT, [ae_export & 0xFFFF])
             slave_context.setValues(4, METER_REG_ACTIVE_IMPORT, [ae_import & 0xFFFF])
             slave_context.setValues(4, METER_REG_REACTIVE_EXPORT, [re_export & 0xFFFF])
@@ -691,8 +692,8 @@ class ModbusManager:
             
             # 数据转换和验证
             power_w = int(round(abs(power_mw) * POWER_UNIT * 1000))  # MW -> kW -> W
-            total_energy_wh = int(round(pv_item.total_discharge_energy)) 
-            today_energy_wh = int(round(pv_item.today_discharge_energy)) 
+            total_energy_wh = int(round(pv_item.total_discharge_energy) * POWER_UNIT) 
+            today_energy_wh = int(round(pv_item.today_discharge_energy) * POWER_UNIT) 
             q_mvar = 0.0
             try:
                 q_mvar = float(self.network_model.net.res_sgen.at[index, "q_mvar"])
@@ -765,10 +766,10 @@ class ModbusManager:
             else:
                 current_value = 0
             # 从network_item获取能量统计数据，确保非负
-            today_charge_energy = max(0.0, storage_item.today_charge_energy)
-            today_discharge_energy = max(0.0, storage_item.today_discharge_energy)
-            total_charge_energy = max(0.0, storage_item.total_charge_energy)
-            total_discharge_energy = max(0.0, storage_item.total_discharge_energy)
+            today_charge_energy = max(0.0, storage_item.today_charge_energy) * POWER_UNIT
+            today_discharge_energy = max(0.0, storage_item.today_discharge_energy) * POWER_UNIT
+            total_charge_energy = max(0.0, storage_item.total_charge_energy) * POWER_UNIT
+            total_discharge_energy = max(0.0, storage_item.total_discharge_energy) * POWER_UNIT
 
             # 剩余可放电容量 (kWh * 10，保留1位小数)
             # 日充电量 (kWh * 10，保留1位小数)
