@@ -15,11 +15,24 @@ from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext, ModbusS
 import asyncio
 from pymodbus.server import ModbusTcpServer
 SGEN_REG_Q_PERCENT = 5040
+SGEN_REG_POWER_FACTOR = 5041
 METER_REG_REACTIVE_POWER = 20
 METER_REG_ACTIVE_EXPORT = 7
 METER_REG_ACTIVE_IMPORT = 8
 METER_REG_REACTIVE_EXPORT = 10
 METER_REG_REACTIVE_IMPORT = 11
+
+class CallbackSequentialDataBlock(ModbusSequentialDataBlock):
+    def __init__(self, address, values, on_write=None):
+        super().__init__(address, values)
+        self._on_write = on_write
+    def setValues(self, address, values):
+        super().setValues(address, values)
+        try:
+            if self._on_write:
+                self._on_write(address, values)
+        except Exception:
+            pass
 
 class ModbusManager:
     """Modbus服务器管理器"""
@@ -33,6 +46,7 @@ class ModbusManager:
         self.running_services = set()  # 跟踪运行中的服务
         
         self.ip_devices = []  # 存储具有IP属性的设备列表
+        self.sgen_control_mode = {}
         
     def scan_ip_devices(self):
         """扫描网络中具有IP属性的设备"""
@@ -133,9 +147,14 @@ class ModbusManager:
         sgen_hold_registers[5038 + 1] = 0x7FFF  # 有功功率限制
         sgen_hold_registers[5007 + 1] = 100  # 有功功率百分比限制
         sgen_hold_registers[SGEN_REG_Q_PERCENT + 1] = 0  # 无功补偿百分比
+        sgen_hold_registers[SGEN_REG_POWER_FACTOR + 1] = 0  # 功率因数 (0-10000, 0表示未设置)
         
         # 创建ModbusSequentialDataBlock实例
-        holding_regs = ModbusSequentialDataBlock(0, sgen_hold_registers)
+        holding_regs = CallbackSequentialDataBlock(
+            0,
+            sgen_hold_registers,
+            on_write=lambda addr, vals: self._on_sgen_hold_write(device_info.get('index'), addr, vals)
+        )
         input_regs = ModbusSequentialDataBlock(0, sgen_input_registers)
         
         device_context = {
@@ -1174,13 +1193,40 @@ class ModbusManager:
             except (IndexError, ValueError, AttributeError):
                 reactive_percent_limit = None
             
+            try:
+                pf_raw = device_context.getValues(3, SGEN_REG_POWER_FACTOR, 1)[0]
+                if (-1000 <= pf_raw <= -800) or (800 <= pf_raw <= 1000):
+                    power_factor = pf_raw / 1000.0
+                else:
+                    power_factor = None
+            except (IndexError, ValueError, AttributeError):
+                power_factor = None
+            
             return {
                 'power_on': power_on,
                 'power_limit_mw': power_limit_mw,
                 'power_percent_limit': power_percent_limit,
-                'reactive_percent_limit': reactive_percent_limit
+                'reactive_percent_limit': reactive_percent_limit,
+                'power_factor': power_factor,
+                'control_mode': self.sgen_control_mode.get(device_idx)
             }
             
         except Exception as e:
             logger.error(f"收集光伏系统 {device_idx} 数据失败: {e}")
             return None
+
+    def _on_sgen_hold_write(self, device_idx, address, values):
+        try:
+            if device_idx is None:
+                return
+            v = None
+            if isinstance(values, list) and len(values) > 0:
+                v = values[0]
+            if address == SGEN_REG_POWER_FACTOR + 1 and v is not None and ((-1000 <= v <= -800) or (800 <= v <= 1000)):
+                self.sgen_control_mode[device_idx] = 'pf'
+                print(f"设置光伏系统 {device_idx} 为功率因数模式")
+            elif address == SGEN_REG_Q_PERCENT + 1 and v is not None and (0 <= v <= 100):
+                self.sgen_control_mode[device_idx] = 'percent'
+                print(f"设置光伏系统 {device_idx} 为无功补偿百分比模式")
+        except Exception:
+            pass

@@ -16,6 +16,7 @@ import time
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 import pandapower as pp
+import math
 from datetime import datetime
 
 from .data_generators import DataGeneratorManager
@@ -2291,6 +2292,8 @@ class SimulationWindow(QMainWindow):
                 power_limit_mw = update_data['power_limit_mw']
                 power_percent_limit = update_data['power_percent_limit']
                 reactive_percent_limit = update_data.get('reactive_percent_limit', None)
+                power_factor = update_data.get('power_factor', None)
+                control_mode = update_data.get('control_mode', None)
                 rated_power = sgen_item.properties.get('sn_mva', 0.0)  # 从属性中获取额定功率，默认0.0
                 # 获取光伏设备的实际功率
                 try:
@@ -2323,10 +2326,46 @@ class SimulationWindow(QMainWindow):
                     is_remote_reactive = False
                     if sgen_item is not None and hasattr(sgen_item, 'is_remote_reactive_control'):
                         is_remote_reactive = sgen_item.is_remote_reactive_control
-                    if is_remote_reactive and reactive_percent_limit is not None and rated_power is not None:
-                        q_mvar = rated_power * (reactive_percent_limit / 100.0)
-                        self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
-                except (KeyError, IndexError):
+                    if is_remote_reactive and rated_power is not None:
+                        method = control_mode if control_mode in ('pf', 'percent') else None
+                        q_mvar = 0.0
+                        if method == 'pf' and power_factor is not None:
+                            pf_sign = 1.0 if power_factor >= 0.0 else -1.0
+                            pf_abs = abs(power_factor)
+                            pf_abs = min(1.0, max(0.8, pf_abs))
+                            try:
+                                if pf_abs >= 0.9999:
+                                    q_mvar = 0.0
+                                else:
+                                    q_mvar = final_power * math.tan(math.acos(pf_abs)) * pf_sign
+                            except ValueError:
+                                q_mvar = 0.0
+                            self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
+                            logger.debug(f"光伏 {device_idx} PF控制: PF={power_factor:.4f}, P={final_power:.4f}, Q={q_mvar:.4f}")
+                        elif method == 'percent' and reactive_percent_limit is not None:
+                            q_mvar = rated_power * (reactive_percent_limit / 100.0)
+                            self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
+                            logger.debug(f"光伏 {device_idx} 百分比控制: %={reactive_percent_limit}, Q={q_mvar:.4f}")
+                        elif method is None:
+                            if power_factor is not None:
+                                pf_sign = 1.0 if power_factor >= 0.0 else -1.0
+                                pf_abs = abs(power_factor)
+                                pf_abs = min(1.0, max(0.8, pf_abs))
+                                try:
+                                    if pf_abs >= 0.9999:
+                                        q_mvar = 0.0
+                                    else:
+                                        q_mvar = final_power * math.tan(math.acos(pf_abs)) * pf_sign
+                                except ValueError:
+                                    q_mvar = 0.0
+                                self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
+                                logger.debug(f"光伏 {device_idx} PF控制(回退): PF={power_factor:.4f}, P={final_power:.4f}, Q={q_mvar:.4f}")
+                            elif reactive_percent_limit is not None:
+                                q_mvar = rated_power * (reactive_percent_limit / 100.0)
+                                self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
+                                logger.debug(f"光伏 {device_idx} 百分比控制(回退): %={reactive_percent_limit}, Q={q_mvar:.4f}")
+                except (KeyError, IndexError) as e:
+                    logger.error(f"应用光伏无功控制失败: {e}")
                     pass
                     
         except Exception as e:
