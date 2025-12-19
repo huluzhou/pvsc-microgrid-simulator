@@ -66,7 +66,8 @@ class MultiPVClient:
                 # client.write_registers(address=5005, values=[1], device_id=1)
                 # # client.write_registers(address=5038, values=[400], device_id=1)
                 # client.write_registers(address=5007, values=[10], device_id=1)
-                client.write_registers(address=5040, values=[50], device_id=1)
+                client.write_registers(address=5040, values=[100], device_id=1)
+                # client.write_registers(address=5041, values=[999], device_id=1)
 
                 # 分别检查每个寄存器的读取结果
                 error_registers = []
@@ -131,7 +132,7 @@ class MultiPVClient:
 def main():
     """主函数 - 多光伏数据监控"""
     
-    multi_client = MultiPVClient(base_port=602, pv_count=1)
+    multi_client = MultiPVClient(base_port=602, pv_count=3)
     
     try:
         if not multi_client.connect_all_pvs():
