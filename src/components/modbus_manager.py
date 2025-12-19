@@ -1188,8 +1188,9 @@ class ModbusManager:
             
             # 读取无功补偿百分比（寄存器5040）
             try:
-                reactive_percent_limit = device_context.getValues(3, SGEN_REG_Q_PERCENT, 1)[0]
-                reactive_percent_limit = min(100, max(0, reactive_percent_limit))
+                reactive_percent_raw = device_context.getValues(3, SGEN_REG_Q_PERCENT, 1)[0]
+                reactive_percent_raw = min(1000, max(0, reactive_percent_raw))
+                reactive_percent_limit = reactive_percent_raw / 10.0
             except (IndexError, ValueError, AttributeError):
                 reactive_percent_limit = None
             
@@ -1225,7 +1226,7 @@ class ModbusManager:
             if address == SGEN_REG_POWER_FACTOR + 1 and v is not None and ((-1000 <= v <= -800) or (800 <= v <= 1000)):
                 self.sgen_control_mode[device_idx] = 'pf'
                 print(f"设置光伏系统 {device_idx} 为功率因数模式")
-            elif address == SGEN_REG_Q_PERCENT + 1 and v is not None and (0 <= v <= 100):
+            elif address == SGEN_REG_Q_PERCENT + 1 and v is not None and (0 <= v <= 1000):
                 self.sgen_control_mode[device_idx] = 'percent'
                 print(f"设置光伏系统 {device_idx} 为无功补偿百分比模式")
         except Exception:
