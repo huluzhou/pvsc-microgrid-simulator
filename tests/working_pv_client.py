@@ -66,7 +66,8 @@ class MultiPVClient:
                 # client.write_registers(address=5005, values=[1], device_id=1)
                 # # client.write_registers(address=5038, values=[400], device_id=1)
                 # client.write_registers(address=5007, values=[10], device_id=1)
-                client.write_registers(address=5040, values=[65536-1000], device_id=1) #无功百分比
+                # client.write_registers(address=5040, values=[65536-1], device_id=1) #无功百分比
+                client.write_registers(address=5040, values=[1], device_id=1) #无功百分比
                 # client.write_registers(address=5041, values=[65536-999], device_id=1) # 功率因数
 
                 # 分别检查每个寄存器的读取结果
@@ -90,6 +91,9 @@ class MultiPVClient:
                     data['today_energy'] = energy_result.registers[0] / 10.0  # 除以10还原实际值 (kWh)
                     data['total_energy'] = (energy_result.registers[2]<<16) | energy_result.registers[1]
                     reactive_power_raw = (q_result.registers[1] << 16) | q_result.registers[0]
+                    # 转换为32位有符号整数
+                    if reactive_power_raw >= 0x80000000:
+                        reactive_power_raw -= 0x100000000
                     data['reactive_power'] = reactive_power_raw
                     data['reactive_percent_limit'] = reactive_percent.registers[0]
                     data['status'] = 'ok'
