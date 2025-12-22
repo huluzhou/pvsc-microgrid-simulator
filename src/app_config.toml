@@ -9,4 +9,4 @@ mode = false
 verbose_logging = true
 
 [power]
-unit = 1.0
+unit = 1000.0

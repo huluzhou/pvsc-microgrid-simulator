@@ -2330,14 +2330,13 @@ class SimulationWindow(QMainWindow):
                         method = control_mode if control_mode in ('pf', 'percent') else None
                         q_mvar = 0.0
                         if method == 'pf' and power_factor is not None:
-                            pf_sign = 1.0 if power_factor >= 0.0 else -1.0
-                            pf_abs = abs(power_factor)
-                            pf_abs = min(1.0, max(0.8, pf_abs))
+                            # 允许功率因数设置为负，不使用abs，且移除0.8的限制
+                            pf_val = max(-1.0, min(1.0, power_factor))
                             try:
-                                if pf_abs >= 0.9999:
+                                if abs(pf_val) >= 0.9999:
                                     q_mvar = 0.0
                                 else:
-                                    q_mvar = final_power * math.tan(math.acos(pf_abs)) * pf_sign
+                                    q_mvar = final_power * math.tan(math.acos(pf_val))
                             except ValueError:
                                 q_mvar = 0.0
                             self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
@@ -2348,14 +2347,13 @@ class SimulationWindow(QMainWindow):
                             logger.debug(f"光伏 {device_idx} 百分比控制: %={reactive_percent_limit}, Q={q_mvar:.4f}")
                         elif method is None:
                             if power_factor is not None:
-                                pf_sign = 1.0 if power_factor >= 0.0 else -1.0
-                                pf_abs = abs(power_factor)
-                                pf_abs = min(1.0, max(0.8, pf_abs))
+                                # 允许功率因数设置为负，不使用abs，且移除0.8的限制
+                                pf_val = max(-1.0, min(1.0, power_factor))
                                 try:
-                                    if pf_abs >= 0.9999:
+                                    if abs(pf_val) >= 0.9999:
                                         q_mvar = 0.0
                                     else:
-                                        q_mvar = final_power * math.tan(math.acos(pf_abs)) * pf_sign
+                                        q_mvar = final_power * math.tan(math.acos(pf_val))
                                 except ValueError:
                                     q_mvar = 0.0
                                 self.network_model.net.sgen.at[device_idx, 'q_mvar'] = q_mvar
