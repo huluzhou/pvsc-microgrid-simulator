@@ -718,16 +718,18 @@ class ModbusManager:
                 q_mvar = float(self.network_model.net.res_sgen.at[index, "q_mvar"])
             except Exception:
                 q_mvar = 0.0
-            reactive_kvar = int(round(abs(q_mvar) * POWER_UNIT * 1000))
+            reactive_kvar = int(round(q_mvar * POWER_UNIT * 1000))
             
             # 数据范围检查
             if not (0 <= power_w <= MAX_32BIT_UINT):
                 logger.warning(f"光伏设备 {index} 功率超出范围: {power_w} W")
                 power_w = max(0, min(power_w, MAX_32BIT_UINT))
-            if reactive_kvar < 0:
-                reactive_kvar = 0
-            if reactive_kvar > MAX_32BIT_UINT:
-                reactive_kvar = MAX_32BIT_UINT
+            
+            # 限制为32位有符号整数范围
+            if reactive_kvar > 2147483647:
+                reactive_kvar = 2147483647
+            elif reactive_kvar < -2147483648:
+                reactive_kvar = -2147483648
             
             # 拆分32位数据
             power_low = power_w & 0xFFFF
