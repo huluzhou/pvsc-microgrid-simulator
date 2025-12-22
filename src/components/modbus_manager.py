@@ -1189,13 +1189,17 @@ class ModbusManager:
             # 读取无功补偿百分比（寄存器5040）
             try:
                 reactive_percent_raw = device_context.getValues(3, SGEN_REG_Q_PERCENT, 1)[0]
-                reactive_percent_raw = min(1000, max(0, reactive_percent_raw))
+                if isinstance(reactive_percent_raw, int) and reactive_percent_raw > 32767:
+                    reactive_percent_raw = reactive_percent_raw - 65536
+                reactive_percent_raw = min(1000, max(-1000, reactive_percent_raw))
                 reactive_percent_limit = reactive_percent_raw / 10.0
             except (IndexError, ValueError, AttributeError):
                 reactive_percent_limit = None
             
             try:
                 pf_raw = device_context.getValues(3, SGEN_REG_POWER_FACTOR, 1)[0]
+                if isinstance(pf_raw, int) and pf_raw > 32767:
+                    pf_raw = pf_raw - 65536
                 if (-1000 <= pf_raw <= -800) or (800 <= pf_raw <= 1000):
                     power_factor = pf_raw / 1000.0
                 else:
@@ -1223,11 +1227,14 @@ class ModbusManager:
             v = None
             if isinstance(values, list) and len(values) > 0:
                 v = values[0]
+            if isinstance(v, int) and v > 32767:
+                v = v - 65536
+            logger.debug(f"写入光伏系统 {device_idx} 保持寄存器 {address} 值 {v}")
             if address == SGEN_REG_POWER_FACTOR + 1 and v is not None and ((-1000 <= v <= -800) or (800 <= v <= 1000)):
                 self.sgen_control_mode[device_idx] = 'pf'
-                print(f"设置光伏系统 {device_idx} 为功率因数模式")
-            elif address == SGEN_REG_Q_PERCENT + 1 and v is not None and (0 <= v <= 1000):
+                logger.debug(f"设置光伏系统 {device_idx} 为功率因数模式")
+            elif address == SGEN_REG_Q_PERCENT + 1 and v is not None and (-1000 <= v <= 1000):
                 self.sgen_control_mode[device_idx] = 'percent'
-                print(f"设置光伏系统 {device_idx} 为无功补偿百分比模式")
+                logger.debug(f"设置光伏系统 {device_idx} 为无功补偿百分比模式")
         except Exception:
             pass
