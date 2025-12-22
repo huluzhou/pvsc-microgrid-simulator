@@ -10,3 +10,4 @@ src/__pycache__
 *.db
 *.pyc
 *.zip
+dist_pyinstaller

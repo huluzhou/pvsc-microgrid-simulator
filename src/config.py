@@ -229,14 +229,21 @@ def import_if_enabled(module_name, condition):
 
 def _get_base_path():
     """
-    获取基础路径，兼容PyInstaller打包和非打包环境
+    获取基础路径，兼容PyInstaller和Nuitka打包以及非打包环境
     
     Returns:
         str: 基础路径
     """
     if getattr(sys, 'frozen', False):
         # PyInstaller打包后的路径
-        return sys._MEIPASS
+        if hasattr(sys, '_MEIPASS'):
+            return sys._MEIPASS
+        
+        # Nuitka打包兼容:
+        # 在Nuitka onefile模式下，模块会被解压到临时目录
+        # __file__ 指向临时目录中的编译后模块文件
+        # 我们保持与开发环境一致的相对路径结构
+        return os.path.dirname(os.path.abspath(__file__))
     else:
         # 开发环境路径
         return os.path.dirname(os.path.abspath(__file__))
