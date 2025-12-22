@@ -66,7 +66,8 @@ class MultiPVClient:
                 # client.write_registers(address=5005, values=[1], device_id=1)
                 # # client.write_registers(address=5038, values=[400], device_id=1)
                 # client.write_registers(address=5007, values=[10], device_id=1)
-                client.write_registers(address=5040, values=[65536-1000], device_id=1) #无功百分比
+                # client.write_registers(address=5040, values=[65536-1], device_id=1) #无功百分比
+                client.write_registers(address=5040, values=[1], device_id=1) #无功百分比
                 # client.write_registers(address=5041, values=[65536-999], device_id=1) # 功率因数
 
                 # 分别检查每个寄存器的读取结果

@@ -642,7 +642,10 @@ class ModbusManager:
             # 写入地址0：有功功率（16位）
             slave_context.setValues(4, 0, [power_kw])
 
-            reactive_power_kvar = int(abs(self.power_monitor.get_meter_measurement(index, 'reactive_power')) * POWER_UNIT / 50 * 100) & 0xFFFF
+            # 计算无功功率并限制在int16范围内
+            raw_reactive = int(self.power_monitor.get_meter_measurement(index, 'reactive_power') * POWER_UNIT / 50 * 100)
+            clamped_reactive = max(-32768, min(32767, raw_reactive))
+            reactive_power_kvar = clamped_reactive & 0xFFFF
             slave_context.setValues(4, METER_REG_REACTIVE_POWER, [reactive_power_kvar])
             
             meter_item = None
