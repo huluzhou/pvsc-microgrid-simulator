@@ -69,7 +69,11 @@ class MultiMeterClient:
                     self.meter_data[meter_name]['active_import'] = result.registers[8]
                     self.meter_data[meter_name]['reactive_export'] = result.registers[10]
                     self.meter_data[meter_name]['reactive_import'] = result.registers[11]
-                    self.meter_data[meter_name]['reactive_power'] = result.registers[20] * 0.5
+                    # 解析无功功率 (16位有符号整数)
+                    reactive_raw = result.registers[20]
+                    if reactive_raw >= 0x8000:
+                        reactive_raw -= 0x10000
+                    self.meter_data[meter_name]['reactive_power'] = reactive_raw * 0.5
                 else:
                     self.meter_data[meter_name]['status'] = 'read_error'
                     self.meter_data[meter_name]['power'] = 0.0
