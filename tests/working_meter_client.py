@@ -54,6 +54,8 @@ class MultiMeterClient:
                     # 组合高低位得到32位无符号整数
                     low_word = result.registers[0]
                     raw_value = low_word
+                    if raw_value >= 0x8000:
+                        raw_value -= 0x10000
                     
                     # 转换为kW（服务器端已提供kW单位）
                     power_kw = raw_value * 0.5 # 转换为MW再转kW，或直接按kW处理
