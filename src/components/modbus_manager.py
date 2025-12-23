@@ -78,7 +78,8 @@ class ModbusManager:
         self.running_services = set()  # 跟踪运行中的服务
         
         self.ip_devices = []  # 存储具有IP属性的设备列表
-        self.sgen_control_mode = {}
+        self.sgen_p_control_mode = {}
+        self.sgen_q_control_mode = {}
         
     def scan_ip_devices(self):
         """扫描网络中具有IP属性的设备"""
@@ -1254,7 +1255,8 @@ class ModbusManager:
                 'power_percent_limit': power_percent_limit,
                 'reactive_percent_limit': reactive_percent_limit,
                 'power_factor': power_factor,
-                'control_mode': self.sgen_control_mode.get(device_idx)
+                'p_control_mode': self.sgen_p_control_mode.get(device_idx),
+                'q_control_mode': self.sgen_q_control_mode.get(device_idx)
             }
             
         except Exception as e:
@@ -1272,10 +1274,10 @@ class ModbusManager:
                 v = v - 65536
             logger.debug(f"写入光伏系统 {device_idx} 保持寄存器 {address} 值 {v}")
             if address == SGEN_REG_POWER_FACTOR + 1 and v is not None and ((-1000 <= v <= -800) or (800 <= v <= 1000)):
-                self.sgen_control_mode[device_idx] = 'pf'
+                self.sgen_q_control_mode[device_idx] = 'pf'
                 logger.debug(f"设置光伏系统 {device_idx} 为功率因数模式")
             elif address == SGEN_REG_Q_PERCENT + 1 and v is not None and (-1000 <= v <= 1000):
-                self.sgen_control_mode[device_idx] = 'percent'
+                self.sgen_q_control_mode[device_idx] = 'percent'
                 logger.debug(f"设置光伏系统 {device_idx} 为无功补偿百分比模式")
         except Exception:
             pass
