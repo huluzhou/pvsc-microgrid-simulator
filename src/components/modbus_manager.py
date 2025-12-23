@@ -22,9 +22,41 @@ METER_REG_ACTIVE_IMPORT = 8
 METER_REG_REACTIVE_EXPORT = 10
 METER_REG_REACTIVE_IMPORT = 11
 
-class CallbackSequentialDataBlock(ModbusSequentialDataBlock):
-    def __init__(self, address, values, on_write=None):
+class LoggingSequentialDataBlock(ModbusSequentialDataBlock):
+    """带日志记录的顺序数据块"""
+    def __init__(self, address, values, name="Unknown"):
         super().__init__(address, values)
+        self.name = name
+        
+    def setValues(self, address, values):
+        super().setValues(address, values)
+        # 记录写操作
+        logger.info(f"[{self.name}] Modbus Write - Address: {address}, Values: {values}")
+        
+    def getValues(self, address, count=1):
+        values = super().getValues(address, count)
+        # 记录读操作
+        logger.info(f"[{self.name}] Modbus Read - Address: {address}, Count: {count}, Values: {values}")
+        return values
+
+class LoggingSparseDataBlock(ModbusSparseDataBlock):
+    """带日志记录的稀疏数据块"""
+    def __init__(self, values, name="Unknown"):
+        super().__init__(values)
+        self.name = name
+        
+    def setValues(self, address, values):
+        super().setValues(address, values)
+        logger.info(f"[{self.name}] Modbus Write - Address: {address}, Values: {values}")
+        
+    def getValues(self, address, count=1):
+        values = super().getValues(address, count)
+        logger.info(f"[{self.name}] Modbus Read - Address: {address}, Count: {count}, Values: {values}")
+        return values
+
+class CallbackSequentialDataBlock(LoggingSequentialDataBlock):
+    def __init__(self, address, values, on_write=None, name="Unknown"):
+        super().__init__(address, values, name=name)
         self._on_write = on_write
     def setValues(self, address, values):
         super().setValues(address, values)
@@ -150,12 +182,14 @@ class ModbusManager:
         sgen_hold_registers[SGEN_REG_POWER_FACTOR + 1] = 0  # 功率因数 (0-10000, 0表示未设置)
         
         # 创建ModbusSequentialDataBlock实例
+        device_name = f"SGen_{device_info.get('index')}"
         holding_regs = CallbackSequentialDataBlock(
             0,
             sgen_hold_registers,
-            on_write=lambda addr, vals: self._on_sgen_hold_write(device_info.get('index'), addr, vals)
+            on_write=lambda addr, vals: self._on_sgen_hold_write(device_info.get('index'), addr, vals),
+            name=f"{device_name}_Hold"
         )
-        input_regs = ModbusSequentialDataBlock(0, sgen_input_registers)
+        input_regs = LoggingSequentialDataBlock(0, sgen_input_registers, name=f"{device_name}_Input")
         
         device_context = {
             1: ModbusDeviceContext(
@@ -195,7 +229,8 @@ class ModbusManager:
         meter_input_registers[METER_REG_REACTIVE_IMPORT+1] = 0
         
         # 创建ModbusSequentialDataBlock实例
-        input_regs = ModbusSequentialDataBlock(0, meter_input_registers)
+        device_name = f"Meter_{device_info.get('index')}"
+        input_regs = LoggingSequentialDataBlock(0, meter_input_registers, name=f"{device_name}_Input")
         
         device_context = {
             1: ModbusDeviceContext(
@@ -259,8 +294,9 @@ class ModbusManager:
         storage_input_registers[911+1] = 13104   # SN_912 SN号
         storage_input_registers[912+1] = 12337   # SN_913 SN号
 
-        holding_regs = ModbusSequentialDataBlock(0, storage_hold_registers)   
-        input_regs = ModbusSequentialDataBlock(0, storage_input_registers)
+        device_name = f"Storage_{device_info.get('index')}"
+        holding_regs = LoggingSequentialDataBlock(0, storage_hold_registers, name=f"{device_name}_Hold")   
+        input_regs = LoggingSequentialDataBlock(0, storage_input_registers, name=f"{device_name}_Input")
         device_context = {
             1: ModbusDeviceContext(
                 hr=holding_regs,
@@ -327,7 +363,6 @@ class ModbusManager:
                         combined = (ascii_first << 8) | ascii_second
                         # 写入保持寄存器900开始的地址
                         slave_context.setValues(4, 900 + int(i/2), [combined])
-                logger.info(f"已写入储能设备SN到寄存器900开始的地址: {device_sn[:16]}")
 
             logger.info(f"已写入储能设备配置参数: 额定功率={rated_power}kW, 额定容量={rated_capacity}kWh, "
                   f"PCS数量={pcs_num}, 电池簇数量={battery_cluster_num}, "
@@ -366,8 +401,9 @@ class ModbusManager:
         charger_hold_registers[0 + 1] = 0x7FFF  # 功率限制
         
         # 创建ModbusSequentialDataBlock实例
-        holding_regs = ModbusSequentialDataBlock(0, charger_hold_registers)
-        input_regs = ModbusSequentialDataBlock(0, charger_input_registers)
+        device_name = f"Charger_{device_info.get('index')}"
+        holding_regs = LoggingSequentialDataBlock(0, charger_hold_registers, name=f"{device_name}_Hold")
+        input_regs = LoggingSequentialDataBlock(0, charger_input_registers, name=f"{device_name}_Input")
         
         device_context = {
             1: ModbusDeviceContext(
@@ -416,12 +452,13 @@ class ModbusManager:
         """创建默认通用上下文"""
         default_registers = {0: 0, 1: 0, 2: 0, 3: 0}
         
+        device_name = f"Default_{device_info.get('type')}_{device_info.get('index')}"
         device_context = {
             1: ModbusDeviceContext(
-                di=ModbusSparseDataBlock({}),
-                co=ModbusSparseDataBlock({}),
-                hr=ModbusSparseDataBlock(default_registers),
-                ir=ModbusSparseDataBlock({})
+                di=LoggingSparseDataBlock({}, name=f"{device_name}_DI"),
+                co=LoggingSparseDataBlock({}, name=f"{device_name}_CO"),
+                hr=LoggingSparseDataBlock(default_registers, name=f"{device_name}_HR"),
+                ir=LoggingSparseDataBlock({}, name=f"{device_name}_IR")
             )
         }
         
@@ -650,7 +687,6 @@ class ModbusManager:
             clamped_reactive = max(-32768, min(32767, raw_reactive))
             reactive_power_kvar = clamped_reactive & 0xFFFF
             slave_context.setValues(4, METER_REG_REACTIVE_POWER, [reactive_power_kvar])
-            logger.info(f"Meter {index} Reactive Power: measured={measured_reactive}, raw={raw_reactive}, clamped={clamped_reactive}, reg_val={reactive_power_kvar}")
             
             meter_item = None
             if 'meter' in self.network_items and index in self.network_items['meter']:
@@ -851,8 +887,6 @@ class ModbusManager:
                 slave_context.setValues(4, 400, [0])  # 不可用（停机或故障）
                 alarm_401 = 0
             
-            logger.info(f"储能设备 {index} 状态更新: {current_state}")
-            logger.info(f"电池柜状态:{state_values['reg0']},开关机状态:{state_values['reg839']},警报状态:{alarm_401}")
             # 调试信息（可选，生产环境可注释掉）
             # if abs(active_power) > 0.001:
             #     logger.debug(f"储能设备实时数据已更新: SOC={soc}%, 功率={active_power:.3f}MW, 电流={current_value/10:.1f}A, 状态={current_state}")
@@ -873,7 +907,6 @@ class ModbusManager:
                     # bit10设置为1（2^10=1024）
                     mode_value = 1024  # 2^10 = 1024 (bit10)
                     mode_text = "离网"
-                logger.info(f"储能设备 {index} 并网/离网状态更新: {mode_text}模式, grid_connected值: {grid_connected}")
             except Exception as e:
                 # 发生异常时默认设置为并网模式
                 logger.error(f"获取储能设备 {index} 并网状态时出错: {e}")
@@ -882,7 +915,6 @@ class ModbusManager:
             # 写入输入寄存器432表示当前PCS工作模式
             slave_context.setValues(4, 432, [mode_value])
             slave_context.setValues(4, 408, [mode_value])
-            logger.info(f"储能设备 {index} 并网/离网状态更新: {mode_text}模式")
             
         except KeyError as e:
             logger.error(f"储能设备数据缺失: {e}")
