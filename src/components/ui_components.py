@@ -241,11 +241,6 @@ class UIComponentManager:
         sgen_enable_generation_checkbox.stateChanged.connect(self.parent_window.data_control_manager.toggle_sgen_data_generation)
         device_control_layout.addWidget(sgen_enable_generation_checkbox)
         self.parent_window.sgen_enable_generation_checkbox = sgen_enable_generation_checkbox
-        sgen_enable_remote_reactive = QCheckBox("远程无功控制")
-        sgen_enable_remote_reactive.setChecked(True)
-        sgen_enable_remote_reactive.stateChanged.connect(self.parent_window.data_control_manager.on_sgen_reactive_control_mode_changed)
-        self.parent_window.sgen_enable_remote_reactive = sgen_enable_remote_reactive
-        device_control_layout.addWidget(sgen_enable_remote_reactive)
         current_device_layout.addLayout(device_control_layout)
          # 设备通信控制 - 使用垂直布局重构
         comm_control_layout = QVBoxLayout()  # 创建垂直布局
