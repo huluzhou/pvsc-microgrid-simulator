@@ -2158,7 +2158,6 @@ class SimulationWindow(QMainWindow):
                     if device_type == 'storage':
                         # 储能设备数据收集
                         update_data = self.modbus_manager.collect_storage_modbus_data(device_idx, slave_context)
-                        logger.info(f"储能设备 {device_idx} 数据更新: {update_data}")
                         if update_data:
                             storage_updates.append((device_idx, update_data))
                     
@@ -2561,40 +2560,33 @@ class SimulationWindow(QMainWindow):
             net = network_model.net
                 
             # 记录日志：计算周期开始
-            logger.info("开始新一轮潮流计算")
                 
             # 检查每日重置
             self.check_and_reset_daily_data()
                 
             # 使用批处理更新生成的数据，但在回测期间禁止数据自动生成
             if self.generated_devices and not hasattr(self, 'is_backtesting') or not self.is_backtesting:
-                logger.info(f"更新生成数据，设备数量: {len(self.generated_devices)}")
                 self._update_generated_data_batch(self.generated_devices, network_model, self.data_generator_manager)
             elif hasattr(self, 'is_backtesting') and self.is_backtesting:
                 logger.info("回测期间，禁止数据自动生成")
                 
             # 在回测期间，先执行回测步骤以确保时序一致性
             if hasattr(self, 'is_backtesting') and self.is_backtesting:
-                logger.info("执行回测步骤")
                 self.run_backtest_step()
                 
             # 批量更新Modbus参数
-            logger.info("批量更新Modbus参数")
             self._update_para_from_modbus_batch()
             
             # 更新开关状态：将network_items中的开关状态同步到network_model中
-            logger.info("更新开关状态")
             self._sync_switch_states(self.network_items, net)
             
             # 运行潮流计算
             try:
                 pp.runpp(net)
                 self.statusBar().showMessage("潮流计算成功")
-                logger.info("潮流计算成功完成")
                 
                 # 批量更新能量统计
                 self._update_energy_stats_batch()
-                logger.info("能量统计更新完成")
                 
                 # 智能更新策略：仅在数据变化时更新UI
                 if not hasattr(self, '_ui_update_counter'):
@@ -2604,19 +2596,15 @@ class SimulationWindow(QMainWindow):
                 # 每3次计算更新一次设备树（约6秒一次）
                 if self._ui_update_counter % 3 == 0:
                     self.update_device_tree_status()
-                    logger.info("设备树状态更新完成")
                 
                 # 每2次计算更新一次功率曲线（约4秒一次）
                 if self._ui_update_counter % 1 == 0:
                     self.power_monitor.update_power_curve()
-                    logger.info("功率曲线更新完成")
                 
                 self.data_control_manager.show_realtime_info()
-                logger.info("实时数据更新完成")
                 
                 # 批量更新Modbus数据
                 self.modbus_manager.update_all_modbus_data()
-                logger.info("Modbus数据更新完成")
                     
             except Exception as e:
                 self.statusBar().showMessage(f"潮流计算失败: {str(e)}")
@@ -2632,5 +2620,4 @@ class SimulationWindow(QMainWindow):
             # 重置计算状态标志
             if hasattr(self, '_is_calculating'):
                 self._is_calculating = False
-                logger.info("计算周期结束")
     
