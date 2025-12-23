@@ -655,10 +655,10 @@ class ModbusManager:
             meter_item = None
             if 'meter' in self.network_items and index in self.network_items['meter']:
                 meter_item = self.network_items['meter'][index]
-            ae_export = int(float(getattr(meter_item, 'active_export_mwh', 0.0)) * POWER_UNIT) & 0xFFFF
-            ae_import = int(float(getattr(meter_item, 'active_import_mwh', 0.0)) * POWER_UNIT) & 0xFFFF
-            re_export = int(float(getattr(meter_item, 'reactive_export_mvarh', 0.0)) * POWER_UNIT) & 0xFFFF
-            re_import = int(float(getattr(meter_item, 'reactive_import_mvarh', 0.0)) * POWER_UNIT) & 0xFFFF
+            ae_export = int(float(getattr(meter_item, 'active_export_mwh', 0.0)) * POWER_UNIT / 50 * 100) & 0xFFFF
+            ae_import = int(float(getattr(meter_item, 'active_import_mwh', 0.0)) * POWER_UNIT / 50 * 100) & 0xFFFF
+            re_export = int(float(getattr(meter_item, 'reactive_export_mvarh', 0.0)) * POWER_UNIT / 50 * 100) & 0xFFFF
+            re_import = int(float(getattr(meter_item, 'reactive_import_mvarh', 0.0)) * POWER_UNIT / 50 * 100) & 0xFFFF
             slave_context.setValues(4, METER_REG_ACTIVE_EXPORT, [ae_export & 0xFFFF])
             slave_context.setValues(4, METER_REG_ACTIVE_IMPORT, [ae_import & 0xFFFF])
             slave_context.setValues(4, METER_REG_REACTIVE_EXPORT, [re_export & 0xFFFF])
