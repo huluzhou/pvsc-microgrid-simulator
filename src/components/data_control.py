@@ -559,19 +559,13 @@ class DataControlManager:
                     current_q_kvar = max(0.0, current_q * 1000)
                     rated_power_kw = rated_power * 1000
                     
-                    is_remote_reactive = False
-                    if hasattr(sgen_item, 'is_remote_reactive_control'):
-                        is_remote_reactive = sgen_item.is_remote_reactive_control
-                    if hasattr(self.parent_window, 'sgen_enable_remote_reactive'):
-                        self.parent_window.sgen_enable_remote_reactive.blockSignals(True)
-                        self.parent_window.sgen_enable_remote_reactive.setChecked(is_remote_reactive)
-                        self.parent_window.sgen_enable_remote_reactive.blockSignals(False)
+                    # is_remote_reactive logic removed as per requirement
                     if hasattr(self.parent_window, 'sgen_manual_panel'):
-                        self.parent_window.sgen_manual_panel.setEnabled(not is_remote_reactive)
+                        self.parent_window.sgen_manual_panel.setEnabled(True)
                     if hasattr(self.parent_window, 'sgen_reactive_power_slider'):
-                        self.parent_window.sgen_reactive_power_slider.setEnabled(not is_remote_reactive)
+                        self.parent_window.sgen_reactive_power_slider.setEnabled(True)
                     if hasattr(self.parent_window, 'sgen_reactive_power_spinbox'):
-                        self.parent_window.sgen_reactive_power_spinbox.setEnabled(not is_remote_reactive)
+                        self.parent_window.sgen_reactive_power_spinbox.setEnabled(True)
                     # 更新滑块范围为0到额定功率（支持0.1kW精度）
                     if hasattr(self.parent_window, 'sgen_power_slider'):
                         max_slider_value = int(rated_power_kw * 10)  # 乘以10以支持0.1kW精度
@@ -1384,6 +1378,11 @@ class DataControlManager:
                 
                 self.parent_window.statusBar().showMessage(f"已更新光伏设备 {component_idx} 的功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
                 logger.debug(f"应用光伏设备 {component_idx} 功率设置: P={p_mw:.2f}MW, Q={q_mvar:.2f}MVar")
+                
+                modbus_manager = getattr(self.parent_window, 'modbus_manager', None)
+                if modbus_manager:
+                    modbus_manager.sgen_p_control_mode[component_idx] = 'manual'
+                    modbus_manager.sgen_q_control_mode[component_idx] = 'manual'
             else:
                 QMessageBox.warning(self.parent_window, "错误", f"光伏设备 {component_idx} 不存在")
                 
