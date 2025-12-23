@@ -46,7 +46,11 @@ def check_nuitka():
 
 def clean_build():
     """清理之前的构建文件"""
-    dirs_to_clean = ['build', 'dist', 'pandapower_sim.build', 'pandapower_sim.dist', 'pandapower_sim.onefile-build']
+    dirs_to_clean = [
+        'build', 'dist', 
+        'pandapower_sim.build', 'pandapower_sim.dist', 'pandapower_sim.onefile-build',
+        'main.build', 'main.dist', 'main.onefile-build'
+    ]
     
     print("清理构建文件...")
     for dir_name in dirs_to_clean:
@@ -70,8 +74,8 @@ def build_executable():
         "--onefile",              # 生成单文件
         "--show-progress",        # 显示进度
         "--show-memory",          # 显示内存使用
-        "--output-dir=dist",      # 输出目录
-        "--output-filename=pandapower_sim.exe", # 输出文件名
+        # "--output-dir=dist",      # 输出目录 (Nuitka bug: avoid using output-dir with onefile)
+        # "--output-filename=pandapower_sim.exe", # 输出文件名 (Nuitka bug: leads to AssertionError)
         "--enable-plugin=pyside6", # 启用PySide6插件
         "--windows-disable-console", # 禁用控制台窗口
         "--include-data-dir=src/assets=src/assets", # 包含资源文件，保持目录结构
@@ -150,6 +154,23 @@ def build_executable():
     try:
         # 使用subprocess.run执行命令
         subprocess.run(cmd, check=True)
+        
+        # 重命名输出文件
+        src_exe = "main.exe"
+        
+        # 确保dist目录存在
+        if not os.path.exists("dist"):
+            os.makedirs("dist")
+            
+        dst_exe = os.path.join("dist", "pandapower_sim.exe")
+        
+        if os.path.exists(src_exe):
+            if os.path.exists(dst_exe):
+                os.remove(dst_exe)
+            shutil.move(src_exe, dst_exe)
+            print(f"移动并重命名: {src_exe} -> {dst_exe}")
+        else:
+            print(f"警告: 未找到生成的 {src_exe}")
         
         end_time = time.time()
         duration = end_time - start_time
