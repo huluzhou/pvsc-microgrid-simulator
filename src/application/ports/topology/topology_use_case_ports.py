@@ -1,3 +1,11 @@
+"""拓扑用例端口定义
+
+这些端口定义了应用层与适配器层之间的接口。
+用例实现这些端口，适配器调用这些端口。
+
+注意：这些端口位于应用层，因为它们依赖于应用层的Commands和DTOs。
+领域层只保留仓储端口（Repository Ports）。
+"""
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 
@@ -215,3 +223,4 @@ class TopologyQueryPort(ABC):
             连接DTO列表
         """
         pass
+

@@ -226,7 +226,63 @@ class MicrogridTopology(AggregateRoot):
 
 ## 实施优先级
 
-1. **P0（必须）**：修复端口依赖方向
-2. **P1（重要）**：调整目录结构
-3. **P2（优化）**：简化DTOs设计
+1. **P0（必须）**：修复端口依赖方向 ✅ **已完成**
+2. **P1（重要）**：调整目录结构 ✅ **已完成**
+3. **P2（优化）**：简化DTOs设计（可选，当前设计可接受）
+
+## 重构完成情况
+
+### ✅ 已完成的重构
+
+1. **端口依赖方向修复**
+   - 将用例端口从 `domain/aggregates/topology/ports/` 移到 `application/ports/topology/`
+   - 领域层不再依赖应用层
+   - 依赖方向已修正为：适配器层 → 应用层 → 领域层
+
+2. **目录结构调整**
+   - 创建了 `application/ports/topology/` 目录
+   - 用例端口现在位于应用层
+   - 领域层只保留仓储端口
+
+3. **代码更新**
+   - 更新了所有引用用例端口的代码
+   - 更新了导入路径
+   - 删除了旧的端口文件
+
+4. **文档更新**
+   - 更新了 `PORTS_README.md`
+   - 更新了 `ARCHITECTURE.md`
+   - 更新了架构审查文档
+
+### 📊 重构后的目录结构
+
+```
+src/
+├── domain/                           # 领域层（核心）
+│   ├── aggregates/
+│   │   └── topology/
+│   │       └── ports/                # 领域端口（仅仓储端口）
+│   │           └── topology_repository_port.py ✅
+│
+├── application/                      # 应用层
+│   ├── ports/                        # 应用层端口 ✅ 新增
+│   │   └── topology/
+│   │       └── topology_use_case_ports.py ✅
+│   ├── use_cases/                    # 用例实现
+│   │   └── topology/
+│   ├── commands/                     # 命令
+│   └── dtos/                         # 数据传输对象
+│
+└── adapters/                         # 适配器层
+    └── inbound/
+        └── ui/
+            └── pyside/               # UI适配器
+```
+
+### ✅ 依赖方向验证
+
+- ✅ 领域层不依赖应用层（已验证）
+- ✅ 应用层端口依赖应用层的Commands和DTOs（正确）
+- ✅ 领域层端口只依赖领域层的实体和值对象（正确）
+- ✅ 适配器层调用应用层端口（正确）
 

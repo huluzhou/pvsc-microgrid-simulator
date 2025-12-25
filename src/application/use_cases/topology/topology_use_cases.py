@@ -50,7 +50,7 @@ from domain.aggregates.topology.events.topology_events import (
     DeviceRemovedEvent,
     ConnectionCreatedEvent
 )
-from domain.aggregates.topology.ports.topology_use_case_ports import (
+from application.ports.topology.topology_use_case_ports import (
     TopologyCreationPort,
     TopologyDeviceManagementPort,
     TopologyConnectionManagementPort,

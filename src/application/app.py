@@ -18,7 +18,7 @@ from application.use_cases.topology.topology_file_use_cases import (
     TopologyFileUseCase,
     UndoRedoUseCase,
 )
-from domain.aggregates.topology.ports.topology_use_case_ports import (
+from application.ports.topology.topology_use_case_ports import (
     TopologyCreationPort,
     TopologyDeviceManagementPort,
     TopologyConnectionManagementPort,
