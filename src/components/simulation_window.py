@@ -2513,16 +2513,43 @@ class SimulationWindow(QMainWindow):
             network_items: 包含所有网络项的字典
             net: pandapower网络模型
         """
-        if 'switch' in network_items and hasattr(net, 'switch'):
-            for switch_idx, switch_item in network_items['switch'].items():
-                if switch_idx in net.switch.index:
-                    try:
-                        # 获取switch_item中的closed状态并更新到network_model中
-                        closed_state = switch_item.properties.get('closed', True)
+        try:
+            if 'switch' in network_items and hasattr(net, 'switch'):
+                for switch_idx, switch_item in network_items['switch'].items():
+                    if switch_idx in net.switch.index:
+                        closed_state = bool(switch_item.properties.get('closed', True))
                         net.switch.at[switch_idx, 'closed'] = closed_state
                         logger.debug(f"更新开关 {switch_idx} 状态为: {'闭合' if closed_state else '断开'}")
-                    except Exception as e:
-                        logger.error(f"更新开关 {switch_idx} 状态失败: {e}")
+        except Exception as e:
+            logger.error(f"同步开关状态失败: {e}")
+
+    def _log_power_flow_results(self, net):
+        try:
+            summaries = []
+            if hasattr(net, 'res_bus'):
+                summaries.append(f"bus:{len(net.bus)} res_bus:{len(net.res_bus)}")
+            if hasattr(net, 'res_line'):
+                summaries.append(f"line:{len(net.line)} res_line:{len(net.res_line)}")
+            if hasattr(net, 'res_load'):
+                summaries.append(f"load:{len(net.load)} res_load:{len(net.res_load)}")
+            if hasattr(net, 'res_sgen'):
+                summaries.append(f"sgen:{len(net.sgen)} res_sgen:{len(net.res_sgen)}")
+            if hasattr(net, 'res_storage'):
+                summaries.append(f"storage:{len(net.storage)} res_storage:{len(net.res_storage)}")
+            if summaries:
+                logger.info("潮流结果摘要: " + ", ".join(summaries))
+            if hasattr(net, 'res_line') and len(net.res_line) > 0:
+                logger.info("res_line:\n" + net.res_line.to_string())
+            if hasattr(net, 'res_bus') and len(net.res_bus) > 0:
+                logger.info("res_bus:\n" + net.res_bus.to_string())
+            if hasattr(net, 'res_load') and len(net.res_load) > 0:
+                logger.info("res_load:\n" + net.res_load.to_string())
+            if hasattr(net, 'res_sgen') and len(net.res_sgen) > 0:
+                logger.info("res_sgen:\n" + net.res_sgen.to_string())
+            if hasattr(net, 'res_storage') and len(net.res_storage) > 0:
+                logger.info("res_storage:\n" + net.res_storage.to_string())
+        except Exception as e:
+            logger.error(f"记录潮流结果失败: {str(e)}")
 
     def auto_power_flow_calculation(self):
         """自动潮流计算主方法"""
@@ -2564,6 +2591,7 @@ class SimulationWindow(QMainWindow):
             try:
                 pp.runpp(net)
                 self.statusBar().showMessage("潮流计算成功")
+                self._log_power_flow_results(net)
                 
                 # 批量更新能量统计
                 self._update_energy_stats_batch()

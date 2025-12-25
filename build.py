@@ -20,21 +20,40 @@ from src.config import (
     is_feature_enabled, conditional_compile, import_if_enabled
 )
 
-def check_conda_env():
-    """检查是否在conda环境中"""
-    conda_env = os.environ.get('CONDA_DEFAULT_ENV')
-    if conda_env:
-        print(f"当前conda环境: {conda_env}")
+def check_venv_env():
+    """检查是否在venv环境中"""
+    # 检查VIRTUAL_ENV环境变量
+    venv_path = os.environ.get('VIRTUAL_ENV')
+    if venv_path:
+        venv_name = os.path.basename(venv_path)
+        print(f"当前venv环境: {venv_name}")
+        print(f"venv路径: {venv_path}")
+        # 建议使用venv-build环境进行打包
+        if 'build' in venv_name.lower():
+            print("✓ 检测到打包环境，适合进行构建")
+        else:
+            print("⚠ 建议使用 venv-build 环境进行打包")
         return True
     else:
-        print("警告: 未检测到conda环境，建议激活pandapower_sim环境")
-        return False
+        # 检查是否在venv-build目录中运行
+        python_exe = sys.executable
+        if 'venv-build' in python_exe or 'venv_build' in python_exe:
+            print(f"检测到venv-build环境: {python_exe}")
+            return True
+        else:
+            print("警告: 未检测到venv环境")
+            print("建议激活 venv-build 环境:")
+            if sys.platform == "win32":
+                print("  .\\venv-build\\Scripts\\Activate.ps1")
+            else:
+                print("  source venv-build/bin/activate")
+            return False
 
 
 def check_pyinstaller():
     """检查PyInstaller是否已安装
     
-    注意：如果使用environment.yml创建环境，PyInstaller应该已经自动安装
+    注意：如果使用requirements-build.txt创建环境，PyInstaller应该已经自动安装
     """
     try:
         import PyInstaller
@@ -42,21 +61,14 @@ def check_pyinstaller():
         return True
     except ImportError:
         print("PyInstaller未安装，正在安装...")
-        print("提示：建议使用 'conda env create -f environment.yml' 创建包含PyInstaller的完整环境")
+        print("提示：建议使用 'python setup_venv.py' 创建包含PyInstaller的完整环境")
         try:
-            # 优先使用conda安装PyInstaller
-            subprocess.check_call(["conda", "install", "-y", "pyinstaller"])
-            print("PyInstaller通过conda安装成功")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller==6.15.0"])
+            print("PyInstaller通过pip安装成功")
             return True
         except subprocess.CalledProcessError:
-            print("conda安装失败，尝试使用pip安装...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
-                print("PyInstaller通过pip安装成功")
-                return True
-            except subprocess.CalledProcessError:
-                print("PyInstaller安装失败，请手动安装：conda install pyinstaller 或 pip install pyinstaller")
-                return False
+            print("PyInstaller安装失败，请手动安装：pip install pyinstaller==6.15.0")
+            return False
 
 
 def clean_build():
@@ -244,9 +256,9 @@ def main():
     """主函数"""
     print("=== PandaPower仿真器打包工具 ===")
     
-    # 1. 检查conda环境
-    print("\n[1/5] 检查conda环境...")
-    check_conda_env()
+    # 1. 检查venv环境
+    print("\n[1/5] 检查venv环境...")
+    check_venv_env()
     
     # 2. 检查PyInstaller
     print("\n[2/5] 检查PyInstaller...")

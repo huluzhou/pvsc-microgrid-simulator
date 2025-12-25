@@ -19,6 +19,36 @@ except ImportError:
     # 如果无法导入，默认为True
     FEATURE_SIMULATION = True
 
+def check_venv_env():
+    """检查是否在venv环境中"""
+    # 检查VIRTUAL_ENV环境变量
+    venv_path = os.environ.get('VIRTUAL_ENV')
+    if venv_path:
+        venv_name = os.path.basename(venv_path)
+        print(f"当前venv环境: {venv_name}")
+        print(f"venv路径: {venv_path}")
+        # 建议使用venv-build环境进行打包
+        if 'build' in venv_name.lower():
+            print("✓ 检测到打包环境，适合进行构建")
+        else:
+            print("⚠ 建议使用 venv-build 环境进行打包")
+        return True
+    else:
+        # 检查是否在venv-build目录中运行
+        python_exe = sys.executable
+        if 'venv-build' in python_exe or 'venv_build' in python_exe:
+            print(f"检测到venv-build环境: {python_exe}")
+            return True
+        else:
+            print("警告: 未检测到venv环境")
+            print("建议激活 venv-build 环境:")
+            if sys.platform == "win32":
+                print("  .\\venv-build\\Scripts\\Activate.ps1")
+            else:
+                print("  source venv-build/bin/activate")
+            return False
+
+
 def check_nuitka():
     """检查Nuitka是否已安装"""
     try:
@@ -36,8 +66,9 @@ def check_nuitka():
         return True
     except ImportError:
         print("Nuitka未安装，正在安装...")
+        print("提示：建议使用 'python setup_venv.py' 创建包含Nuitka的完整环境")
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "nuitka", "zstandard"])
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "nuitka>=2.7.14", "zstandard>=0.21.0"])
             print("Nuitka安装成功")
             return True
         except subprocess.CalledProcessError:
@@ -189,17 +220,21 @@ def main():
     print("=== PandaPower仿真器 Nuitka打包工具 ===")
     print("此工具将使用Nuitka编译Python代码为C++并生成高性能可执行文件")
     
-    # 1. 检查环境
-    print("\n[1/4] 检查环境...")
+    # 1. 检查venv环境
+    print("\n[1/4] 检查venv环境...")
+    check_venv_env()
+    
+    # 2. 检查Nuitka
+    print("\n[2/4] 检查Nuitka...")
     if not check_nuitka():
         return False
         
-    # 2. 清理构建文件
-    print("\n[2/4] 清理构建文件...")
+    # 3. 清理构建文件
+    print("\n[3/4] 清理构建文件...")
     clean_build()
     
-    # 3. 构建可执行文件
-    print("\n[3/4] 构建可执行文件...")
+    # 4. 构建可执行文件
+    print("\n[4/4] 构建可执行文件...")
     if not build_executable():
         return False
         
