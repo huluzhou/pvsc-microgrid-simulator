@@ -131,24 +131,29 @@ def update_main_window_version(new_version):
         print(f"更新main_window.py版本号时出错: {e}")
         return False
 
-def run_build_script():
-    """运行build.py脚本"""
-    build_script = Path("build.py")
+def run_build_script(tool="nuitka"):
+    """运行构建脚本"""
+    if tool == "nuitka":
+        script_name = "pack_nuitka.py"
+    else:
+        script_name = "build.py"
+        
+    build_script = Path(script_name)
     if not build_script.exists():
-        print(f"错误: 找不到build.py脚本")
+        print(f"错误: 找不到{script_name}脚本")
         return False
     
-    print("正在运行build.py脚本...")
+    print(f"正在运行{script_name}脚本...")
     try:
         result = subprocess.run([sys.executable, str(build_script)], 
                                    check=True, cwd=os.getcwd())
-        print("build.py脚本执行成功")
+        print(f"{script_name}脚本执行成功")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"build.py脚本执行失败")
+        print(f"{script_name}脚本执行失败")
         return False
     except Exception as e:
-        print(f"运行build.py时发生异常: {e}")
+        print(f"运行{script_name}时发生异常: {e}")
         return False
 
 def compress(dist_dir, output_file, format="7z"):
@@ -245,6 +250,8 @@ def main():
                       help='更新类型: feature(功能更新)、fix(修复) 或 none(不修改版本号)')
     parser.add_argument('--format', '-f', choices=['zip', '7z'], default='7z',
                       help='压缩格式: zip 或 7z (默认: 7z)')
+    parser.add_argument('--tool', choices=['nuitka', 'pyinstaller'], default='pyinstaller',
+                      help='打包工具: nuitka (默认) 或 pyinstaller')
     args = parser.parse_args()
     
     update_type = args.type
@@ -254,6 +261,7 @@ def main():
         update_type_text = "功能更新" if update_type == "feature" else "修复"
     print(f"更新类型: {update_type_text}")
     print(f"压缩格式: {args.format}")
+    print(f"打包工具: {args.tool}")
     
     # 1. 获取当前版本号
     print("\n[1/5] 获取当前版本号...")
@@ -280,7 +288,7 @@ def main():
     
     # 4. 运行build.py脚本
     print("\n[4/5] 构建项目...")
-    if not run_build_script():
+    if not run_build_script(args.tool):
         # 构建失败，如果修改了版本号则恢复
         if update_type != 'none':
             print("构建失败，恢复版本号...")
