@@ -22,41 +22,12 @@ METER_REG_ACTIVE_IMPORT = 8
 METER_REG_REACTIVE_EXPORT = 10
 METER_REG_REACTIVE_IMPORT = 11
 
-class LoggingSequentialDataBlock(ModbusSequentialDataBlock):
-    """带日志记录的顺序数据块"""
-    def __init__(self, address, values, name="Unknown"):
-        super().__init__(address, values)
-        self.name = name
-        
-    def setValues(self, address, values):
-        super().setValues(address, values)
-        # 记录写操作
-        logger.info(f"[{self.name}] Modbus Write - Address: {address}, Values: {values}")
-        
-    def getValues(self, address, count=1):
-        values = super().getValues(address, count)
-        # 记录读操作
-        logger.info(f"[{self.name}] Modbus Read - Address: {address}, Count: {count}, Values: {values}")
-        return values
+ 
 
-class LoggingSparseDataBlock(ModbusSparseDataBlock):
-    """带日志记录的稀疏数据块"""
-    def __init__(self, values, name="Unknown"):
-        super().__init__(values)
-        self.name = name
-        
-    def setValues(self, address, values):
-        super().setValues(address, values)
-        logger.info(f"[{self.name}] Modbus Write - Address: {address}, Values: {values}")
-        
-    def getValues(self, address, count=1):
-        values = super().getValues(address, count)
-        logger.info(f"[{self.name}] Modbus Read - Address: {address}, Count: {count}, Values: {values}")
-        return values
 
-class CallbackSequentialDataBlock(LoggingSequentialDataBlock):
+class CallbackSequentialDataBlock(ModbusSequentialDataBlock):
     def __init__(self, address, values, on_write=None, name="Unknown"):
-        super().__init__(address, values, name=name)
+        super().__init__(address, values)
         self._on_write = on_write
     def setValues(self, address, values):
         super().setValues(address, values)
@@ -190,7 +161,7 @@ class ModbusManager:
             on_write=lambda addr, vals: self._on_sgen_hold_write(device_info.get('index'), addr, vals),
             name=f"{device_name}_Hold"
         )
-        input_regs = LoggingSequentialDataBlock(0, sgen_input_registers, name=f"{device_name}_Input")
+        input_regs = ModbusSequentialDataBlock(0, sgen_input_registers)
         
         device_context = {
             1: ModbusDeviceContext(
@@ -231,7 +202,7 @@ class ModbusManager:
         
         # 创建ModbusSequentialDataBlock实例
         device_name = f"Meter_{device_info.get('index')}"
-        input_regs = LoggingSequentialDataBlock(0, meter_input_registers, name=f"{device_name}_Input")
+        input_regs = ModbusSequentialDataBlock(0, meter_input_registers)
         
         device_context = {
             1: ModbusDeviceContext(
@@ -296,8 +267,8 @@ class ModbusManager:
         storage_input_registers[912+1] = 12337   # SN_913 SN号
 
         device_name = f"Storage_{device_info.get('index')}"
-        holding_regs = LoggingSequentialDataBlock(0, storage_hold_registers, name=f"{device_name}_Hold")   
-        input_regs = LoggingSequentialDataBlock(0, storage_input_registers, name=f"{device_name}_Input")
+        holding_regs = ModbusSequentialDataBlock(0, storage_hold_registers)   
+        input_regs = ModbusSequentialDataBlock(0, storage_input_registers)
         device_context = {
             1: ModbusDeviceContext(
                 hr=holding_regs,
@@ -403,8 +374,8 @@ class ModbusManager:
         
         # 创建ModbusSequentialDataBlock实例
         device_name = f"Charger_{device_info.get('index')}"
-        holding_regs = LoggingSequentialDataBlock(0, charger_hold_registers, name=f"{device_name}_Hold")
-        input_regs = LoggingSequentialDataBlock(0, charger_input_registers, name=f"{device_name}_Input")
+        holding_regs = ModbusSequentialDataBlock(0, charger_hold_registers)
+        input_regs = ModbusSequentialDataBlock(0, charger_input_registers)
         
         device_context = {
             1: ModbusDeviceContext(
@@ -456,10 +427,10 @@ class ModbusManager:
         device_name = f"Default_{device_info.get('type')}_{device_info.get('index')}"
         device_context = {
             1: ModbusDeviceContext(
-                di=LoggingSparseDataBlock({}, name=f"{device_name}_DI"),
-                co=LoggingSparseDataBlock({}, name=f"{device_name}_CO"),
-                hr=LoggingSparseDataBlock(default_registers, name=f"{device_name}_HR"),
-                ir=LoggingSparseDataBlock({}, name=f"{device_name}_IR")
+                di=ModbusSparseDataBlock({}),
+                co=ModbusSparseDataBlock({}),
+                hr=ModbusSparseDataBlock(default_registers),
+                ir=ModbusSparseDataBlock({})
             )
         }
         

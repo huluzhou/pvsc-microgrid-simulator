@@ -65,6 +65,26 @@ class LoggerManager:
         # 添加处理器到logger
         self.logger.addHandler(file_handler)
         
+        # 将pymodbus日志重定向到同一处理器
+        try:
+            modbus_loggers = [
+                # 'pymodbus',
+                'pymodbus.client',
+                'pymodbus.server',
+                'pymodbus.framer',
+                # 'pymodbus.datastore',
+                'pymodbus.transaction',
+                'pymodbus.transport'
+            ]
+            for name in modbus_loggers:
+                l = logging.getLogger(name)
+                l.setLevel(logging.DEBUG)
+                l.propagate = False
+                if not any(isinstance(h, RotatingFileHandler) and getattr(h, 'baseFilename', None) == file_handler.baseFilename for h in l.handlers):
+                    l.addHandler(file_handler)
+        except Exception:
+            pass
+        
     def debug(self, message):
         """记录调试日志"""
         self.logger.debug(message)
