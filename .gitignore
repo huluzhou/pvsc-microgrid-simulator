@@ -11,3 +11,23 @@ src/__pycache__
 *.pyc
 *.zip
 dist_pyinstaller
+
+# venv环境目录
+venv-dev/
+venv-build/
+venv/
+.venv/
+env/
+ENV/
+
+# Python相关
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
