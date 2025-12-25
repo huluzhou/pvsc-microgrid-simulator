@@ -52,7 +52,7 @@ class Application:
         self._topology_connection_management_use_case = TopologyConnectionManagementUseCase(self._event_bus, self._topology_repository)
         self._topology_validation_use_case = TopologyValidationUseCase(self._event_bus, self._topology_repository)
         self._topology_optimization_use_case = TopologyOptimizationUseCase(self._event_bus, self._topology_repository)
-        self._topology_query_use_case = TopologyQueryUseCase()
+        self._topology_query_use_case = TopologyQueryUseCase(self._topology_repository)
         self._topology_file_use_case = TopologyFileUseCase(self._topology_repository)
         self._topology_undo_redo_use_case = UndoRedoUseCase()
     
@@ -78,6 +78,11 @@ class Application:
     @property
     def topology_undo_redo_use_case(self):
         return self._topology_undo_redo_use_case
+    
+    @property
+    def topology_query_use_case(self):
+        """获取拓扑查询用例"""
+        return self._topology_query_use_case
     
     def run(self):
         """运行应用程序"""
