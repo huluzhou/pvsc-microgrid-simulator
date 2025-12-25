@@ -7,6 +7,10 @@
 
 import sys
 import os
+
+# 首先导入logger以确保日志配置在pymodbus导入之前完成
+from utils.logger import logger
+
 from PySide6.QtWidgets import QApplication
 from components.main_window import MainWindow
 from config import get_resource_path

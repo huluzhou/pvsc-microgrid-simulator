@@ -250,7 +250,7 @@ def main():
                       help='更新类型: feature(功能更新)、fix(修复) 或 none(不修改版本号)')
     parser.add_argument('--format', '-f', choices=['zip', '7z'], default='7z',
                       help='压缩格式: zip 或 7z (默认: 7z)')
-    parser.add_argument('--tool', choices=['nuitka', 'pyinstaller'], default='nuitka',
+    parser.add_argument('--tool', choices=['nuitka', 'pyinstaller'], default='pyinstaller',
                       help='打包工具: nuitka (默认) 或 pyinstaller')
     args = parser.parse_args()
     
