@@ -1,0 +1,68 @@
+{
+  "app": {
+    "name": "Power Simulation System",
+    "version": "1.0.0",
+    "debug": false
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "datefmt": "%Y-%m-%d %H:%M:%S",
+    "handlers": [
+      {
+        "type": "file",
+        "config": {
+          "log_dir": "logs",
+          "max_bytes": 10485760,
+          "backup_count": 100
+        }
+      },
+      {
+        "type": "console",
+        "config": {
+          "stream": "stdout",
+          "level": "INFO"
+        }
+      }
+    ]
+  },
+  "exception_handling": {
+    "retryable_exceptions": [
+      "socket.timeout",
+      "ConnectionError",
+      "TimeoutError"
+    ],
+    "recoverable_exceptions": [
+      "ValueError",
+      "KeyError",
+      "IndexError",
+      "TypeError",
+      "AttributeError"
+    ],
+    "notification": {
+      "enabled": false,
+      "channels": [
+        "email",
+        "console"
+      ]
+    },
+    "max_retries": 3,
+    "retry_delay": 1.0
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "power_simulation",
+    "user": "admin",
+    "password": "password",
+    "pool_size": 10
+  },
+  "cache": {
+    "enabled": true,
+    "ttl": 3600
+  },
+  "performance": {
+    "enable_caching": true,
+    "optimize_rendering": true
+  }
+}
