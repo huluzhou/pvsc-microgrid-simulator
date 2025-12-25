@@ -4,9 +4,9 @@
 
 - `src/domain/`：领域模型与业务规则（实体、值对象、领域服务、规格、事件）。
 - `src/application/`：用例编排与应用服务（用例、DTO、命令）。不含基础设施和 UI 细节。
-- `src/adapters/`：适配器层，连接外部世界与端口（UI、协议、存储等）。
+- `src/adapters/`：适配器层，连接外部世界与端口（UI、存储等）。
   - `inbound/`：入站适配器（UI、API），调用应用层用例。
-  - `external_services/`：出站适配器（协议等），实现应用/领域端口。
+  - `external_services/`：出站适配器（存储、协议等），可按需实现并通过端口注入。
 - `src/infrastructure/`：跨层的技术能力（日志、配置、DI、事件中介等）。
 
 ## 端口策略
@@ -23,10 +23,34 @@
   - `topology/`：对拓扑组件的稳定封装导出（新增），供外部引用。
   - `main_application.py`：应用入口（后续可迁移引用至 `topology/`）。
 
-## 已执行的清理
+## 已执行的清理（2025年）
 
-- 删除：`backup/`、顶层 `examples/`、顶层 `ui_design/`、`src/adapters/inbound/ui/qml/`、`tests/integration/`、与拓扑无关的单元测试，以及冗余 PDF/非拓扑 UI 文档。
-- 文档保留重点：`doc/architecture_design/functional_requirements_specification.md` 与 `doc/ui_design/topology_design.svg`。
+### 删除的未实现功能
+- `src/domain/aggregates/analytics/` - 分析功能（未实现）
+- `src/domain/aggregates/backtest/` - 回测功能（未实现）
+- `src/domain/aggregates/device_control/` - 设备控制（未实现）
+- `src/domain/aggregates/power_management/` - 功率管理（未实现）
+- `src/adapters/external_services/protocols/` - 协议适配器（MQTT/Modbus，未实现）
+
+### 删除的冗余内容
+- `backup/` - 备份目录
+- `src/components/`、`src/models/`、`src/utils/` - 空目录
+- `src/adapters/inbound/topology/` - 冗余目录
+- 测试数据文件（`*.json` 拓扑文件）
+- 构建产物（`dist/`、`main.build/`、`main.dist/`）
+- 日志文件
+- 非拓扑相关的测试文件
+
+### 保留的核心功能
+- ✅ 拓扑聚合（完整实现）
+- ✅ 拓扑用例（完整实现）
+- ✅ PySide6 UI适配器（完整实现）
+- ✅ 基础设施层（日志、配置、DI、事件总线）
+
+### 文档保留
+- `doc/architecture_design/functional_requirements_specification.md` - 功能需求规格
+- `doc/ui_design/topology_design.svg` - UI设计图
+- `docs/domain_events_best_practices.md` - 领域事件最佳实践
 
 ## 与功能需求的对应（拓扑设计模块）
 
