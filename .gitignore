@@ -31,3 +31,4 @@ ENV/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+pandapower_sim.spec
