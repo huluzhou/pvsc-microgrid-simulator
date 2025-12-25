@@ -91,12 +91,8 @@ class TopologyCreationUseCase:
         else:
             saved_topology = topology
         
-        # 发布领域事件
-        self.event_bus.publish(TopologyCreatedEvent(
-            topology_id=str(saved_topology.id),
-            name=saved_topology.name,
-            description=saved_topology.description
-        ))
+        # 注意：领域事件已由领域层记录（MicrogridTopology.__init__），
+        # 如果需要发布事件，应从聚合根获取并发布，而不是在这里重新创建
         
         # 返回结果
         return CreateTopologyResponseDTO(
@@ -183,12 +179,8 @@ class TopologyDeviceManagementUseCase:
         # 持久化更新后的拓扑实体（通过应用层输出端口）
         updated_topology = self._topology_repository.update(topology)
         
-        # 发布领域事件
-        self.event_bus.publish(DeviceAddedEvent(
-            topology_id=str(command.topology_id),
-            device_id=device.id,
-            device_type=str(device.device_type.type)
-        ))
+        # 注意：领域事件已由领域层记录（topology.add_device），
+        # 如果需要发布事件，应从聚合根获取并发布，而不是在这里重新创建
         
         # 返回结果
         return AddDeviceResponseDTO.from_domain(
@@ -238,12 +230,8 @@ class TopologyDeviceManagementUseCase:
         # 持久化更新后的拓扑实体
         self._topology_repository.save(topology)
         
-        # 发布领域事件
-        self.event_bus.publish(TopologyUpdatedEvent(
-            topology_id=str(topology.id),
-            name=topology.name,
-            description=topology.description
-        ))
+        # 注意：领域事件已由领域层记录（topology.update_info），
+        # 如果需要发布事件，应从聚合根获取并发布，而不是在这里重新创建
         
         return DeviceDTO(
             device_id=device.id,
@@ -279,11 +267,8 @@ class TopologyDeviceManagementUseCase:
         # 更新存储库中的拓扑实体（使用save方法）
         self._topology_repository.save(topology)
         
-        # 发布领域事件
-        self.event_bus.publish(DeviceRemovedEvent(
-            topology_id=str(command.topology_id),
-            device_id=command.device_id
-        ))
+        # 注意：领域事件已由领域层记录（topology.remove_device），
+        # 如果需要发布事件，应从聚合根获取并发布，而不是在这里重新创建
         
         # 后置条件：设备移除成功
         return True
@@ -315,21 +300,13 @@ class TopologyConnectionManagementUseCase:
         """创建连接"""
         if not self._topology_repository:
             connection_id = f"conn_{command.source_device_id}_{command.target_device_id}"
-            self.event_bus.publish(ConnectionCreatedEvent(
-                topology_id=str(command.topology_id),
-                connection_id=connection_id,
-                source_device_id=command.source_device_id,
-                target_device_id=command.target_device_id
-            ))
-            return CreateConnectionResponseDTO(
-                connection_id=connection_id,
-                source_device_id=command.source_device_id,
-                target_device_id=command.target_device_id,
-                message="连接创建成功"
-            )
+            # 注意：没有仓库时无法创建连接，直接返回错误响应
+            raise ValueError("拓扑存储库未初始化")
+        
         topology = self._topology_repository.get(str(command.topology_id))
         if not topology:
             raise ValueError(f"拓扑 {command.topology_id} 不存在")
+        
         connection_id = f"conn_{command.source_device_id}_{command.target_device_id}"
         connection = Connection(
             connection_id=connection_id,
@@ -340,12 +317,10 @@ class TopologyConnectionManagementUseCase:
         )
         topology.add_connection(connection)
         self._topology_repository.save(topology)
-        self.event_bus.publish(ConnectionCreatedEvent(
-            topology_id=str(topology.id),
-            connection_id=connection.id,
-            source_device_id=connection.source_device_id,
-            target_device_id=connection.target_device_id
-        ))
+        
+        # 注意：领域事件已由领域层记录（topology.add_connection），
+        # 如果需要发布事件，应从聚合根获取并发布，而不是在这里重新创建
+        
         return CreateConnectionResponseDTO(
             connection_id=connection.id,
             source_device_id=connection.source_device_id,
@@ -496,12 +471,8 @@ class TopologyOptimizationUseCase:
             topology=topology
         )
         
-        # 发布领域事件
-        self.event_bus.publish(TopologyUpdatedEvent(
-            topology_id=str(topology.id),
-            name=topology.name,
-            description=topology.description
-        ))
+        # 注意：如果优化过程中修改了拓扑，领域层会记录相应的事件
+        # 如果需要发布事件，应从聚合根获取并发布，而不是在这里重新创建
         
         # 后置条件：优化完成，返回结果
         return OptimizeTopologyResponseDTO(
@@ -514,6 +485,24 @@ class TopologyOptimizationUseCase:
 
 class TopologyQueryUseCase:
     """拓扑查询用例"""
+    
+    def __init__(self, topology_repository=None):
+        """初始化拓扑查询用例"""
+        from infrastructure.third_party.di.services import InMemoryTopologyRepository
+        self._topology_repository = topology_repository or InMemoryTopologyRepository()
+    
+    def get_topology_entity(self, topology_id: str) -> Optional[MicrogridTopology]:
+        """根据ID获取拓扑实体
+        
+        Args:
+            topology_id: 拓扑ID字符串
+            
+        Returns:
+            拓扑实体，如果不存在则返回None
+        """
+        if not self._topology_repository:
+            return None
+        return self._topology_repository.get(topology_id)
     
     def get_topology(self, topology_id: str) -> Optional[TopologyDTO]:
         """根据ID获取拓扑"""
