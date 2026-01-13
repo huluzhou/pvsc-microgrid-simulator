@@ -486,7 +486,7 @@ class SimulationWindow(QMainWindow):
                 self,
                 "选择回测数据文件",
                 "",
-                "SQLite数据库 (*.db);;所有文件 (*.*)"
+                "SQLite数据库 (*.db);;CSV文件 (*.csv);;所有文件 (*.*)"
             )
             if not file_path:
                 return
@@ -494,7 +494,7 @@ class SimulationWindow(QMainWindow):
                 self,
                 "选择数据格式",
                 "请选择数据格式:",
-                ["默认格式 (SQLite数据库)", "滁州工厂数据格式"],
+                ["默认格式 (SQLite数据库)", "CSV格式 (负载计算)"],
                 0,
                 False
             )
@@ -502,6 +502,9 @@ class SimulationWindow(QMainWindow):
                 return
             if data_format == "默认格式 (SQLite数据库)" and not file_path.endswith('.db'):
                 QMessageBox.warning(self, "格式错误", "请选择SQLite数据库文件 (*.db)")
+                return
+            if data_format == "CSV格式 (负载计算)" and not file_path.endswith('.csv'):
+                QMessageBox.warning(self, "格式错误", "请选择CSV文件 (*.csv)")
                 return
             self._backtest_import_cancelled = False
             self.backtest_progress_dialog = QProgressDialog("正在导入回测数据...", "取消", 0, 100, self)
@@ -669,6 +672,160 @@ class SimulationWindow(QMainWindow):
             QMessageBox.critical(self, "导入失败", 
                                f"导入滁州工厂数据时发生错误: {str(e)}")
             raise
+    
+    def _read_backtest_data_csv(self, file_path):
+        """读取CSV格式的回测数据并计算负载功率
+        
+        计算公式：负载 = 关口电表（THMEMET000JMQQY0VKZMM）- 储能设备（THBESS0000AHDVJ73VPD2）
+        注意：
+        - 关口电表功率为正表示用电，为负表示逆流
+        - 储能设备负表示充电，正表示放电
+        - 需要对齐数据，处理空值
+        """
+        try:
+            import pandas as pd
+            from datetime import datetime
+            
+            # 设备序列号定义
+            gateway_meter_sn = 'THMEMET000JMQQY0VKZMM'  # 关口电表
+            storage_sn = 'THBESS0000AHDVJ73VPD2'  # 储能设备
+            
+            # 读取CSV文件
+            df = pd.read_csv(file_path)
+            
+            # 检查必要的列是否存在
+            required_cols = [
+                'local_timestamp',
+                f'{gateway_meter_sn}_activePower',
+                f'{gateway_meter_sn}_reactivePower',
+                f'{storage_sn}_activePower',
+                f'{storage_sn}_reactivePower'
+            ]
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                raise Exception(f"CSV文件缺少必要的列: {', '.join(missing_cols)}")
+            
+            # 解析时间戳（保留毫秒精度，避免转换为秒级时产生重复）
+            def parse_timestamp(ts_str):
+                try:
+                    # 格式：2026/01/13 00:00:00.332
+                    dt = datetime.strptime(ts_str, '%Y/%m/%d %H:%M:%S.%f')
+                    return dt.timestamp()  # 保留毫秒精度，不截断
+                except:
+                    try:
+                        # 尝试不带毫秒的格式
+                        dt = datetime.strptime(ts_str, '%Y/%m/%d %H:%M:%S')
+                        return dt.timestamp()
+                    except:
+                        logger.warning(f"无法解析时间戳: {ts_str}")
+                        return None
+            
+            # 转换时间戳（保留毫秒精度）
+            df['timestamp'] = df['local_timestamp'].apply(parse_timestamp)
+            df = df[df['timestamp'].notna()]  # 移除无法解析的时间戳
+            
+            if df.empty:
+                raise Exception("没有有效的时间戳数据")
+            
+            # 提取相关列
+            gateway_active_col = f'{gateway_meter_sn}_activePower'
+            gateway_reactive_col = f'{gateway_meter_sn}_reactivePower'
+            storage_active_col = f'{storage_sn}_activePower'
+            storage_reactive_col = f'{storage_sn}_reactivePower'
+            
+            # 创建数据框，只包含时间戳和功率数据
+            data_df = pd.DataFrame({
+                'timestamp': df['timestamp'],
+                'gateway_active': pd.to_numeric(df[gateway_active_col], errors='coerce'),
+                'gateway_reactive': pd.to_numeric(df[gateway_reactive_col], errors='coerce'),
+                'storage_active': pd.to_numeric(df[storage_active_col], errors='coerce'),
+                'storage_reactive': pd.to_numeric(df[storage_reactive_col], errors='coerce')
+            })
+            
+            # 按时间戳排序
+            data_df = data_df.sort_values('timestamp')
+            
+            # 设置时间戳为索引以便重采样
+            data_df.set_index('timestamp', inplace=True)
+            
+            # 将毫秒级时间戳索引转换为秒级（向下取整到秒）
+            # 这样同一秒内的多个毫秒时间戳会被正确分组
+            data_df.index = data_df.index.astype(int)
+            
+            # 对相同秒级时间戳的数据进行分组并取平均值（处理可能的重复）
+            data_df = data_df.groupby(data_df.index).mean()
+            
+            # 获取最小和最大时间戳（秒级）
+            min_ts = int(data_df.index.min())
+            max_ts = int(data_df.index.max())
+            
+            # 生成完整的秒级时间戳序列
+            complete_timestamps = pd.Index(range(min_ts, max_ts + 1), name='timestamp')
+            
+            # 重采样到秒级，使用线性插值填充缺失值
+            data_df_resampled = data_df.reindex(complete_timestamps)
+            
+            # 对功率数据进行线性插值（双向填充）
+            for col in ['gateway_active', 'gateway_reactive', 'storage_active', 'storage_reactive']:
+                data_df_resampled[col] = data_df_resampled[col].interpolate(method='linear', limit_direction='both')
+            
+            # 对于边界外的值，使用前向填充和后向填充
+            data_df_resampled = data_df_resampled.ffill().bfill()
+            
+            # 转换储能功率单位：从kW转换为MW（储能数据单位为kW）
+            data_df_resampled['storage_active'] = data_df_resampled['storage_active'] / 1000.0
+            
+            # 重置索引，将时间戳作为列
+            data_df_resampled.reset_index(inplace=True)
+            
+            # 计算负载功率
+            # 功率平衡关系：-gateway = -storage + load
+            # 因此：load = storage - gateway
+            # 注意：关口电表功率为正表示用电，为负表示逆流
+            # 储能设备负表示充电，正表示放电
+            data_df_resampled['load_active'] = (
+                data_df_resampled['storage_active'] - data_df_resampled['gateway_active']
+            )
+            data_df_resampled['load_reactive'] = (
+                data_df_resampled['storage_reactive'] - data_df_resampled['gateway_reactive']
+            )
+            
+            # 转换负载功率单位：从kW转换为MW（如果gateway也是kW单位）
+            # 注意：gateway和storage现在都是MW单位，所以load也是MW单位
+            
+            # 获取负载设备ID
+            # 尝试从network_items中获取第一个负载设备的ID
+            load_device_id = 1  # 默认值
+            if hasattr(self, 'network_items') and self.network_items:
+                if 'load' in self.network_items and self.network_items['load']:
+                    # 获取第一个负载设备的ID
+                    first_load_item = next(iter(self.network_items['load'].values()))
+                    if hasattr(first_load_item, 'component_index'):
+                        load_device_id = first_load_item.component_index
+                        logger.info(f"使用负载设备ID: {load_device_id}")
+            
+            # 构建标准格式的DataFrame
+            result_data = []
+            for _, row in data_df_resampled.iterrows():
+                result_data.append({
+                    'timestamp': int(row['timestamp']),
+                    'device_type': 'load',
+                    'device_id': load_device_id,
+                    'p_mw': row['load_active'],
+                    'q_mvar': row['load_reactive']
+                })
+            
+            result_df = pd.DataFrame(result_data)
+            
+            logger.info(f"CSV数据导入完成，总记录数: {len(result_df)}")
+            logger.info(f"时间范围: {min_ts} - {max_ts} 秒")
+            logger.info(f"负载功率范围: {result_df['p_mw'].min():.3f} - {result_df['p_mw'].max():.3f} MW")
+            
+            return result_df
+            
+        except Exception as e:
+            logger.error(f"导入CSV数据失败: {str(e)}")
+            raise Exception(f"导入CSV数据时发生错误: {str(e)}")
             
     def _read_backtest_data_from_db(self, db_path):
         """从SQLite数据库读取回测数据"""
@@ -937,8 +1094,11 @@ class SimulationWindow(QMainWindow):
             self.backtest_import_progress.emit(5)
             if data_format == "默认格式 (SQLite数据库)":
                 df = self._read_backtest_data_from_db(file_path)
+            elif data_format == "CSV格式 (负载计算)":
+                df = self._read_backtest_data_csv(file_path)
             else:
-                df = self._read_backtest_data_chuzhou(file_path)
+                raise Exception("不支持的数据格式")
+
             if self._backtest_import_cancelled:
                 self.backtest_import_failed.emit("已取消")
                 return

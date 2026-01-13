@@ -244,11 +244,20 @@ class NetworkModel:
         Returns:
             int: pandapower测量索引
         """
+        # 获取element_type，pandapower不支持storage和charger作为element_type
+        # 如果element_type是storage或charger，则映射为bus（测量其连接的母线）
+        element_type = properties.get("element_type", "bus")
+        if element_type in ["storage", "charger"]:
+            # pandapower不支持直接测量storage和charger，改为测量它们连接的母线
+            element_type = "bus"
+            logger.warning(f"电表 {properties.get('name', 'Meter')} 的element_type为{properties.get('element_type')}，"
+                         f"pandapower不支持，已自动映射为bus（测量连接的母线）")
+        
         # 创建电表测量
         measurement_idx = pp.create_measurement(
             self.net,
             meas_type=properties.get("meas_type", "p"),  # 默认测量有功功率
-            element_type=properties.get("element_type", "bus"),  # 默认测量母线
+            element_type=element_type,  # 测量元件类型（已处理不支持的类型）
             value=properties.get("value", 0.0),  # 测量值
             std_dev=properties.get("std_dev", 0.0),  # 标准偏差
             element=properties.get("element", 0),  # 元件索引
