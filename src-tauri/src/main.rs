@@ -11,7 +11,8 @@ use services::python_bridge::PythonBridge;
 use services::database::Database;
 use services::simulation_engine::SimulationEngine;
 use domain::metadata::DeviceMetadataStore;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 fn main() {
     tauri::Builder::default()
@@ -24,9 +25,10 @@ fn main() {
                 window.open_devtools();
             }
 
-            // 初始化 Python 桥接
+            // 初始化 Python 桥接（异步）
             let mut python_bridge = PythonBridge::new();
-            if let Err(e) = python_bridge.start() {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            if let Err(e) = rt.block_on(python_bridge.start()) {
                 eprintln!("Failed to start Python bridge: {}", e);
             }
 

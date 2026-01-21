@@ -4,7 +4,8 @@ use tauri::State;
 use crate::domain::metadata::DeviceMetadataStore;
 use crate::domain::device::{DeviceMetadata, WorkMode};
 use crate::services::simulation_engine::SimulationEngine;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeviceConfig {
@@ -60,7 +61,7 @@ pub async fn update_device_config(
     // 更新配置
     if let Some(work_mode_str) = &config.work_mode {
         // 设置工作模式
-        engine.set_device_mode(config.device_id.clone(), work_mode_str.clone())?;
+        engine.set_device_mode(config.device_id.clone(), work_mode_str.clone()).await?;
     }
     
     // 更新设备元数据（响应延迟、测量误差等）
@@ -76,7 +77,7 @@ pub async fn batch_set_device_mode(
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<(), String> {
     for device_id in device_ids {
-        engine.set_device_mode(device_id, mode.clone())?;
+        engine.set_device_mode(device_id, mode.clone()).await?;
     }
     Ok(())
 }

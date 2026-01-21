@@ -22,35 +22,35 @@ pub struct DeviceModeRequest {
 pub async fn start_simulation(
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<(), String> {
-    engine.start()
+    engine.start().await
 }
 
 #[tauri::command]
 pub async fn stop_simulation(
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<(), String> {
-    engine.stop()
+    engine.stop().await
 }
 
 #[tauri::command]
 pub async fn pause_simulation(
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<(), String> {
-    engine.pause()
+    engine.pause().await
 }
 
 #[tauri::command]
 pub async fn resume_simulation(
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<(), String> {
-    engine.resume()
+    engine.resume().await
 }
 
 #[tauri::command]
 pub async fn get_simulation_status(
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<SimulationStatus, String> {
-    Ok(engine.get_status())
+    Ok(engine.get_status().await)
 }
 
 #[tauri::command]
@@ -59,7 +59,7 @@ pub async fn set_device_mode(
     mode: String,
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<(), String> {
-    engine.set_device_mode(device_id, mode)
+    engine.set_device_mode(device_id, mode).await
 }
 
 #[tauri::command]
@@ -67,5 +67,5 @@ pub async fn get_device_data(
     device_id: String,
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<serde_json::Value, String> {
-    engine.get_device_data(&device_id)
+    engine.get_device_data(&device_id).await
 }

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::services::database::Database;
 use crate::services::python_bridge::PythonBridge;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AnalysisRequest {
@@ -53,7 +53,7 @@ pub async fn analyze_performance(
     }
     
     // 调用 Python 内核进行分析
-    let mut bridge = python_bridge.lock().unwrap();
+    let mut bridge = python_bridge.lock().await;
     let params = serde_json::json!({
         "analysis_type": request.analysis_type,
         "data": all_data,
@@ -61,7 +61,7 @@ pub async fn analyze_performance(
         "end_time": request.end_time,
     });
     
-    let result = bridge.call("analytics.analyze", params)
+    let result = bridge.call("analytics.analyze", params).await
         .map_err(|e| format!("Failed to analyze: {}", e))?;
     
     serde_json::from_value(result)
@@ -84,7 +84,7 @@ pub async fn generate_report(
     }
     
     // 调用 Python 内核生成报告
-    let mut bridge = python_bridge.lock().unwrap();
+    let mut bridge = python_bridge.lock().await;
     let params = serde_json::json!({
         "report_type": request.report_type,
         "data": all_data,
@@ -93,7 +93,7 @@ pub async fn generate_report(
         "format": request.format,
     });
     
-    let result = bridge.call("analytics.generate_report", params)
+    let result = bridge.call("analytics.generate_report", params).await
         .map_err(|e| format!("Failed to generate report: {}", e))?;
     
     // 返回报告文件路径或内容

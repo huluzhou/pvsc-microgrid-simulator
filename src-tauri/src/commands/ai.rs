@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::services::python_bridge::PythonBridge;
 use crate::services::simulation_engine::SimulationEngine;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PredictionRequest {
@@ -44,11 +45,11 @@ pub async fn predict_device_data(
     request: PredictionRequest,
     python_bridge: State<'_, Mutex<PythonBridge>>,
 ) -> Result<Vec<PredictionResult>, String> {
-    let mut bridge = python_bridge.lock().unwrap();
+    let mut bridge = python_bridge.lock().await;
     let params = serde_json::to_value(&request)
         .map_err(|e| format!("Failed to serialize request: {}", e))?;
     
-    let result = bridge.call("ai.predict", params)
+    let result = bridge.call("ai.predict", params).await
         .map_err(|e| format!("Failed to call AI prediction: {}", e))?;
     
     serde_json::from_value(result)
@@ -60,11 +61,11 @@ pub async fn optimize_operation(
     request: OptimizationRequest,
     python_bridge: State<'_, Mutex<PythonBridge>>,
 ) -> Result<OptimizationResult, String> {
-    let mut bridge = python_bridge.lock().unwrap();
+    let mut bridge = python_bridge.lock().await;
     let params = serde_json::to_value(&request)
         .map_err(|e| format!("Failed to serialize request: {}", e))?;
     
-    let result = bridge.call("ai.optimize", params)
+    let result = bridge.call("ai.optimize", params).await
         .map_err(|e| format!("Failed to call AI optimization: {}", e))?;
     
     serde_json::from_value(result)
@@ -76,12 +77,12 @@ pub async fn get_ai_recommendations(
     device_ids: Vec<String>,
     python_bridge: State<'_, Mutex<PythonBridge>>,
 ) -> Result<Vec<String>, String> {
-    let mut bridge = python_bridge.lock().unwrap();
+    let mut bridge = python_bridge.lock().await;
     let params = serde_json::json!({
         "device_ids": device_ids
     });
     
-    let result = bridge.call("ai.get_recommendations", params)
+    let result = bridge.call("ai.get_recommendations", params).await
         .map_err(|e| format!("Failed to get AI recommendations: {}", e))?;
     
     serde_json::from_value(result.get("recommendations").cloned().unwrap_or(serde_json::json!([])))

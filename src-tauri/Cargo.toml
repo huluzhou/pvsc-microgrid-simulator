@@ -21,6 +21,7 @@ thiserror = "1.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 async-ssh2-tokio = "0.9"  # SSH 客户端（参考 remote-tool）
+rand = "0.8"  # 随机数生成（用于误差模拟）
 
 [features]
 default = ["custom-protocol"]

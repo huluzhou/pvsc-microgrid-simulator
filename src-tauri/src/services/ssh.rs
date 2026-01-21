@@ -1,7 +1,7 @@
 // SSH 客户端（远程数据库访问）
-// 参考 remote-tool 的实现方式
+use async_ssh2_tokio::client::{Client, AuthMethod, ServerCheckMethod};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::net::SocketAddr;
 use anyhow::{Result, Context};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,36 +19,61 @@ pub enum AuthMethodConfig {
 }
 
 pub struct SshClient {
-    // SSH 客户端将在后续阶段使用 async-ssh2-tokio 实现
-    // 目前先提供接口定义
+    client: Option<Client>,
     config: Option<SshConfig>,
-    connected: bool,
 }
 
 impl SshClient {
     pub fn new() -> Self {
         Self {
+            client: None,
             config: None,
-            connected: false,
         }
     }
 
     pub async fn connect(&mut self, config: SshConfig) -> Result<()> {
-        // TODO: 使用 async-ssh2-tokio 实现连接
-        // 参考 remote-tool 的实现方式
+        let addr: SocketAddr = format!("{}:{}", config.host, config.port)
+            .parse()
+            .context("Invalid host:port format")?;
+        
+        let auth_method = match &config.auth_method {
+            AuthMethodConfig::Password(pwd) => AuthMethod::Password(pwd.clone()),
+            AuthMethodConfig::KeyFile { path, passphrase } => {
+                let key_content = std::fs::read_to_string(path)
+                    .context("Failed to read key file")?;
+                AuthMethod::Pubkey {
+                    key: key_content,
+                    passphrase: passphrase.clone(),
+                }
+            }
+        };
+
+        let client = Client::connect(
+            addr,
+            config.user.clone(),
+            auth_method,
+            ServerCheckMethod::NoCheck,
+        )
+        .await
+        .context("Failed to connect to SSH server")?;
+
+        self.client = Some(client);
         self.config = Some(config);
-        self.connected = true;
         Ok(())
     }
 
     pub async fn execute_command(&mut self, command: &str) -> Result<String> {
-        if !self.connected {
-            return Err(anyhow::anyhow!("SSH client not connected"));
+        let client = self.client.as_mut()
+            .ok_or_else(|| anyhow::anyhow!("SSH client not connected"))?;
+        
+        let result = client.execute(command).await
+            .context("Failed to execute command")?;
+        
+        if result.exit_status != 0 {
+            return Err(anyhow::anyhow!("Command failed: {}", result.stderr));
         }
         
-        // TODO: 使用 async-ssh2-tokio 执行命令
-        // 目前返回占位符
-        Ok(format!("Command executed: {}", command))
+        Ok(result.stdout)
     }
 
     pub async fn query_remote_database(
@@ -68,11 +93,11 @@ impl SshClient {
     }
 
     pub fn is_connected(&self) -> bool {
-        self.connected
+        self.client.is_some()
     }
 
     pub fn disconnect(&mut self) {
-        self.connected = false;
+        self.client = None;
         self.config = None;
     }
 }
