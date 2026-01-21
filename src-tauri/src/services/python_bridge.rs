@@ -4,7 +4,7 @@ use anyhow::{Result, Context};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, oneshot};
-use tokio::process::{Command, ChildStdin, ChildStdout};
+use tokio::process::{Command, ChildStdin};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::{timeout, Duration};
 
@@ -69,7 +69,6 @@ impl PythonBridge {
 
         // 启动后台任务读取 stdout
         let pending = self.pending_requests.clone();
-        let request_id = self.request_id.clone();
         
         let handle = tokio::spawn(async move {
             let reader = BufReader::new(stdout);

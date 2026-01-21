@@ -2,9 +2,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::services::python_bridge::PythonBridge;
-use crate::services::simulation_engine::SimulationEngine;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PredictionRequest {
@@ -43,7 +41,7 @@ pub struct OptimizationResult {
 #[tauri::command]
 pub async fn predict_device_data(
     request: PredictionRequest,
-    python_bridge: State<'_, Mutex<PythonBridge>>,
+    python_bridge: State<'_, TokioMutex<PythonBridge>>,
 ) -> Result<Vec<PredictionResult>, String> {
     let mut bridge = python_bridge.lock().await;
     let params = serde_json::to_value(&request)
@@ -59,7 +57,7 @@ pub async fn predict_device_data(
 #[tauri::command]
 pub async fn optimize_operation(
     request: OptimizationRequest,
-    python_bridge: State<'_, Mutex<PythonBridge>>,
+    python_bridge: State<'_, TokioMutex<PythonBridge>>,
 ) -> Result<OptimizationResult, String> {
     let mut bridge = python_bridge.lock().await;
     let params = serde_json::to_value(&request)
@@ -75,7 +73,7 @@ pub async fn optimize_operation(
 #[tauri::command]
 pub async fn get_ai_recommendations(
     device_ids: Vec<String>,
-    python_bridge: State<'_, Mutex<PythonBridge>>,
+    python_bridge: State<'_, TokioMutex<PythonBridge>>,
 ) -> Result<Vec<String>, String> {
     let mut bridge = python_bridge.lock().await;
     let params = serde_json::json!({

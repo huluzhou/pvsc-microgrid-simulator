@@ -41,16 +41,16 @@ impl SshClient {
             AuthMethodConfig::KeyFile { path, passphrase } => {
                 let key_content = std::fs::read_to_string(path)
                     .context("Failed to read key file")?;
-                AuthMethod::Pubkey {
-                    key: key_content,
-                    passphrase: passphrase.clone(),
+                AuthMethod::PrivateKey {
+                    key_data: key_content,
+                    key_pass: passphrase.clone(),
                 }
             }
         };
 
         let client = Client::connect(
             addr,
-            config.user.clone(),
+            &config.user,
             auth_method,
             ServerCheckMethod::NoCheck,
         )

@@ -2,10 +2,9 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::domain::metadata::DeviceMetadataStore;
-use crate::domain::device::{DeviceMetadata, WorkMode};
+use crate::domain::device::DeviceMetadata;
 use crate::services::simulation_engine::SimulationEngine;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeviceConfig {
@@ -53,12 +52,14 @@ pub async fn update_device_config(
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<(), String> {
-    // 更新设备元数据
-    let mut metadata_store = metadata_store.lock().unwrap();
-    let mut device = metadata_store.get_device(&config.device_id)
-        .ok_or_else(|| format!("Device {} not found", config.device_id))?;
+    // 验证设备存在
+    {
+        let metadata_store = metadata_store.lock().unwrap();
+        metadata_store.get_device(&config.device_id)
+            .ok_or_else(|| format!("Device {} not found", config.device_id))?;
+    }
     
-    // 更新配置
+    // 更新配置（先释放锁，再调用异步函数）
     if let Some(work_mode_str) = &config.work_mode {
         // 设置工作模式
         engine.set_device_mode(config.device_id.clone(), work_mode_str.clone()).await?;

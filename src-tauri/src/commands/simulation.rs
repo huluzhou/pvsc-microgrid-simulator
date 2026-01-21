@@ -2,9 +2,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::services::simulation_engine::SimulationEngine;
-use crate::services::python_bridge::PythonBridge;
 use crate::domain::simulation::SimulationStatus;
-use std::sync::Mutex;
 use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize)]

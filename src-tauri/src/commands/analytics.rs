@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::services::database::Database;
 use crate::services::python_bridge::PythonBridge;
-use tokio::sync::Mutex;
+use std::sync::Mutex as StdMutex;
+use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AnalysisRequest {
@@ -40,8 +41,8 @@ pub struct ReportRequest {
 #[tauri::command]
 pub async fn analyze_performance(
     request: AnalysisRequest,
-    db: State<'_, Mutex<Database>>,
-    python_bridge: State<'_, Mutex<PythonBridge>>,
+    db: State<'_, StdMutex<Database>>,
+    python_bridge: State<'_, TokioMutex<PythonBridge>>,
 ) -> Result<AnalysisResult, String> {
     // 从数据库查询数据
     let mut all_data = Vec::new();
@@ -71,8 +72,8 @@ pub async fn analyze_performance(
 #[tauri::command]
 pub async fn generate_report(
     request: ReportRequest,
-    db: State<'_, Mutex<Database>>,
-    python_bridge: State<'_, Mutex<PythonBridge>>,
+    db: State<'_, StdMutex<Database>>,
+    python_bridge: State<'_, TokioMutex<PythonBridge>>,
 ) -> Result<String, String> {
     // 从数据库查询数据
     let mut all_data = Vec::new();

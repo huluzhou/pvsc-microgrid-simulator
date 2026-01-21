@@ -11,8 +11,8 @@ use services::python_bridge::PythonBridge;
 use services::database::Database;
 use services::simulation_engine::SimulationEngine;
 use domain::metadata::DeviceMetadataStore;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex as StdMutex};
+use tokio::sync::Mutex as TokioMutex;
 
 fn main() {
     tauri::Builder::default()
@@ -42,13 +42,13 @@ fn main() {
             let metadata_store = DeviceMetadataStore::new();
 
             // 初始化仿真引擎
-            let python_bridge_arc = Arc::new(Mutex::new(python_bridge));
+            let python_bridge_arc = Arc::new(TokioMutex::new(python_bridge));
             let simulation_engine = Arc::new(SimulationEngine::new(python_bridge_arc.clone()));
 
             // 将服务存储到应用状态
             app.manage(python_bridge_arc);
-            app.manage(Mutex::new(db));
-            app.manage(Mutex::new(metadata_store));
+            app.manage(StdMutex::new(db));
+            app.manage(StdMutex::new(metadata_store));
             app.manage(simulation_engine);
 
             Ok(())
