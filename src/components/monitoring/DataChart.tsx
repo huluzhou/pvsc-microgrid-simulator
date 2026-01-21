@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import ReactECharts from "echarts-for-react";
 
 interface DataPoint {

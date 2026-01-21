@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Play, Pause, Square, RefreshCw } from "lucide-react";
+import DeviceModeConfig from "../components/simulation/DeviceModeConfig";
 
 interface SimulationStatus {
   state: "Stopped" | "Running" | "Paused";
@@ -195,6 +196,11 @@ export default function Simulation() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 设备模式配置 */}
+      <div className="mt-6">
+        <DeviceModeConfig />
       </div>
     </div>
   );

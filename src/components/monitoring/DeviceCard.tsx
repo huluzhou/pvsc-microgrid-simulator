@@ -21,7 +21,6 @@ const deviceIcons: Record<string, any> = {
 };
 
 export default function DeviceCard({
-  deviceId,
   name,
   deviceType,
   isOnline,

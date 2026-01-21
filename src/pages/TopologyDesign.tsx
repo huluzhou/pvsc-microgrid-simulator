@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import ReactFlow, { Node, Edge, Connection } from "reactflow";
+import { Node, Edge, Connection } from "reactflow";
 import FlowCanvas from "../components/topology/FlowCanvas";
 import DevicePropertiesPanel from "../components/topology/DevicePropertiesPanel";
-import { Save, FolderOpen, Plus, Trash2 } from "lucide-react";
+import { Save, FolderOpen, Trash2 } from "lucide-react";
 
 interface DeviceData {
   id: string;
@@ -257,12 +257,16 @@ export default function TopologyDesign() {
           onNodesChange={setNodes}
           onEdgesChange={setEdges}
           onConnect={(connection: Connection) => {
-            const newEdge: Edge = {
-              ...connection,
-              id: `edge-${connection.source}-${connection.target}`,
-              type: "connection",
-            };
-            setEdges((eds) => [...eds, newEdge]);
+            if (connection.source && connection.target) {
+              const newEdge: Edge = {
+                ...connection,
+                id: `edge-${connection.source}-${connection.target}`,
+                type: "connection",
+                source: connection.source,
+                target: connection.target,
+              };
+              setEdges((eds) => [...eds, newEdge]);
+            }
           }}
           onNodeClick={handleNodeClick}
         />

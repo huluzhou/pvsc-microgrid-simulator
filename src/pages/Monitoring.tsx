@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import DeviceList from "../components/monitoring/DeviceList";
 import DataChart from "../components/monitoring/DataChart";
 import { RefreshCw, AlertTriangle } from "lucide-react";
@@ -60,8 +61,44 @@ export default function Monitoring() {
   useEffect(() => {
     loadDevices();
     const interval = setInterval(loadDevices, 5000); // 每5秒刷新一次
-    return () => clearInterval(interval);
-  }, [loadDevices]);
+    
+    // 订阅设备数据更新事件
+    const unsubscribePromise = listen("device-data-update", (event: any) => {
+      const { device_id, data } = event.payload;
+      
+      // 更新设备状态
+      setDevices((prevDevices) =>
+        prevDevices.map((device) =>
+          device.device_id === device_id
+            ? {
+                ...device,
+                current_voltage: data.voltage,
+                current_current: data.current,
+                current_power: data.power,
+                last_update: data.timestamp || Date.now() / 1000,
+                is_online: true,
+              }
+            : device
+        )
+      );
+      
+      // 如果当前选中的设备，更新图表数据
+      if (selectedDevice === device_id) {
+        setChartData((prev) => [
+          ...prev,
+          {
+            timestamp: data.timestamp || Date.now() / 1000,
+            value: data.voltage || data.power || 0,
+          },
+        ]);
+      }
+    });
+    
+    return () => {
+      clearInterval(interval);
+      unsubscribePromise.then((unsubscribe) => unsubscribe());
+    };
+  }, [loadDevices, selectedDevice]);
 
   useEffect(() => {
     if (selectedDevice) {

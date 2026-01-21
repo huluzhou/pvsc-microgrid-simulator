@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import ReactFlow, {
   Node,
   Edge,
@@ -40,7 +40,7 @@ export default function FlowCanvas({
   onConnect,
   onNodeClick,
 }: FlowCanvasProps) {
-  const [nodes, setNodes, onNodesChangeInternal] = useNodesState(initialNodes);
+  const [nodes, , onNodesChangeInternal] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChangeInternal] = useEdgesState(initialEdges);
 
   const handleNodesChange = useCallback(
