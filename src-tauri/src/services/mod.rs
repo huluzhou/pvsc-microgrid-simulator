@@ -7,3 +7,4 @@ pub mod kernel_factory;
 pub mod delay_simulator;
 pub mod modbus;
 pub mod database;
+pub mod ssh;

@@ -7,18 +7,18 @@ Python 内核服务入口
 
 import sys
 import json
-import asyncio
 from typing import Dict, Any
 
 class PythonKernel:
     """Python 内核主类"""
     
     def __init__(self):
-        self.simulation_engine = None
-        self.ai_kernel = None
+        from simulation.engine import SimulationEngine
+        self.simulation_engine = SimulationEngine()
         self.power_calculator = None
+        self.ai_kernel = None
     
-    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """处理 JSON-RPC 请求"""
         method = request.get("method")
         params = request.get("params", {})
@@ -28,11 +28,13 @@ class PythonKernel:
             if method == "ping":
                 result = {"status": "ok"}
             elif method.startswith("simulation."):
-                result = await self.handle_simulation(method, params)
+                result = self.handle_simulation(method, params)
             elif method.startswith("power."):
-                result = await self.handle_power_calculation(method, params)
+                result = self.handle_power_calculation(method, params)
             elif method.startswith("ai."):
-                result = await self.handle_ai(method, params)
+                result = self.handle_ai(method, params)
+            elif method.startswith("analytics."):
+                result = self.handle_analytics(method, params)
             else:
                 raise ValueError(f"Unknown method: {method}")
             
@@ -51,47 +53,136 @@ class PythonKernel:
                 }
             }
     
-    async def handle_simulation(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_simulation(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """处理仿真相关请求"""
-        # 将在后续阶段实现
-        return {"status": "not_implemented"}
+        action = params.get("action", "")
+        
+        if method == "simulation.start":
+            self.simulation_engine.start()
+            return {"status": "started"}
+        elif method == "simulation.stop":
+            self.simulation_engine.stop()
+            return {"status": "stopped"}
+        elif method == "simulation.pause":
+            # 暂停功能将在后续实现
+            return {"status": "paused"}
+        elif method == "simulation.resume":
+            # 恢复功能将在后续实现
+            return {"status": "resumed"}
+        elif method == "simulation.set_device_mode":
+            device_id = params.get("device_id")
+            mode = params.get("mode")
+            self.simulation_engine.set_device_mode(device_id, mode)
+            return {"status": "ok"}
+        elif method == "simulation.get_device_data":
+            device_id = params.get("device_id")
+            data = self.simulation_engine.get_device_data(device_id)
+            return data
+        else:
+            return {"status": "not_implemented"}
     
-    async def handle_power_calculation(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_power_calculation(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """处理功率计算相关请求"""
-        # 将在后续阶段实现
-        return {"status": "not_implemented"}
+        if not self.power_calculator:
+            from simulation.power_calculation.factory import PowerKernelFactory
+            # 默认使用 pandapower
+            self.power_calculator = PowerKernelFactory.create("pandapower")
+            if not self.power_calculator:
+                return {"error": "Power calculation kernel not available"}
+        
+        if method == "power.calculate":
+            topology_data = params.get("topology_data", {})
+            result = self.power_calculator.calculate_power_flow(topology_data)
+            return result
+        else:
+            return {"status": "not_implemented"}
     
-    async def handle_ai(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_ai(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """处理 AI 相关请求"""
-        # 将在后续阶段实现
-        return {"status": "not_implemented"}
+        if not self.ai_kernel:
+            from ai.factory import AIKernelFactory
+            # 默认使用 PyTorch（如果可用）
+            self.ai_kernel = AIKernelFactory.create("pytorch")
+            if not self.ai_kernel:
+                return {"error": "No AI kernel available"}
+        
+        if method == "ai.predict":
+            device_ids = params.get("device_ids", [])
+            prediction_horizon = params.get("prediction_horizon", 3600)
+            prediction_type = params.get("prediction_type", "power")
+            result = self.ai_kernel.predict(device_ids, prediction_horizon, prediction_type)
+            return result
+        elif method == "ai.optimize":
+            objective = params.get("objective", "minimize_cost")
+            constraints = params.get("constraints", [])
+            time_horizon = params.get("time_horizon", 3600)
+            result = self.ai_kernel.optimize(objective, constraints, time_horizon)
+            return result
+        elif method == "ai.get_recommendations":
+            device_ids = params.get("device_ids", [])
+            recommendations = self.ai_kernel.get_recommendations(device_ids)
+            return {"recommendations": recommendations}
+        else:
+            return {"status": "not_implemented"}
+    
+    def handle_analytics(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """处理数据分析相关请求"""
+        if method == "analytics.analyze":
+            # 数据分析逻辑将在后续实现
+            return {
+                "analysis_type": params.get("analysis_type", "performance"),
+                "summary": {},
+                "details": {},
+                "charts": []
+            }
+        elif method == "analytics.generate_report":
+            # 报告生成逻辑将在后续实现
+            return {
+                "report_path": "/tmp/report.pdf",
+                "status": "generated"
+            }
+        else:
+            return {"status": "not_implemented"}
 
 
-async def main():
+def main():
     """主函数"""
     kernel = PythonKernel()
     
     # 从 stdin 读取 JSON-RPC 请求
     for line in sys.stdin:
-        try:
-            request = json.loads(line.strip())
-            response = await kernel.handle_request(request)
-            print(json.dumps(response, ensure_ascii=False))
-            sys.stdout.flush()
-        except json.JSONDecodeError:
+        line = line.strip()
+        if not line:
             continue
-        except Exception as e:
+        
+        try:
+            request = json.loads(line)
+            response = kernel.handle_request(request)
+            print(json.dumps(response))
+            sys.stdout.flush()
+        except json.JSONDecodeError as e:
             error_response = {
                 "jsonrpc": "2.0",
                 "id": None,
                 "error": {
                     "code": -32700,
-                    "message": f"Parse error: {str(e)}"
+                    "message": f"Parse error: {e}"
                 }
             }
-            print(json.dumps(error_response, ensure_ascii=False))
+            print(json.dumps(error_response))
+            sys.stdout.flush()
+        except Exception as e:
+            error_response = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": -32000,
+                    "message": str(e)
+                }
+            }
+            print(json.dumps(error_response))
             sys.stdout.flush()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

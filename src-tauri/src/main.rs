@@ -62,6 +62,19 @@ fn main() {
             commands::simulation::get_simulation_status,
             commands::simulation::set_device_mode,
             commands::simulation::get_device_data,
+            commands::monitoring::record_device_data,
+            commands::monitoring::query_device_data,
+            commands::monitoring::get_all_devices_status,
+            commands::monitoring::get_device_status,
+            commands::device::get_all_devices,
+            commands::device::get_device,
+            commands::device::update_device_config,
+            commands::device::batch_set_device_mode,
+            commands::ai::predict_device_data,
+            commands::ai::optimize_operation,
+            commands::ai::get_ai_recommendations,
+            commands::analytics::analyze_performance,
+            commands::analytics::generate_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -13,6 +13,9 @@ export default {
         'mode-remote': '#f59e0b', // 橙色 - 远程模式
         'mode-historical': '#a855f7', // 紫色 - 历史数据模式
       },
+      screens: {
+        'xs': '475px',
+      },
     },
   },
   plugins: [],

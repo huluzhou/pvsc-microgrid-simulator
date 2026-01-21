@@ -1,6 +1,5 @@
 // 数据库访问
 use rusqlite::{Connection, Result as SqlResult};
-use std::path::PathBuf;
 use anyhow::{Result, Context};
 
 pub struct Database {
@@ -8,8 +7,8 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(db_path: Option<PathBuf>) -> Result<Self> {
-        let path = db_path.unwrap_or_else(|| {
+    pub fn new(db_path: Option<&std::path::Path>) -> Result<Self> {
+        let path = db_path.map(|p| p.to_path_buf()).unwrap_or_else(|| {
             let mut path = std::env::current_dir().unwrap();
             path.push("data.db");
             path
