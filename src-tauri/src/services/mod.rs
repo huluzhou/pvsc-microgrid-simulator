@@ -8,3 +8,5 @@ pub mod delay_simulator;
 pub mod modbus;
 pub mod database;
 pub mod ssh;
+
+pub use modbus::ModbusService;

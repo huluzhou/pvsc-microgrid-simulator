@@ -5,6 +5,8 @@ use crate::services::python_bridge::PythonBridge;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::collections::HashMap;
+use tauri::{AppHandle, Emitter};
+use tokio::time::{interval, Duration};
 
 pub struct SimulationEngine {
     status: Arc<tokio::sync::Mutex<SimulationStatus>>,
@@ -23,7 +25,7 @@ impl SimulationEngine {
         }
     }
 
-    pub async fn start(&self) -> Result<(), String> {
+    pub async fn start(&self, app_handle: Option<AppHandle>) -> Result<(), String> {
         let mut status = self.status.lock().await;
         status.start();
         
@@ -35,7 +37,60 @@ impl SimulationEngine {
         bridge.call("simulation.start", params).await
             .map_err(|e| format!("Failed to start simulation: {}", e))?;
         
+        // 启动数据采集循环
+        if let Some(app) = app_handle {
+            self.start_data_collection_loop(app).await;
+        }
+        
         Ok(())
+    }
+    
+    async fn start_data_collection_loop(&self, app: AppHandle) {
+        let status = self.status.clone();
+        let python_bridge = self.python_bridge.clone();
+        let topology = self.topology.clone();
+        
+        tokio::spawn(async move {
+            let mut interval = interval(Duration::from_secs(1)); // 每秒采集一次
+            
+            loop {
+                interval.tick().await;
+                
+                // 检查仿真是否运行中
+                let status_guard = status.lock().await;
+                if status_guard.state != crate::domain::simulation::SimulationState::Running {
+                    drop(status_guard);
+                    continue;
+                }
+                drop(status_guard);
+                
+                // 获取拓扑中的所有设备
+                let device_ids = {
+                    let topo = topology.lock().await;
+                    if let Some(ref t) = *topo {
+                        t.devices.keys().cloned().collect::<Vec<_>>()
+                    } else {
+                        continue;
+                    }
+                };
+                
+                // 采集每个设备的数据
+                for device_id in device_ids {
+                    let mut bridge = python_bridge.lock().await;
+                    let params = serde_json::json!({
+                        "device_id": device_id
+                    });
+                    
+                    if let Ok(data) = bridge.call("simulation.get_device_data", params).await {
+                        // 发射设备数据更新事件
+                        let _ = app.emit("device-data-update", serde_json::json!({
+                            "device_id": device_id,
+                            "data": data
+                        }));
+                    }
+                }
+            }
+        });
     }
 
     pub async fn stop(&self) -> Result<(), String> {

@@ -81,10 +81,44 @@ class HistoricalDataMode:
     
     def _query_remote_database(self, device_id: str, timestamp: float) -> Optional[Dict[str, Any]]:
         """通过 SSH 从远程数据库查询数据"""
-        # 这个方法将由 Rust 端通过 SSH 客户端调用
-        # Python 端接收 Rust 传递的数据
-        # 目前返回占位符，实际实现将在 Rust-Python 通信完善后完成
+        # 从缓存中查询数据
+        if device_id in self._cache:
+            cache_data = self._cache[device_id]
+            # 查找最接近指定时间的数据点
+            closest_data = None
+            min_diff = float('inf')
+            
+            for data_point in cache_data:
+                data_timestamp = data_point.get("timestamp", 0)
+                diff = abs(data_timestamp - timestamp)
+                if diff < min_diff and data_timestamp <= timestamp:
+                    min_diff = diff
+                    closest_data = data_point
+            
+            if closest_data:
+                return closest_data
+        
         return None
+    
+    def load_remote_data(self, device_id: str, csv_data: str):
+        """从 CSV 格式的远程数据加载到缓存"""
+        import csv as csv_module
+        from io import StringIO
+        
+        try:
+            reader = csv_module.DictReader(StringIO(csv_data))
+            data_list = []
+            for row in reader:
+                data_list.append({
+                    "timestamp": float(row.get("timestamp", 0)),
+                    "voltage": float(row.get("voltage", 0)) if row.get("voltage") else None,
+                    "current": float(row.get("current", 0)) if row.get("current") else None,
+                    "power": float(row.get("power", 0)) if row.get("power") else None,
+                    "data_json": row.get("data_json"),
+                })
+            self._cache[device_id] = sorted(data_list, key=lambda x: x["timestamp"])
+        except Exception as e:
+            print(f"Error loading remote data: {e}")
     
     def get_data(self, device_id: str) -> Dict[str, Any]:
         """从历史数据中获取设备数据"""

@@ -1,6 +1,6 @@
 // 仿真引擎命令
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 use crate::services::simulation_engine::SimulationEngine;
 use crate::domain::simulation::SimulationStatus;
 use std::sync::Arc;
@@ -18,9 +18,10 @@ pub struct DeviceModeRequest {
 
 #[tauri::command]
 pub async fn start_simulation(
+    app: AppHandle,
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<(), String> {
-    engine.start().await
+    engine.start(Some(app)).await
 }
 
 #[tauri::command]

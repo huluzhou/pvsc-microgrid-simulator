@@ -10,6 +10,7 @@ use tauri::Manager;
 use services::python_bridge::PythonBridge;
 use services::database::Database;
 use services::simulation_engine::SimulationEngine;
+use services::modbus::ModbusService;
 use domain::metadata::DeviceMetadataStore;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;
@@ -45,11 +46,15 @@ fn main() {
             let python_bridge_arc = Arc::new(TokioMutex::new(python_bridge));
             let simulation_engine = Arc::new(SimulationEngine::new(python_bridge_arc.clone()));
 
+            // 初始化 Modbus 服务
+            let modbus_service = ModbusService::new();
+
             // 将服务存储到应用状态
             app.manage(python_bridge_arc);
             app.manage(StdMutex::new(db));
             app.manage(StdMutex::new(metadata_store));
             app.manage(simulation_engine);
+            app.manage(modbus_service);
 
             Ok(())
         })
