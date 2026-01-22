@@ -40,7 +40,7 @@ export default function StatusBar() {
       case "paused":
         return "bg-yellow-500";
       default:
-        return "bg-gray-500";
+        return "bg-gray-400";
     }
   };
 
@@ -56,7 +56,7 @@ export default function StatusBar() {
   };
 
   return (
-    <footer className="h-8 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 text-sm text-gray-600 dark:text-gray-400 transition-colors">
+    <footer className="h-7 bg-gray-100 border-t border-gray-200 flex items-center justify-between px-4 text-xs text-gray-600">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
@@ -66,7 +66,7 @@ export default function StatusBar() {
           <span>运行时间: {formatTime(status.elapsedTime)}</span>
         )}
       </div>
-      <div className="text-xs">
+      <div>
         光储充微电网模拟器 v0.1.0
       </div>
     </footer>

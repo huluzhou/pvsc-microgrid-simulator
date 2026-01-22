@@ -1,37 +1,51 @@
-import { BaseEdge, EdgeProps, getBezierPath } from "reactflow";
+/**
+ * 连接边组件 - 直线连接
+ */
+import { memo } from 'react';
+import { EdgeProps, getStraightPath } from 'reactflow';
 
-export default function ConnectionEdge({
+function ConnectionEdge({
   id,
   sourceX,
   sourceY,
   targetX,
   targetY,
-  sourcePosition,
-  targetPosition,
-  style = {},
-  markerEnd,
+  selected,
 }: EdgeProps) {
-  const [edgePath] = getBezierPath({
+  const [edgePath] = getStraightPath({
     sourceX,
     sourceY,
-    sourcePosition,
     targetX,
     targetY,
-    targetPosition,
   });
 
   return (
-    <>
-      <BaseEdge
-        path={edgePath}
+    <g className="react-flow__edge">
+      {/* 主线条 */}
+      <path
         id={id}
+        className="react-flow__edge-path"
+        d={edgePath}
         style={{
-          ...style,
-          stroke: "#60a5fa",
-          strokeWidth: 2,
+          stroke: selected ? '#3b82f6' : '#666',
+          strokeWidth: selected ? 3 : 2,
+          fill: 'none',
         }}
-        markerEnd={markerEnd}
       />
-    </>
+      {/* 选中时的高亮效果 */}
+      {selected && (
+        <path
+          d={edgePath}
+          style={{
+            stroke: '#3b82f6',
+            strokeWidth: 6,
+            strokeOpacity: 0.2,
+            fill: 'none',
+          }}
+        />
+      )}
+    </g>
   );
 }
+
+export default memo(ConnectionEdge);
