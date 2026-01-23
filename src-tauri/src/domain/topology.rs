@@ -45,6 +45,12 @@ pub struct Connection {
     pub id: String,
     pub from_device_id: String,
     pub to_device_id: String,
+    /// 源设备的连接点 ID（如 "top", "bottom", "left", "right", "center", "hv", "lv" 等）
+    #[serde(default)]
+    pub from_port: Option<String>,
+    /// 目标设备的连接点 ID
+    #[serde(default)]
+    pub to_port: Option<String>,
     pub connection_type: String,
     pub properties: HashMap<String, serde_json::Value>,
     pub is_active: bool,

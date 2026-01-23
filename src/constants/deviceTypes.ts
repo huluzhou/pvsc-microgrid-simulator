@@ -199,24 +199,24 @@ export function getDeviceTypeInfo(type: DeviceType): DeviceTypeInfo | undefined 
   return DEVICE_TYPES[type];
 }
 
-// 连接规则 - 定义哪些设备可以互相连接
+// 连接规则 - 定义哪些设备可以互相连接（参考 doc/TopoRule.md）
 export const CONNECTION_RULES: Record<DeviceType, DeviceType[]> = {
-  // 母线可以连接的设备类型
+  // 母线可以连接：线路、变压器、开关、功率设备、电表
   bus: ['line', 'transformer', 'switch', 'static_generator', 'storage', 'load', 'charger', 'meter', 'external_grid'],
-  // 线路只能连接母线或开关
+  // 线路端口只能连接母线或开关（二选一），同时可接电表
   line: ['bus', 'switch', 'meter'],
-  // 变压器只能连接母线或开关
+  // 变压器端口只能连接母线或开关（二选一），同时可接电表
   transformer: ['bus', 'switch', 'meter'],
-  // 开关可以连接多种设备
+  // 开关端口可以连接母线、线路、变压器、电表
   switch: ['bus', 'line', 'transformer', 'meter'],
-  // 功率设备只能连接母线
-  static_generator: ['bus'],
-  storage: ['bus'],
-  load: ['bus'],
-  charger: ['bus'],
-  external_grid: ['bus'],
-  // 电表可以串接在线路中
-  meter: ['bus', 'line', 'transformer', 'switch'],
+  // 功率设备只能连接母线（1个）和电表（可选1个）
+  static_generator: ['bus', 'meter'],
+  storage: ['bus', 'meter'],
+  load: ['bus', 'meter'],
+  charger: ['bus', 'meter'],
+  external_grid: ['bus', 'meter'],
+  // 电表可以连接：母线、线路端口、变压器端口、开关端口、功率设备
+  meter: ['bus', 'line', 'transformer', 'switch', 'static_generator', 'storage', 'load', 'charger', 'external_grid'],
 };
 
 // 检查两个设备是否可以连接

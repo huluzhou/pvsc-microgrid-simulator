@@ -13,17 +13,18 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-shell": "^2.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.0",
-    "zustand": "^5.0.0",
-    "reactflow": "^11.11.0",
+    "clsx": "^2.1.1",
     "echarts": "^5.5.0",
     "echarts-for-react": "^3.0.2",
     "lucide-react": "^0.460.0",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^2.5.0"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "reactflow": "^11.11.0",
+    "tailwind-merge": "^2.5.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0",

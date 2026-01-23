@@ -111,9 +111,9 @@ function FlowCanvasInner({
     [edges, onEdgesChangeExternal]
   );
 
-  // 连接验证
+  // 连接验证（完整验证，用于 onConnect）
   const validateConnection = useCallback(
-    (connection: Connection): { valid: boolean; reason?: string } => {
+    (connection: Connection): { valid: boolean; reason?: string; warning?: string } => {
       const sourceNode = nodes.find((n) => n.id === connection.source);
       const targetNode = nodes.find((n) => n.id === connection.target);
 
@@ -145,9 +145,54 @@ function FlowCanvasInner({
         return { valid: false, reason: error };
       }
 
-      return { valid: true };
+      // 开关稳态约束检查：至少一端必须连接母线
+      let warning: string | undefined;
+      const switchNode = sourceType === 'switch' ? sourceNode : (targetType === 'switch' ? targetNode : null);
+      const otherType = sourceType === 'switch' ? targetType : sourceType;
+      
+      if (switchNode && otherType !== 'bus') {
+        // 检查开关的现有连接
+        const switchEdges = edges.filter(e => e.source === switchNode.id || e.target === switchNode.id);
+        const hasBusConnection = switchEdges.some(e => {
+          const connectedNodeId = e.source === switchNode.id ? e.target : e.source;
+          const connectedNode = nodes.find(n => n.id === connectedNodeId);
+          return connectedNode?.data.deviceType === 'bus';
+        });
+        
+        // 如果开关已有连接且都不是母线，新连接也不是母线 -> 警告
+        if (switchEdges.length >= 1 && !hasBusConnection) {
+          warning = `警告：开关 ${switchNode.data.name} 将形成两端都不连接母线的闭合连接，稳态运行要求至少一端连接母线`;
+        }
+      }
+
+      return { valid: true, warning };
     },
     [nodes, edges]
+  );
+
+  // 实时连接验证（用于拖拽时的视觉反馈）
+  const isValidConnection = useCallback(
+    (connection: Connection): boolean => {
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+      const targetNode = nodes.find((n) => n.id === connection.target);
+
+      if (!sourceNode || !targetNode) {
+        return false;
+      }
+
+      // 不允许自连接
+      if (connection.source === connection.target) {
+        return false;
+      }
+
+      const sourceType = sourceNode.data.deviceType as DeviceType;
+      const targetType = targetNode.data.deviceType as DeviceType;
+
+      // 使用连接规则检查
+      const error = getConnectionError(sourceType, targetType);
+      return error === null;
+    },
+    [nodes]
   );
 
   // 处理连接
@@ -159,6 +204,12 @@ function FlowCanvasInner({
         setErrorMessage(validation.reason || '连接不符合规则');
         setTimeout(() => setErrorMessage(null), 3000);
         return;
+      }
+
+      // 显示警告信息（但仍允许连接）
+      if (validation.warning) {
+        setErrorMessage(validation.warning);
+        setTimeout(() => setErrorMessage(null), 5000);
       }
 
       const newEdge: Edge = {
@@ -270,6 +321,7 @@ function FlowCanvasInner({
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onNodeClick={onNodeClick}
+        isValidConnection={isValidConnection}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}

@@ -18,6 +18,7 @@ use tokio::sync::Mutex as TokioMutex;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 初始化应用设置
             #[cfg(debug_assertions)]
@@ -60,8 +61,10 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::topology::save_topology,
+            commands::topology::save_topology_legacy,
             commands::topology::load_topology,
             commands::topology::validate_topology,
+            commands::topology::load_and_validate_topology,
             commands::simulation::start_simulation,
             commands::simulation::stop_simulation,
             commands::simulation::pause_simulation,

@@ -3,12 +3,20 @@
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { Node, Edge, Connection } from 'reactflow';
 import FlowCanvas from '../components/topology/FlowCanvas';
 import DevicePanel from '../components/topology/DevicePanel';
 import DevicePropertiesPanel from '../components/topology/DevicePropertiesPanel';
 import { Save, FolderOpen, Trash2, FilePlus, FileDown, CheckCircle } from 'lucide-react';
 import { DeviceType, DEVICE_TYPE_TO_CN } from '../constants/deviceTypes';
+
+// 拓扑验证结果接口
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
 
 interface DeviceData {
   id: string;
@@ -22,6 +30,8 @@ interface ConnectionData {
   id: string;
   from: string;
   to: string;
+  from_port?: string | null;
+  to_port?: string | null;
   connection_type: string;
   properties?: Record<string, any>;
 }
@@ -86,6 +96,8 @@ export default function TopologyDesign() {
       id: conn.id,
       source: conn.from,
       target: conn.to,
+      sourceHandle: conn.from_port || undefined,
+      targetHandle: conn.to_port || undefined,
       type: 'connection',
       data: {
         connectionType: conn.connection_type,
@@ -118,8 +130,74 @@ export default function TopologyDesign() {
     // 如果不需要自动恢复，这里什么都不做，保持空画布
   }, []);
 
-  // 保存拓扑
+  // 当前文件路径
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+
+  // 保存拓扑（弹出文件选择对话框）
   const saveTopology = useCallback(async () => {
+    setSaveStatus('saving');
+    try {
+      // 弹出保存文件对话框
+      const filePath = await save({
+        defaultPath: currentFilePath || 'topology.json',
+        filters: [
+          { name: 'JSON 文件', extensions: ['json'] },
+          { name: '所有文件', extensions: ['*'] },
+        ],
+        title: '保存拓扑文件',
+      });
+
+      if (!filePath) {
+        setSaveStatus('idle');
+        return; // 用户取消了保存
+      }
+
+      const topologyData: TopologyData = {
+        devices: nodes.map((node) => ({
+          id: node.id,
+          name: node.data.name,
+          device_type: node.data.deviceType,
+          properties: node.data.properties || {},
+          position: {
+            x: node.position.x,
+            y: node.position.y,
+            z: 0,
+          },
+        })),
+        connections: edges.map((edge) => ({
+          id: edge.id,
+          from: edge.source,
+          to: edge.target,
+          from_port: edge.sourceHandle || null,
+          to_port: edge.targetHandle || null,
+          connection_type: edge.data?.connectionType || 'line',
+          properties: edge.data?.properties || {},
+        })),
+      };
+
+      await invoke('save_topology', {
+        topologyData,
+        path: filePath,
+      });
+
+      setCurrentFilePath(filePath);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (error) {
+      console.error('Failed to save topology:', error);
+      alert('保存失败：' + error);
+      setSaveStatus('idle');
+    }
+  }, [nodes, edges, currentFilePath]);
+
+  // 快速保存（如果有当前文件路径，直接保存；否则弹出对话框）
+  const quickSaveTopology = useCallback(async () => {
+    if (!currentFilePath) {
+      // 没有当前文件，弹出保存对话框
+      saveTopology();
+      return;
+    }
+
     setSaveStatus('saving');
     try {
       const topologyData: TopologyData = {
@@ -138,6 +216,8 @@ export default function TopologyDesign() {
           id: edge.id,
           from: edge.source,
           to: edge.target,
+          from_port: edge.sourceHandle || null,
+          to_port: edge.targetHandle || null,
           connection_type: edge.data?.connectionType || 'line',
           properties: edge.data?.properties || {},
         })),
@@ -145,7 +225,7 @@ export default function TopologyDesign() {
 
       await invoke('save_topology', {
         topologyData,
-        path: 'topology.json',
+        path: currentFilePath,
       });
 
       setSaveStatus('saved');
@@ -155,20 +235,99 @@ export default function TopologyDesign() {
       alert('保存失败：' + error);
       setSaveStatus('idle');
     }
-  }, [nodes, edges]);
+  }, [nodes, edges, currentFilePath, saveTopology]);
 
-  // 加载拓扑文件
+  // 加载拓扑文件（弹出文件选择对话框）
   const loadTopologyFromFile = useCallback(async () => {
     try {
-      const topologyData = await invoke<TopologyData>('load_topology', {
-        path: 'topology.json',
+      // 弹出打开文件对话框
+      const filePath = await open({
+        multiple: false,
+        filters: [
+          { name: 'JSON 文件', extensions: ['json'] },
+          { name: '所有文件', extensions: ['*'] },
+        ],
+        title: '选择拓扑文件',
       });
-      updateNodesAndEdges(topologyData);
+
+      if (!filePath) {
+        return; // 用户取消了选择
+      }
+
+      // 加载并验证拓扑文件
+      const result = await invoke<{ data: TopologyData; validation: ValidationResult }>('load_and_validate_topology', {
+        path: filePath,
+      });
+
+      // 显示验证结果
+      if (!result.validation.valid) {
+        // 仍然加载数据，但显示警告
+        if (!confirm(`拓扑文件存在以下问题：\n\n${result.validation.errors.join('\n')}\n\n是否继续加载？`)) {
+          return;
+        }
+      } else if (result.validation.warnings.length > 0) {
+        console.warn('拓扑加载警告:', result.validation.warnings);
+      }
+
+      updateNodesAndEdges(result.data);
+      setCurrentFilePath(filePath as string);
     } catch (error) {
       console.error('Failed to load topology:', error);
       alert('加载失败：' + error);
     }
   }, [updateNodesAndEdges]);
+
+  // 导出拓扑为旧格式（pandapower 格式）
+  const exportTopologyLegacy = useCallback(async () => {
+    try {
+      // 弹出保存文件对话框
+      const filePath = await save({
+        defaultPath: 'topology_pandapower.json',
+        filters: [
+          { name: 'JSON 文件', extensions: ['json'] },
+          { name: '所有文件', extensions: ['*'] },
+        ],
+        title: '导出为 pandapower 格式',
+      });
+
+      if (!filePath) {
+        return; // 用户取消了保存
+      }
+
+      const topologyData: TopologyData = {
+        devices: nodes.map((node) => ({
+          id: node.id,
+          name: node.data.name,
+          device_type: node.data.deviceType,
+          properties: node.data.properties || {},
+          position: {
+            x: node.position.x,
+            y: node.position.y,
+            z: 0,
+          },
+        })),
+        connections: edges.map((edge) => ({
+          id: edge.id,
+          from: edge.source,
+          to: edge.target,
+          from_port: edge.sourceHandle || null,
+          to_port: edge.targetHandle || null,
+          connection_type: edge.data?.connectionType || 'line',
+          properties: edge.data?.properties || {},
+        })),
+      };
+
+      await invoke('save_topology_legacy', {
+        topologyData,
+        path: filePath,
+      });
+
+      alert('导出成功！');
+    } catch (error) {
+      console.error('Failed to export topology:', error);
+      alert('导出失败：' + error);
+    }
+  }, [nodes, edges]);
 
   // 新建拓扑
   const newTopology = useCallback(() => {
@@ -176,6 +335,7 @@ export default function TopologyDesign() {
     setEdges([]);
     setSelectedNode(null);
     setShowPropertiesPanel(false);
+    setCurrentFilePath(null);
     deviceIdCounter.current = 1;
     // 清空 sessionStorage 中的状态
     sessionStorage.removeItem(TOPOLOGY_STATE_KEY);
@@ -271,13 +431,13 @@ export default function TopologyDesign() {
       }
       if (e.ctrlKey && e.key === 's') {
         e.preventDefault();
-        saveTopology();
+        quickSaveTopology();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, deleteSelectedNode, saveTopology]);
+  }, [selectedNode, deleteSelectedNode, quickSaveTopology]);
 
   useEffect(() => {
     loadTopology();
@@ -328,8 +488,9 @@ export default function TopologyDesign() {
           </button>
           <div className="w-px h-5 bg-gray-300 mx-1" />
           <button
+            onClick={exportTopologyLegacy}
             className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 flex items-center gap-1.5 text-sm transition-colors"
-            title="导出拓扑"
+            title="导出为 pandapower 格式"
           >
             <FileDown className="w-4 h-4" />
             导出
