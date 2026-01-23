@@ -1,6 +1,9 @@
 /**
  * 拓扑画布组件 - 浅色主题
  * 基于ReactFlow，支持拖拽放置、网格吸附、连接规则验证
+ * 
+ * 连接决策流程参考：doc/TopoRule.md
+ * 连接逻辑实现：./connectionDecision.ts
  */
 import { useCallback, useRef, useState, useMemo, DragEvent } from 'react';
 import ReactFlow, {
@@ -23,11 +26,13 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import DeviceNode from './DeviceNode';
 import ConnectionEdge from './ConnectionEdge';
-import { 
-  DEVICE_TYPES, 
-  DeviceType, 
-  getConnectionError 
-} from '../../constants/deviceTypes';
+import { DEVICE_TYPES, DeviceType } from '../../constants/deviceTypes';
+import {
+  validateConnectionPhase1,
+  isConnectionValid,
+  performLinkageUpdatePhase3,
+  performReverseLinkage,
+} from './connectionDecision';
 
 // 网格大小
 const GRID_SIZE = 20;
@@ -92,7 +97,10 @@ function FlowCanvasInner({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isDroppingRef = useRef(false);
 
-  // 处理节点变化 - 直接通知父组件
+  // ============================================================================
+  // 节点变化处理
+  // ============================================================================
+
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
       if (isDroppingRef.current) return;
@@ -102,102 +110,67 @@ function FlowCanvasInner({
     [nodes, onNodesChangeExternal]
   );
 
-  // 处理边变化 - 直接通知父组件
+  // ============================================================================
+  // 边变化处理 - 连接删除时执行反向联动
+  // ============================================================================
+
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      const updatedEdges = applyEdgeChanges(changes, edges);
-      onEdgesChangeExternal(updatedEdges);
-    },
-    [edges, onEdgesChangeExternal]
-  );
-
-  // 连接验证（完整验证，用于 onConnect）
-  const validateConnection = useCallback(
-    (connection: Connection): { valid: boolean; reason?: string; warning?: string } => {
-      const sourceNode = nodes.find((n) => n.id === connection.source);
-      const targetNode = nodes.find((n) => n.id === connection.target);
-
-      if (!sourceNode || !targetNode) {
-        return { valid: false, reason: '节点不存在' };
-      }
-
-      const sourceType = sourceNode.data.deviceType as DeviceType;
-      const targetType = targetNode.data.deviceType as DeviceType;
-
-      // 不允许自连接
-      if (connection.source === connection.target) {
-        return { valid: false, reason: '不允许自连接' };
-      }
-
-      // 检查是否已存在连接
-      const existingConnection = edges.find(
-        (e) =>
-          (e.source === connection.source && e.target === connection.target) ||
-          (e.source === connection.target && e.target === connection.source)
-      );
-      if (existingConnection) {
-        return { valid: false, reason: '连接已存在' };
-      }
-
-      // 使用连接规则检查
-      const error = getConnectionError(sourceType, targetType);
-      if (error) {
-        return { valid: false, reason: error };
-      }
-
-      // 开关稳态约束检查：至少一端必须连接母线
-      let warning: string | undefined;
-      const switchNode = sourceType === 'switch' ? sourceNode : (targetType === 'switch' ? targetNode : null);
-      const otherType = sourceType === 'switch' ? targetType : sourceType;
+      // 检查是否有删除操作，执行反向联动
+      const removeChanges = changes.filter(c => c.type === 'remove');
       
-      if (switchNode && otherType !== 'bus') {
-        // 检查开关的现有连接
-        const switchEdges = edges.filter(e => e.source === switchNode.id || e.target === switchNode.id);
-        const hasBusConnection = switchEdges.some(e => {
-          const connectedNodeId = e.source === switchNode.id ? e.target : e.source;
-          const connectedNode = nodes.find(n => n.id === connectedNodeId);
-          return connectedNode?.data.deviceType === 'bus';
-        });
+      if (removeChanges.length > 0) {
+        let currentNodes = nodes;
+        for (const change of removeChanges) {
+          if (change.type === 'remove') {
+            const deletedEdge = edges.find(e => e.id === change.id);
+            if (deletedEdge) {
+              // 调用连接决策模块的反向联动函数
+              currentNodes = performReverseLinkage(deletedEdge, currentNodes);
+            }
+          }
+        }
         
-        // 如果开关已有连接且都不是母线，新连接也不是母线 -> 警告
-        if (switchEdges.length >= 1 && !hasBusConnection) {
-          warning = `警告：开关 ${switchNode.data.name} 将形成两端都不连接母线的闭合连接，稳态运行要求至少一端连接母线`;
+        if (currentNodes !== nodes) {
+          onNodesChangeExternal(currentNodes);
         }
       }
 
-      return { valid: true, warning };
+      const updatedEdges = applyEdgeChanges(changes, edges);
+      onEdgesChangeExternal(updatedEdges);
+    },
+    [edges, nodes, onNodesChangeExternal, onEdgesChangeExternal]
+  );
+
+  // ============================================================================
+  // 连接决策：阶段一 - 前置验证（用于 onConnect）
+  // ============================================================================
+
+  const validateConnection = useCallback(
+    (connection: Connection) => {
+      return validateConnectionPhase1(connection, nodes, edges);
     },
     [nodes, edges]
   );
 
-  // 实时连接验证（用于拖拽时的视觉反馈）
-  const isValidConnection = useCallback(
+  // ============================================================================
+  // 连接决策：实时验证（用于拖拽时的视觉反馈）
+  // ============================================================================
+
+  const checkIsValidConnection = useCallback(
     (connection: Connection): boolean => {
-      const sourceNode = nodes.find((n) => n.id === connection.source);
-      const targetNode = nodes.find((n) => n.id === connection.target);
-
-      if (!sourceNode || !targetNode) {
-        return false;
-      }
-
-      // 不允许自连接
-      if (connection.source === connection.target) {
-        return false;
-      }
-
-      const sourceType = sourceNode.data.deviceType as DeviceType;
-      const targetType = targetNode.data.deviceType as DeviceType;
-
-      // 使用连接规则检查
-      const error = getConnectionError(sourceType, targetType);
-      return error === null;
+      return isConnectionValid(connection, nodes, edges);
     },
-    [nodes]
+    [nodes, edges]
   );
 
-  // 处理连接
+  // ============================================================================
+  // 连接决策：完整流程（阶段一 + 阶段二 + 阶段三）
+  // ============================================================================
+
   const handleConnect = useCallback(
     (connection: Connection) => {
+      // === 阶段一：前置验证 ===
       const validation = validateConnection(connection);
       
       if (!validation.valid) {
@@ -212,6 +185,7 @@ function FlowCanvasInner({
         setTimeout(() => setErrorMessage(null), 5000);
       }
 
+      // === 阶段二：创建连接 ===
       const newEdge: Edge = {
         id: `edge-${connection.source}-${connection.target}-${Date.now()}`,
         source: connection.source!,
@@ -221,10 +195,16 @@ function FlowCanvasInner({
         type: 'connection',
       };
 
+      // === 阶段三：联动更新 ===
+      const updatedNodes = performLinkageUpdatePhase3(connection, nodes, edges);
+      if (updatedNodes !== nodes) {
+        onNodesChangeExternal(updatedNodes);
+      }
+
       onEdgesChangeExternal(addEdge(newEdge, edges));
       onConnectExternal?.(connection);
     },
-    [validateConnection, edges, onEdgesChangeExternal, onConnectExternal]
+    [validateConnection, edges, nodes, onNodesChangeExternal, onEdgesChangeExternal, onConnectExternal]
   );
 
   // 拖拽处理
@@ -289,7 +269,7 @@ function FlowCanvasInner({
     nodeDragThreshold: 5,
     selectNodesOnDrag: false,
     // 增加连接点捕获范围（类似 CAD 的捕捉功能）
-    connectionRadius: 25,
+    connectionRadius: 50,
   }), []);
 
   return (
@@ -321,7 +301,7 @@ function FlowCanvasInner({
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onNodeClick={onNodeClick}
-        isValidConnection={isValidConnection}
+        isValidConnection={checkIsValidConnection}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
