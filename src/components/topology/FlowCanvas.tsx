@@ -237,13 +237,21 @@ function FlowCanvasInner({
     elementsSelectable: true,
     nodeDragThreshold: 5,
     selectNodesOnDrag: false,
+    // 增加连接点捕获范围（类似 CAD 的捕捉功能）
+    connectionRadius: 25,
   }), []);
 
   return (
     <div 
       ref={reactFlowWrapper}
       className="w-full h-full bg-white select-none"
-      style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+      style={{ 
+        userSelect: 'none', 
+        WebkitUserSelect: 'none',
+        // 缩放优化 - 确保子元素渲染清晰
+        WebkitFontSmoothing: 'antialiased',
+        MozOsxFontSmoothing: 'grayscale',
+      }}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >

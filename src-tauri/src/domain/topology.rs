@@ -4,15 +4,16 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DeviceType {
-    Node,        // 节点设备：母线
-    Line,        // 连接设备：线路
-    Transformer, // 连接设备：变压器
-    Switch,      // 连接设备：开关
-    Pv,          // 功率设备：光伏
-    Storage,     // 功率设备：储能
-    Load,        // 功率设备：负载
-    Charger,     // 功率设备：充电桩
-    Meter,       // 测量设备：电表
+    Node,         // 节点设备：母线
+    Line,         // 连接设备：线路
+    Transformer,  // 连接设备：变压器
+    Switch,       // 连接设备：开关
+    Pv,           // 功率设备：光伏
+    Storage,      // 功率设备：储能
+    Load,         // 功率设备：负载
+    Charger,      // 功率设备：充电桩
+    Meter,        // 测量设备：电表
+    ExternalGrid, // 功率设备：外部电网
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

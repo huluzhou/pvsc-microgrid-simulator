@@ -33,6 +33,65 @@ textarea,
   -ms-user-select: none;
 }
 
+/* ReactFlow 画布缩放优化 - 防止 SVG 和文本模糊 */
+.react-flow__viewport {
+  /* 触发 GPU 加速，提高缩放渲染质量 */
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+.react-flow__node svg {
+  /* SVG 缩放优化 */
+  shape-rendering: geometricPrecision;
+  text-rendering: geometricPrecision;
+}
+
+.react-flow__node svg line,
+.react-flow__node svg circle,
+.react-flow__node svg rect,
+.react-flow__node svg path {
+  /* 防止线条在缩放时变形 */
+  vector-effect: non-scaling-stroke;
+}
+
+/* ReactFlow 连接点捕获反馈样式 - 类似 CAD 的捕捉效果 */
+.react-flow__handle {
+  transition: all 0.15s ease;
+  /* 使用指针光标 */
+  cursor: pointer !important;
+}
+
+/* 连接过程中，可连接的目标 Handle 显示方框高亮 */
+.react-flow__handle.connectingto,
+.react-flow__handle.valid {
+  background-color: #22c55e !important;  /* 绿色表示可连接 */
+  border: 2px solid #fff !important;
+  box-shadow: 0 0 0 3px #22c55e, 0 0 8px 4px rgba(34, 197, 94, 0.5) !important;
+  transform: scale(1.3);
+}
+
+/* 连接过程中，无效的目标 Handle */
+.react-flow__handle.connectingfrom {
+  background-color: #3b82f6 !important;  /* 蓝色表示起点 */
+  box-shadow: 0 0 0 2px #3b82f6, 0 0 6px 2px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* 连接线悬停在 Handle 上时的方框效果 */
+.react-flow__handle:hover {
+  background-color: #ef4444 !important;
+  transform: scale(1.2);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3) !important;
+}
+
+/* 连接模式下的画布光标 */
+.react-flow__pane.connecting {
+  cursor: pointer !important;
+}
+
+.react-flow__node.connecting {
+  cursor: pointer !important;
+}
+
 /* 确保拖拽时的视觉反馈 */
 [draggable="true"] {
   cursor: grab !important;

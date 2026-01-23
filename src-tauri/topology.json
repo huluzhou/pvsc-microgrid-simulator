@@ -1,0 +1,32 @@
+{
+  "id": "default",
+  "name": "Imported Topology",
+  "description": "",
+  "devices": {
+    "device-1": {
+      "id": "device-1",
+      "name": "母线-1",
+      "device_type": "Node",
+      "properties": {},
+      "position": {
+        "x": 300.0,
+        "y": 40.0,
+        "z": 0.0
+      },
+      "location": null
+    },
+    "device-2": {
+      "id": "device-2",
+      "name": "光伏-2",
+      "device_type": "Pv",
+      "properties": {},
+      "position": {
+        "x": 300.0,
+        "y": 160.0,
+        "z": 0.0
+      },
+      "location": null
+    }
+  },
+  "connections": {}
+}

@@ -42,7 +42,7 @@ export interface DeviceTypeInfo {
   description: string;    // 描述
 }
 
-// 设备类型配置
+// 设备类型配置（参考 PySide 版本的连接点定义）
 export const DEVICE_TYPES: Record<DeviceType, DeviceTypeInfo> = {
   bus: {
     type: 'bus',
@@ -52,9 +52,7 @@ export const DEVICE_TYPES: Record<DeviceType, DeviceTypeInfo> = {
     width: 120,
     height: 20,
     connectionPoints: [
-      { id: 'left', position: 'left' },
-      { id: 'center', position: 'center' },
-      { id: 'right', position: 'right' },
+      { id: 'center', position: 'center' },  // 母线只有1个中心连接点
     ],
     description: '电力系统中的汇流节点',
   },
@@ -63,11 +61,11 @@ export const DEVICE_TYPES: Record<DeviceType, DeviceTypeInfo> = {
     name: '线路',
     category: 'connection',
     color: '#78716c',
-    width: 60,
-    height: 20,
+    width: 20,
+    height: 60,  // 竖向显示
     connectionPoints: [
-      { id: 'left', position: 'left' },
-      { id: 'right', position: 'right' },
+      { id: 'top', position: 'top' },      // 上下两个连接点
+      { id: 'bottom', position: 'bottom' },
     ],
     description: '连接两个母线的输电线路',
   },
@@ -105,7 +103,7 @@ export const DEVICE_TYPES: Record<DeviceType, DeviceTypeInfo> = {
     width: 50,
     height: 50,
     connectionPoints: [
-      { id: 'top', position: 'top' },
+      { id: 'top', position: 'top' },  // 上方1个连接点
     ],
     description: '光伏发电设备',
   },
@@ -117,7 +115,7 @@ export const DEVICE_TYPES: Record<DeviceType, DeviceTypeInfo> = {
     width: 50,
     height: 40,
     connectionPoints: [
-      { id: 'top', position: 'top' },
+      { id: 'top', position: 'top' },  // 上方1个连接点
     ],
     description: '储能系统',
   },
@@ -129,7 +127,7 @@ export const DEVICE_TYPES: Record<DeviceType, DeviceTypeInfo> = {
     width: 40,
     height: 45,
     connectionPoints: [
-      { id: 'top', position: 'top' },
+      { id: 'top', position: 'top' },  // 上方1个连接点
     ],
     description: '用电负载',
   },
@@ -141,7 +139,7 @@ export const DEVICE_TYPES: Record<DeviceType, DeviceTypeInfo> = {
     width: 40,
     height: 50,
     connectionPoints: [
-      { id: 'top', position: 'top' },
+      { id: 'top', position: 'top' },  // 上方1个连接点
     ],
     description: '电动车充电桩',
   },
@@ -153,8 +151,7 @@ export const DEVICE_TYPES: Record<DeviceType, DeviceTypeInfo> = {
     width: 40,
     height: 40,
     connectionPoints: [
-      { id: 'left', position: 'left' },
-      { id: 'right', position: 'right' },
+      { id: 'top', position: 'top' },  // 上方1个连接点（参考 PySide）
     ],
     description: '电能计量设备',
   },
@@ -166,7 +163,7 @@ export const DEVICE_TYPES: Record<DeviceType, DeviceTypeInfo> = {
     width: 50,
     height: 50,
     connectionPoints: [
-      { id: 'bottom', position: 'bottom' },
+      { id: 'bottom', position: 'bottom' },  // 下方1个连接点
     ],
     description: '外部电网连接点',
   },

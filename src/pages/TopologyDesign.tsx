@@ -31,13 +31,41 @@ interface TopologyData {
   connections: ConnectionData[];
 }
 
+// 用于在标签切换时保持状态的 sessionStorage key
+const TOPOLOGY_STATE_KEY = 'topology_canvas_state';
+
+// 从 sessionStorage 恢复状态
+function loadStateFromSession(): { nodes: Node[]; edges: Edge[]; counter: number } | null {
+  try {
+    const saved = sessionStorage.getItem(TOPOLOGY_STATE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Failed to load topology state from session:', e);
+  }
+  return null;
+}
+
+// 保存状态到 sessionStorage
+function saveStateToSession(nodes: Node[], edges: Edge[], counter: number) {
+  try {
+    sessionStorage.setItem(TOPOLOGY_STATE_KEY, JSON.stringify({ nodes, edges, counter }));
+  } catch (e) {
+    console.error('Failed to save topology state to session:', e);
+  }
+}
+
 export default function TopologyDesign() {
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
+  // 初始化时尝试从 sessionStorage 恢复状态
+  const savedState = loadStateFromSession();
+  
+  const [nodes, setNodes] = useState<Node[]>(savedState?.nodes || []);
+  const [edges, setEdges] = useState<Edge[]>(savedState?.edges || []);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [showPropertiesPanel, setShowPropertiesPanel] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const deviceIdCounter = useRef(1);
+  const deviceIdCounter = useRef(savedState?.counter || 1);
 
   // 更新节点和边
   const updateNodesAndEdges = useCallback((data: TopologyData) => {
@@ -75,18 +103,20 @@ export default function TopologyDesign() {
     deviceIdCounter.current = maxId + 1;
   }, []);
 
-  // 加载拓扑
+  // 标记是否已初始化，避免切换标签时清空画布
+  const isInitialized = useRef(false);
+
+  // 加载拓扑 - 只在首次加载时尝试恢复，不清空已有数据
   const loadTopology = useCallback(async () => {
-    try {
-      const topologyData: TopologyData = {
-        devices: [],
-        connections: [],
-      };
-      updateNodesAndEdges(topologyData);
-    } catch (error) {
-      console.error('Failed to load topology:', error);
+    // 如果已经初始化过，不再重复加载（保留画布状态）
+    if (isInitialized.current) {
+      return;
     }
-  }, [updateNodesAndEdges]);
+    isInitialized.current = true;
+    
+    // 首次加载时，可以尝试从文件恢复上次的拓扑（可选）
+    // 如果不需要自动恢复，这里什么都不做，保持空画布
+  }, []);
 
   // 保存拓扑
   const saveTopology = useCallback(async () => {
@@ -147,6 +177,8 @@ export default function TopologyDesign() {
     setSelectedNode(null);
     setShowPropertiesPanel(false);
     deviceIdCounter.current = 1;
+    // 清空 sessionStorage 中的状态
+    sessionStorage.removeItem(TOPOLOGY_STATE_KEY);
   }, []);
 
   // 通过拖拽添加设备
@@ -250,6 +282,11 @@ export default function TopologyDesign() {
   useEffect(() => {
     loadTopology();
   }, [loadTopology]);
+
+  // 状态变化时保存到 sessionStorage，用于标签切换时恢复
+  useEffect(() => {
+    saveStateToSession(nodes, edges, deviceIdCounter.current);
+  }, [nodes, edges]);
 
   return (
     <div className="flex h-full bg-gray-50">

@@ -46,16 +46,34 @@ pub struct ConnectionData {
 
 fn parse_device_type(s: &str) -> Result<DeviceType, String> {
     match s.to_lowercase().as_str() {
-        "node" => Ok(DeviceType::Node),
+        // 支持前端使用的类型名称
+        "bus" | "node" => Ok(DeviceType::Node),
         "line" => Ok(DeviceType::Line),
         "transformer" => Ok(DeviceType::Transformer),
         "switch" => Ok(DeviceType::Switch),
-        "pv" => Ok(DeviceType::Pv),
+        "static_generator" | "pv" => Ok(DeviceType::Pv),
         "storage" => Ok(DeviceType::Storage),
         "load" => Ok(DeviceType::Load),
         "charger" => Ok(DeviceType::Charger),
         "meter" => Ok(DeviceType::Meter),
+        "external_grid" | "externalgrid" => Ok(DeviceType::ExternalGrid),
         _ => Err(format!("Unknown device type: {}", s)),
+    }
+}
+
+/// 将 DeviceType 枚举转换为前端期望的字符串格式
+fn device_type_to_string(device_type: &DeviceType) -> String {
+    match device_type {
+        DeviceType::Node => "bus".to_string(),
+        DeviceType::Line => "line".to_string(),
+        DeviceType::Transformer => "transformer".to_string(),
+        DeviceType::Switch => "switch".to_string(),
+        DeviceType::Pv => "static_generator".to_string(),
+        DeviceType::Storage => "storage".to_string(),
+        DeviceType::Load => "load".to_string(),
+        DeviceType::Charger => "charger".to_string(),
+        DeviceType::Meter => "meter".to_string(),
+        DeviceType::ExternalGrid => "external_grid".to_string(),
     }
 }
 
@@ -169,7 +187,7 @@ pub async fn load_topology(
         DeviceData {
             id: d.id.clone(),
             name: d.name.clone(),
-            device_type: format!("{:?}", d.device_type),
+            device_type: device_type_to_string(&d.device_type),
             properties: serde_json::to_value(&d.properties).unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
             position: d.position.as_ref().map(|p| PositionData {
                 x: p.x,
