@@ -61,26 +61,32 @@ textarea,
   cursor: pointer !important;
 }
 
-/* 连接过程中，可连接的目标 Handle 显示方框高亮 */
+/* 连接过程中，可连接的目标 Handle 显示绿色高亮圆圈 */
 .react-flow__handle.connectingto,
 .react-flow__handle.valid {
   background-color: #22c55e !important;  /* 绿色表示可连接 */
   border: 2px solid #fff !important;
-  box-shadow: 0 0 0 3px #22c55e, 0 0 8px 4px rgba(34, 197, 94, 0.5) !important;
-  transform: scale(1.3);
+  /* 使用 box-shadow 创建高亮圆圈，确保以连接点为中心（不缩放元素本身，避免定位偏移） */
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.4), 0 0 0 7px #22c55e, 0 0 12px 8px rgba(34, 197, 94, 0.5) !important;
 }
 
-/* 连接过程中，无效的目标 Handle */
+/* 连接过程中，无效的目标 Handle（即使验证失败也显示高亮，让用户看到连接点） */
 .react-flow__handle.connectingfrom {
   background-color: #3b82f6 !important;  /* 蓝色表示起点 */
   box-shadow: 0 0 0 2px #3b82f6, 0 0 6px 2px rgba(59, 130, 246, 0.4) !important;
 }
 
-/* 连接线悬停在 Handle 上时的方框效果 */
+/* 连接线悬停在 Handle 上时的红色高亮圆圈 - 无论连接点是否被占用都显示 */
 .react-flow__handle:hover {
   background-color: #ef4444 !important;
-  transform: scale(1.2);
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3) !important;
+  /* 使用 box-shadow 创建高亮圆圈，确保以连接点为中心（不缩放元素本身，避免定位偏移） */
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4), 0 0 0 6px rgba(239, 68, 68, 0.2) !important;
+}
+
+/* 连接过程中，所有可捕获的连接点都显示高亮（即使验证可能失败） */
+.react-flow__handle.connecting {
+  /* 确保连接过程中所有连接点都能被看到 */
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3), 0 0 0 6px rgba(34, 197, 94, 0.2) !important;
 }
 
 /* 连接模式下的画布光标 */

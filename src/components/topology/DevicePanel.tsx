@@ -112,25 +112,83 @@ const DeviceItem = memo(function DeviceItem({
   onSelect?: (type: DeviceType) => void;
 }) {
   const info = DEVICE_TYPES[type];
-  const dragImageRef = useRef<HTMLDivElement>(null);
-  
-  // 预渲染拖拽预览图像
-  useEffect(() => {
-    if (dragImageRef.current) {
-      // 确保元素已渲染
-      dragImageRef.current.style.transform = 'translateX(-9999px)';
-    }
-  }, []);
+  const dragImageRef = useRef<HTMLDivElement | null>(null);
   
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
     e.dataTransfer.setData('application/device-type', type);
     e.dataTransfer.effectAllowed = 'copy';
     
-    // 使用预渲染的元素作为拖拽预览
-    if (dragImageRef.current) {
-      const rect = dragImageRef.current.getBoundingClientRect();
-      e.dataTransfer.setDragImage(dragImageRef.current, rect.width / 2, rect.height / 2);
+    // 创建拖拽预览图像
+    const dragElement = e.currentTarget;
+    const iconElement = dragElement.querySelector('svg');
+    
+    // 创建预览元素
+    const preview = document.createElement('div');
+    preview.style.cssText = `
+      position: absolute;
+      top: -1000px;
+      left: -1000px;
+      background: white;
+      border-radius: 8px;
+      border: 2px solid #60a5fa;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      padding: 8px;
+      opacity: 0.9;
+      z-index: 9999;
+      pointer-events: none;
+    `;
+    
+    // 创建内容
+    const content = document.createElement('div');
+    content.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    `;
+    
+    const iconContainer = document.createElement('div');
+    iconContainer.style.cssText = `
+      width: 48px;
+      height: 48px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: ${info.color}20;
+    `;
+    
+    if (iconElement) {
+      const clonedIcon = iconElement.cloneNode(true) as SVGElement;
+      clonedIcon.setAttribute('width', '32');
+      clonedIcon.setAttribute('height', '32');
+      iconContainer.appendChild(clonedIcon);
     }
+    
+    const label = document.createElement('div');
+    label.style.cssText = `
+      font-size: 12px;
+      font-weight: 500;
+      color: #1f2937;
+      white-space: nowrap;
+    `;
+    label.textContent = info.name;
+    
+    content.appendChild(iconContainer);
+    content.appendChild(label);
+    preview.appendChild(content);
+    document.body.appendChild(preview);
+    
+    // 立即设置拖拽图像（不需要等待动画帧）
+    const rect = preview.getBoundingClientRect();
+    e.dataTransfer.setDragImage(preview, rect.width / 2, rect.height / 2);
+    
+    // 延迟移除预览元素
+    setTimeout(() => {
+      if (preview.parentNode) {
+        preview.parentNode.removeChild(preview);
+      }
+    }, 0);
   };
 
   const handleClick = () => {
@@ -138,48 +196,23 @@ const DeviceItem = memo(function DeviceItem({
   };
 
   return (
-    <>
-      <div
-        draggable
-        onDragStart={handleDragStart}
-        onClick={handleClick}
-        className="flex items-center gap-2 px-2 py-2 rounded cursor-grab hover:bg-gray-100 active:cursor-grabbing border border-transparent hover:border-gray-300 transition-colors select-none"
-        title={`拖拽添加${info.name}`}
+    <div
+      draggable
+      onDragStart={handleDragStart}
+      onClick={handleClick}
+      className="flex items-center gap-2 px-2 py-2 rounded cursor-grab hover:bg-gray-100 active:cursor-grabbing border border-transparent hover:border-gray-300 transition-colors select-none"
+      title={`拖拽添加${info.name}`}
+    >
+      <div 
+        className="w-10 h-10 rounded flex items-center justify-center bg-gray-50 border border-gray-200"
       >
-        <div 
-          className="w-10 h-10 rounded flex items-center justify-center bg-gray-50 border border-gray-200"
-        >
-          <DeviceThumbnail type={type} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-gray-800">{info.name}</div>
-          <div className="text-xs text-gray-500 truncate">{info.description}</div>
-        </div>
+        <DeviceThumbnail type={type} />
       </div>
-      
-      {/* 隐藏的拖拽预览元素 - 预渲染以提高性能 */}
-      <div
-        ref={dragImageRef}
-        className="fixed pointer-events-none bg-white rounded-lg border-2 border-blue-400 shadow-xl p-2 opacity-90"
-        style={{ 
-          left: '-9999px',
-          top: '-9999px',
-          zIndex: 9999
-        }}
-      >
-        <div className="flex flex-col items-center gap-1">
-          <div 
-            className="w-12 h-12 rounded flex items-center justify-center"
-            style={{ backgroundColor: info.color + '20' }}
-          >
-            <DeviceThumbnail type={type} />
-          </div>
-          <div className="text-xs font-medium text-gray-800 whitespace-nowrap">
-            {info.name}
-          </div>
-        </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-gray-800">{info.name}</div>
+        <div className="text-xs text-gray-500 truncate">{info.description}</div>
       </div>
-    </>
+    </div>
   );
 });
 

@@ -207,16 +207,16 @@ export const CONNECTION_RULES: Record<DeviceType, DeviceType[]> = {
   line: ['bus', 'switch', 'meter'],
   // 变压器端口只能连接母线或开关（二选一），同时可接电表
   transformer: ['bus', 'switch', 'meter'],
-  // 开关端口可以连接母线、线路、变压器、电表
-  switch: ['bus', 'line', 'transformer', 'meter'],
+  // 开关端口可以连接母线、线路、变压器（不允许连接电表）
+  switch: ['bus', 'line', 'transformer'],
   // 功率设备只能连接母线（1个）和电表（可选1个）
   static_generator: ['bus', 'meter'],
   storage: ['bus', 'meter'],
   load: ['bus', 'meter'],
   charger: ['bus', 'meter'],
   external_grid: ['bus', 'meter'],
-  // 电表可以连接：母线、线路端口、变压器端口、开关端口、功率设备
-  meter: ['bus', 'line', 'transformer', 'switch', 'static_generator', 'storage', 'load', 'charger', 'external_grid'],
+  // 电表可以连接：母线、线路端口、变压器端口、功率设备（不允许连接开关）
+  meter: ['bus', 'line', 'transformer', 'static_generator', 'storage', 'load', 'charger', 'external_grid'],
 };
 
 // 检查两个设备是否可以连接

@@ -157,6 +157,180 @@ export default function DevicePropertiesPanel({
           />
         </div>
 
+        {/* 连接属性字段（只读，由连接联动自动更新） */}
+        {(deviceType === 'static_generator' || deviceType === 'storage' || deviceType === 'load' || deviceType === 'charger' || deviceType === 'external_grid') && device.properties.bus !== undefined && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              连接的母线索引 (bus)
+            </label>
+            <input
+              type="text"
+              value={device.properties.bus ?? ''}
+              disabled
+              className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+            />
+          </div>
+        )}
+        
+        {deviceType === 'line' && (
+          <>
+            {device.properties.from_bus !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  起始母线索引 (from_bus)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.from_bus ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+            {device.properties.to_bus !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  终止母线索引 (to_bus)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.to_bus ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+          </>
+        )}
+        
+        {deviceType === 'transformer' && (
+          <>
+            {device.properties.hv_bus !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  高压侧母线索引 (hv_bus)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.hv_bus ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+            {device.properties.lv_bus !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  低压侧母线索引 (lv_bus)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.lv_bus ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+          </>
+        )}
+        
+        {deviceType === 'switch' && (
+          <>
+            {device.properties.bus !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  连接母线索引 (bus)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.bus ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+            {device.properties.element_type !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  元素类型 (element_type)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.element_type ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+            {device.properties.element !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  元素索引 (element)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.element ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+          </>
+        )}
+        
+        {deviceType === 'meter' && (
+          <>
+            {device.properties.element_type !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  连接元件类型 (element_type)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.element_type ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+            {device.properties.element !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  连接元件索引 (element)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.element ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+            {device.properties.side !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  连接端口 (side)
+                </label>
+                <input
+                  type="text"
+                  value={device.properties.side ?? ''}
+                  disabled
+                  className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500"
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* 分隔线 */}
+        {((deviceType === 'line' && (device.properties.from_bus !== undefined || device.properties.to_bus !== undefined)) ||
+          (deviceType === 'transformer' && (device.properties.hv_bus !== undefined || device.properties.lv_bus !== undefined)) ||
+          (deviceType === 'switch' && (device.properties.bus !== undefined || device.properties.element_type !== undefined || device.properties.element !== undefined)) ||
+          (deviceType === 'meter' && (device.properties.element_type !== undefined || device.properties.element !== undefined)) ||
+          ((deviceType === 'static_generator' || deviceType === 'storage' || deviceType === 'load' || deviceType === 'charger' || deviceType === 'external_grid') && device.properties.bus !== undefined)) && (
+          <div className="border-t border-gray-200 my-3"></div>
+        )}
+
         {/* 动态属性字段 */}
         {propertyFields.map((field) => (
           <div key={field.key}>

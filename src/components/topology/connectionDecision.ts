@@ -199,17 +199,32 @@ function checkPortConstraints(ctx: ConnectionContext): ValidationResult {
     }
   }
 
-  // 1.3.3 线路/变压器/开关端口只能连接1个母线或开关
-  if (CONNECTION_DEVICE_TYPES.includes(sourceType) && (targetType === 'bus' || targetType === 'switch')) {
+  // 1.3.3 线路/变压器端口只能连接1个母线或开关
+  if ((sourceType === 'line' || sourceType === 'transformer') && (targetType === 'bus' || targetType === 'switch')) {
     const portId = connection.sourceHandle;
     if (portId && getPortConnectionCount(sourceNode.id, portId, edges) >= 1) {
       return { valid: false, reason: `${sourceNode.data.name} 的该端口已有连接，每端口只能连接1个母线或开关` };
     }
   }
-  if (CONNECTION_DEVICE_TYPES.includes(targetType) && (sourceType === 'bus' || sourceType === 'switch')) {
+  if ((targetType === 'line' || targetType === 'transformer') && (sourceType === 'bus' || sourceType === 'switch')) {
     const portId = connection.targetHandle;
     if (portId && getPortConnectionCount(targetNode.id, portId, edges) >= 1) {
       return { valid: false, reason: `${targetNode.data.name} 的该端口已有连接，每端口只能连接1个母线或开关` };
+    }
+  }
+
+  // 1.3.3.1 开关端口只能连接1个设备（包括母线、线路、变压器）
+  // 检查开关的每个连接点是否已有连接
+  if (sourceType === 'switch') {
+    const portId = connection.sourceHandle;
+    if (portId && getPortConnectionCount(sourceNode.id, portId, edges) >= 1) {
+      return { valid: false, reason: `${sourceNode.data.name} 的该端口已有连接，开关的每个连接点只能连接1个设备` };
+    }
+  }
+  if (targetType === 'switch') {
+    const portId = connection.targetHandle;
+    if (portId && getPortConnectionCount(targetNode.id, portId, edges) >= 1) {
+      return { valid: false, reason: `${targetNode.data.name} 的该端口已有连接，开关的每个连接点只能连接1个设备` };
     }
   }
 
@@ -337,6 +352,18 @@ function linkagePowerDeviceToBus(
 }
 
 /**
+ * 从连接点ID中提取基础ID（去除-source后缀）
+ */
+function getBasePortId(portId: string | null | undefined): string | null {
+  if (!portId) return null;
+  // 如果包含-source后缀，去除它
+  if (portId.endsWith('-source')) {
+    return portId.replace('-source', '');
+  }
+  return portId;
+}
+
+/**
  * 3.2 线路 ↔ 母线：更新 from_bus 或 to_bus
  */
 function linkageLineToBus(
@@ -348,7 +375,7 @@ function linkageLineToBus(
   targetType: DeviceType
 ): Node[] {
   if (sourceType === 'line' && targetType === 'bus') {
-    const portId = connection.sourceHandle;
+    const portId = getBasePortId(connection.sourceHandle);
     if (portId === 'top') {
       return updateNodeProperties(updatedNodes, sourceNode.id, { from_bus: getDeviceIndex(targetNode.id) });
     } else if (portId === 'bottom') {
@@ -356,7 +383,7 @@ function linkageLineToBus(
     }
   }
   if (targetType === 'line' && sourceType === 'bus') {
-    const portId = connection.targetHandle;
+    const portId = getBasePortId(connection.targetHandle);
     if (portId === 'top') {
       return updateNodeProperties(updatedNodes, targetNode.id, { from_bus: getDeviceIndex(sourceNode.id) });
     } else if (portId === 'bottom') {
@@ -378,7 +405,7 @@ function linkageTransformerToBus(
   targetType: DeviceType
 ): Node[] {
   if (sourceType === 'transformer' && targetType === 'bus') {
-    const portId = connection.sourceHandle;
+    const portId = getBasePortId(connection.sourceHandle);
     if (portId === 'top') {
       return updateNodeProperties(updatedNodes, sourceNode.id, { hv_bus: getDeviceIndex(targetNode.id) });
     } else if (portId === 'bottom') {
@@ -386,7 +413,7 @@ function linkageTransformerToBus(
     }
   }
   if (targetType === 'transformer' && sourceType === 'bus') {
-    const portId = connection.targetHandle;
+    const portId = getBasePortId(connection.targetHandle);
     if (portId === 'top') {
       return updateNodeProperties(updatedNodes, targetNode.id, { hv_bus: getDeviceIndex(sourceNode.id) });
     } else if (portId === 'bottom') {
@@ -394,6 +421,31 @@ function linkageTransformerToBus(
     }
   }
   return updatedNodes;
+}
+
+/**
+ * 将连接点ID映射为side字段值（from_bus/to_bus/hv_bus/lv_bus等）
+ */
+function mapPortIdToSide(portId: string | null | undefined, deviceType: DeviceType): string | null {
+  if (!portId) return null;
+  const basePortId = getBasePortId(portId);
+  
+  // 根据设备类型和连接点映射
+  if (deviceType === 'line') {
+    if (basePortId === 'top') return 'from_bus';
+    if (basePortId === 'bottom') return 'to_bus';
+  } else if (deviceType === 'transformer') {
+    if (basePortId === 'top') return 'hv_bus';
+    if (basePortId === 'bottom') return 'lv_bus';
+  } else if (deviceType === 'switch') {
+    if (basePortId === 'left') return 'left';
+    if (basePortId === 'right') return 'right';
+  } else if (deviceType === 'bus') {
+    if (basePortId === 'center') return 'center';
+  }
+  
+  // 对于其他设备类型，返回原始连接点ID
+  return basePortId;
 }
 
 /**
@@ -408,24 +460,249 @@ function linkageMeterToDevice(
   targetType: DeviceType
 ): Node[] {
   if (sourceType === 'meter') {
+    const side = mapPortIdToSide(connection.targetHandle, targetType);
     return updateNodeProperties(updatedNodes, sourceNode.id, {
       element_type: ELEMENT_TYPE_MAP[targetType] || targetType,
       element: getDeviceIndex(targetNode.id),
-      side: connection.targetHandle || null,
+      side: side,
     });
   }
   if (targetType === 'meter') {
+    const side = mapPortIdToSide(connection.sourceHandle, sourceType);
     return updateNodeProperties(updatedNodes, targetNode.id, {
       element_type: ELEMENT_TYPE_MAP[sourceType] || sourceType,
       element: getDeviceIndex(sourceNode.id),
-      side: connection.sourceHandle || null,
+      side: side,
     });
   }
   return updatedNodes;
 }
 
 /**
- * 3.5 开关闭合连接联动：检查开关是否形成"母线—线路/变压器"闭合
+ * 3.5 开关连接母线：记录开关两端的母线索引，并检查是否需要更新线路/变压器的bus字段
+ */
+function linkageSwitchToBus(
+  updatedNodes: Node[],
+  connection: Connection,
+  sourceNode: Node,
+  targetNode: Node,
+  sourceType: DeviceType,
+  targetType: DeviceType,
+  edges: Edge[]
+): Node[] {
+  // 处理 开关 ↔ 母线 的情况
+  if ((sourceType !== 'switch' || targetType !== 'bus') && 
+      (sourceType !== 'bus' || targetType !== 'switch')) {
+    return updatedNodes;
+  }
+
+  const switchNode = sourceType === 'switch' ? sourceNode : targetNode;
+  const busNode = sourceType === 'switch' ? targetNode : sourceNode;
+
+  // 获取开关的连接点ID
+  const portId = getBasePortId(
+    sourceType === 'switch' ? connection.sourceHandle : connection.targetHandle
+  );
+
+  // 获取当前连接的母线索引
+  const busIndex = getDeviceIndex(busNode.id);
+
+  // 获取开关的所有现有连接
+  const switchEdges = edges.filter(e => 
+    e.source === switchNode.id || e.target === switchNode.id
+  );
+  
+  // 构建所有连接（包括当前新连接）
+  const allConnections: Array<{ nodeId: string; portId: string }> = [];
+  
+  // 添加现有连接
+  for (const edge of switchEdges) {
+    const otherId = edge.source === switchNode.id ? edge.target : edge.source;
+    const otherPortId = getBasePortId(
+      edge.source === switchNode.id ? edge.sourceHandle : edge.targetHandle
+    );
+    allConnections.push({ nodeId: otherId, portId: otherPortId || '' });
+  }
+  
+  // 添加当前新连接
+  allConnections.push({ nodeId: busNode.id, portId: portId || '' });
+
+  // 找出开关连接的所有设备
+  const busConnections: Array<{ nodeId: string; busIndex: number }> = [];
+  let lineOrTransformerConnection: { nodeId: string; type: DeviceType; index: number } | null = null;
+  
+  for (const conn of allConnections) {
+    const otherNode = updatedNodes.find(n => n.id === conn.nodeId);
+    if (!otherNode) continue;
+    
+    const otherType = otherNode.data.deviceType as DeviceType;
+    if (otherType === 'bus') {
+      busConnections.push({ nodeId: conn.nodeId, busIndex: getDeviceIndex(conn.nodeId) });
+    } else if (otherType === 'line' || otherType === 'transformer') {
+      lineOrTransformerConnection = {
+        nodeId: conn.nodeId,
+        type: otherType,
+        index: getDeviceIndex(conn.nodeId)
+      };
+    }
+  }
+
+  // 获取开关的现有属性
+  const currentSwitchProps = switchNode.data.properties || {};
+  const existingBus = currentSwitchProps.bus;
+
+  // 更新开关的属性
+  const switchUpdates: Record<string, any> = {};
+  
+  if (lineOrTransformerConnection) {
+    // 开关一端是母线，一端是线路/变压器
+    // bus: 母线的索引（第一个连接的母线）
+    // element_type: 'line' 或 'trafo'
+    // element: 线路/变压器的索引
+    if (busConnections.length > 0) {
+      // 如果已有bus属性，保持；否则使用第一个母线
+      switchUpdates.bus = existingBus !== undefined ? existingBus : busConnections[0].busIndex;
+    } else if (existingBus !== undefined) {
+      switchUpdates.bus = existingBus;
+    }
+    switchUpdates.element_type = lineOrTransformerConnection.type === 'line' ? 'line' : 'trafo';
+    switchUpdates.element = lineOrTransformerConnection.index;
+  } else if (busConnections.length >= 2) {
+    // 开关两端都是母线
+    // bus: 第一次连接的母线索引（如果已有bus属性则保持，否则使用第一个）
+    // element_type: 'bus'
+    // element: 第二次连接的母线索引（另一个母线）
+    if (existingBus !== undefined) {
+      // 如果已有bus属性，保持它，element设置为另一个母线
+      switchUpdates.bus = existingBus;
+      const otherBus = busConnections.find(b => b.busIndex !== existingBus);
+      if (otherBus) {
+        switchUpdates.element_type = 'bus';
+        switchUpdates.element = otherBus.busIndex;
+      }
+    } else {
+      // 如果没有bus属性，第一个连接的母线作为bus，第二个作为element
+      switchUpdates.bus = busConnections[0].busIndex;
+      switchUpdates.element_type = 'bus';
+      switchUpdates.element = busConnections[1].busIndex;
+    }
+  } else if (busConnections.length === 1) {
+    // 开关只连接了一个母线（当前新连接）
+    // 如果已有bus属性，说明这是第二个母线，设置element_type='bus', element=当前母线索引
+    // 如果没有bus属性，这是第一个母线，设置bus=当前母线索引
+    if (existingBus !== undefined) {
+      // 这是第二个母线
+      switchUpdates.bus = existingBus;
+      switchUpdates.element_type = 'bus';
+      switchUpdates.element = busConnections[0].busIndex;
+    } else {
+      // 这是第一个母线
+      switchUpdates.bus = busConnections[0].busIndex;
+    }
+  }
+
+  if (Object.keys(switchUpdates).length > 0) {
+    updatedNodes = updateNodeProperties(updatedNodes, switchNode.id, switchUpdates);
+  }
+
+  // 检查开关另一端是否连接了线路/变压器，如果是，更新它们空缺的bus字段
+  for (const edge of switchEdges) {
+    const otherId = edge.source === switchNode.id ? edge.target : edge.source;
+    const otherNode = updatedNodes.find(n => n.id === otherId);
+    
+    if (!otherNode) continue;
+    
+    const otherType = otherNode.data.deviceType as DeviceType;
+    
+    if (otherType === 'line' || otherType === 'transformer') {
+      // 获取线路/变压器的端口ID（不是开关的端口ID）
+      // 如果edge.source是开关，那么edge.targetHandle是线路/变压器的端口
+      // 如果edge.target是开关，那么edge.sourceHandle是线路/变压器的端口
+      const otherPortId = getBasePortId(
+        edge.source === switchNode.id ? edge.targetHandle : edge.sourceHandle
+      );
+      
+      if (otherType === 'line') {
+        // 只更新空缺的bus字段
+        const currentProps = otherNode.data.properties || {};
+        if (otherPortId === 'top' && !currentProps.from_bus) {
+          updatedNodes = updateNodeProperties(updatedNodes, otherId, { from_bus: busIndex });
+        } else if (otherPortId === 'bottom' && !currentProps.to_bus) {
+          updatedNodes = updateNodeProperties(updatedNodes, otherId, { to_bus: busIndex });
+        }
+      } else if (otherType === 'transformer') {
+        // 只更新空缺的bus字段
+        const currentProps = otherNode.data.properties || {};
+        if (otherPortId === 'top' && !currentProps.hv_bus) {
+          updatedNodes = updateNodeProperties(updatedNodes, otherId, { hv_bus: busIndex });
+        } else if (otherPortId === 'bottom' && !currentProps.lv_bus) {
+          updatedNodes = updateNodeProperties(updatedNodes, otherId, { lv_bus: busIndex });
+        }
+      }
+    }
+  }
+
+  return updatedNodes;
+}
+
+/**
+ * 3.6 开关连接线路/变压器：记录开关的连接元件类型和索引
+ * 如果开关另一端已连接母线，同时记录bus属性
+ */
+function linkageSwitchToLineOrTransformer(
+  updatedNodes: Node[],
+  connection: Connection,
+  sourceNode: Node,
+  targetNode: Node,
+  sourceType: DeviceType,
+  targetType: DeviceType,
+  edges: Edge[]
+): Node[] {
+  // 处理 开关 ↔ 线路/变压器 的情况
+  const switchNode = sourceType === 'switch' ? sourceNode : (targetType === 'switch' ? targetNode : null);
+  const connectedNode = sourceType === 'switch' ? targetNode : sourceNode;
+  const connectedType = sourceType === 'switch' ? targetType : sourceType;
+
+  if (!switchNode || (connectedType !== 'line' && connectedType !== 'transformer')) {
+    return updatedNodes;
+  }
+
+  // 获取开关的所有现有连接
+  const switchEdges = edges.filter(e => 
+    e.source === switchNode.id || e.target === switchNode.id
+  );
+
+  // 检查开关另一端是否连接了母线
+  let connectedBusId: string | null = null;
+  for (const edge of switchEdges) {
+    const otherId = edge.source === switchNode.id ? edge.target : edge.source;
+    const otherNode = updatedNodes.find(n => n.id === otherId);
+    if (otherNode?.data.deviceType === 'bus') {
+      connectedBusId = otherId;
+      break;
+    }
+  }
+
+  // 记录开关的连接元件类型和索引
+  const elementType = connectedType === 'line' ? 'line' : 'trafo';
+  const elementIndex = getDeviceIndex(connectedNode.id);
+  
+  // 更新开关的属性
+  const switchUpdates: Record<string, any> = {
+    element_type: elementType,
+    element: elementIndex,
+  };
+
+  // 如果开关另一端已连接母线，记录bus属性
+  if (connectedBusId) {
+    switchUpdates.bus = getDeviceIndex(connectedBusId);
+  }
+  
+  return updateNodeProperties(updatedNodes, switchNode.id, switchUpdates);
+}
+
+/**
+ * 3.7 开关闭合连接联动：检查开关是否形成"母线—线路/变压器"闭合
  */
 function linkageSwitchClosure(
   updatedNodes: Node[],
@@ -459,23 +736,29 @@ function linkageSwitchClosure(
     }
   }
 
-  // 如果开关另一端连接了母线，更新线路/变压器的 bus 字段
+  // 如果开关另一端连接了母线，更新线路/变压器的空缺bus字段
   if (connectedBusId) {
     const busIndex = getDeviceIndex(connectedBusId);
-    const portId = connection.source === connectedNode.id
-      ? connection.sourceHandle
-      : connection.targetHandle;
+    const portId = getBasePortId(
+      connection.source === connectedNode.id
+        ? connection.sourceHandle
+        : connection.targetHandle
+    );
+
+    const currentProps = connectedNode.data.properties || {};
 
     if (connectedType === 'line') {
-      if (portId === 'top') {
+      // 只更新空缺的bus字段
+      if (portId === 'top' && !currentProps.from_bus) {
         return updateNodeProperties(updatedNodes, connectedNode.id, { from_bus: busIndex });
-      } else if (portId === 'bottom') {
+      } else if (portId === 'bottom' && !currentProps.to_bus) {
         return updateNodeProperties(updatedNodes, connectedNode.id, { to_bus: busIndex });
       }
     } else if (connectedType === 'transformer') {
-      if (portId === 'top') {
+      // 只更新空缺的bus字段
+      if (portId === 'top' && !currentProps.hv_bus) {
         return updateNodeProperties(updatedNodes, connectedNode.id, { hv_bus: busIndex });
-      } else if (portId === 'bottom') {
+      } else if (portId === 'bottom' && !currentProps.lv_bus) {
         return updateNodeProperties(updatedNodes, connectedNode.id, { lv_bus: busIndex });
       }
     }
@@ -506,6 +789,8 @@ export function performLinkageUpdatePhase3(
   updatedNodes = linkageLineToBus(updatedNodes, connection, sourceNode, targetNode, sourceType, targetType);
   updatedNodes = linkageTransformerToBus(updatedNodes, connection, sourceNode, targetNode, sourceType, targetType);
   updatedNodes = linkageMeterToDevice(updatedNodes, connection, sourceNode, targetNode, sourceType, targetType);
+  updatedNodes = linkageSwitchToBus(updatedNodes, connection, sourceNode, targetNode, sourceType, targetType, edges);
+  updatedNodes = linkageSwitchToLineOrTransformer(updatedNodes, connection, sourceNode, targetNode, sourceType, targetType, edges);
   updatedNodes = linkageSwitchClosure(updatedNodes, connection, sourceNode, targetNode, sourceType, targetType, edges);
 
   return updatedNodes;
@@ -546,7 +831,7 @@ function reverseLinkageLineToBus(
   targetType: DeviceType
 ): Node[] {
   if (sourceType === 'line' && targetType === 'bus') {
-    const portId = deletedEdge.sourceHandle;
+    const portId = getBasePortId(deletedEdge.sourceHandle);
     if (portId === 'top') {
       return clearNodeProperties(updatedNodes, sourceNode.id, ['from_bus']);
     } else if (portId === 'bottom') {
@@ -554,7 +839,7 @@ function reverseLinkageLineToBus(
     }
   }
   if (targetType === 'line' && sourceType === 'bus') {
-    const portId = deletedEdge.targetHandle;
+    const portId = getBasePortId(deletedEdge.targetHandle);
     if (portId === 'top') {
       return clearNodeProperties(updatedNodes, targetNode.id, ['from_bus']);
     } else if (portId === 'bottom') {
@@ -576,7 +861,7 @@ function reverseLinkageTransformerToBus(
   targetType: DeviceType
 ): Node[] {
   if (sourceType === 'transformer' && targetType === 'bus') {
-    const portId = deletedEdge.sourceHandle;
+    const portId = getBasePortId(deletedEdge.sourceHandle);
     if (portId === 'top') {
       return clearNodeProperties(updatedNodes, sourceNode.id, ['hv_bus']);
     } else if (portId === 'bottom') {
@@ -584,7 +869,7 @@ function reverseLinkageTransformerToBus(
     }
   }
   if (targetType === 'transformer' && sourceType === 'bus') {
-    const portId = deletedEdge.targetHandle;
+    const portId = getBasePortId(deletedEdge.targetHandle);
     if (portId === 'top') {
       return clearNodeProperties(updatedNodes, targetNode.id, ['hv_bus']);
     } else if (portId === 'bottom') {
@@ -614,11 +899,115 @@ function reverseLinkageMeter(
 }
 
 /**
+ * 反向联动：开关连接母线
+ */
+function reverseLinkageSwitchToBus(
+  updatedNodes: Node[],
+  deletedEdge: Edge,
+  sourceNode: Node,
+  targetNode: Node,
+  sourceType: DeviceType,
+  targetType: DeviceType,
+  edges: Edge[]
+): Node[] {
+  // 处理 开关 ↔ 母线 的情况
+  if ((sourceType !== 'switch' || targetType !== 'bus') && 
+      (sourceType !== 'bus' || targetType !== 'switch')) {
+    return updatedNodes;
+  }
+
+  const switchNode = sourceType === 'switch' ? sourceNode : targetNode;
+  const deletedBusIndex = getDeviceIndex(sourceType === 'switch' ? targetNode.id : sourceNode.id);
+
+  // 获取开关的现有属性
+  const currentProps = switchNode.data.properties || {};
+  const currentBus = currentProps.bus;
+  const currentElement = currentProps.element;
+  const currentElementType = currentProps.element_type;
+
+  // 如果删除的是bus属性对应的母线
+  if (currentBus === deletedBusIndex) {
+    // 如果element_type是'bus'，说明两端都是母线，将element提升为bus
+    if (currentElementType === 'bus' && currentElement !== undefined) {
+      return updateNodeProperties(updatedNodes, switchNode.id, {
+        bus: currentElement,
+        element_type: undefined,
+        element: undefined,
+      });
+    } else {
+      // 否则清除bus属性
+      return clearNodeProperties(updatedNodes, switchNode.id, ['bus']);
+    }
+  }
+  
+  // 如果删除的是element对应的母线（element_type='bus'）
+  if (currentElementType === 'bus' && currentElement === deletedBusIndex) {
+    // 只清除element和element_type，保留bus
+    return clearNodeProperties(updatedNodes, switchNode.id, ['element_type', 'element']);
+  }
+
+  return updatedNodes;
+}
+
+/**
+ * 反向联动：开关连接线路/变压器
+ */
+function reverseLinkageSwitchToLineOrTransformer(
+  updatedNodes: Node[],
+  deletedEdge: Edge,
+  sourceNode: Node,
+  targetNode: Node,
+  sourceType: DeviceType,
+  targetType: DeviceType,
+  edges: Edge[]
+): Node[] {
+  // 处理 开关 ↔ 线路/变压器 的情况
+  const switchNode = sourceType === 'switch' ? sourceNode : (targetType === 'switch' ? targetNode : null);
+  const connectedType = sourceType === 'switch' ? targetType : sourceType;
+
+  if (!switchNode || (connectedType !== 'line' && connectedType !== 'transformer')) {
+    return updatedNodes;
+  }
+
+  // 获取开关的剩余连接（排除被删除的连接）
+  const remainingEdges = edges.filter(e => 
+    (e.source === switchNode.id || e.target === switchNode.id) &&
+    !(e.source === deletedEdge.source && e.target === deletedEdge.target)
+  );
+
+  // 检查开关另一端是否还有母线连接
+  let hasBusConnection = false;
+  let busIndex: number | null = null;
+  for (const edge of remainingEdges) {
+    const otherId = edge.source === switchNode.id ? edge.target : edge.source;
+    const otherNode = updatedNodes.find(n => n.id === otherId);
+    if (otherNode?.data.deviceType === 'bus') {
+      hasBusConnection = true;
+      busIndex = getDeviceIndex(otherId);
+      break;
+    }
+  }
+
+  // 如果还有母线连接，保留bus属性，只清除element_type和element
+  // 如果没有母线连接，清除所有属性
+  if (hasBusConnection && busIndex !== null) {
+    return updateNodeProperties(updatedNodes, switchNode.id, {
+      bus: busIndex,
+      element_type: undefined,
+      element: undefined,
+    });
+  } else {
+    return clearNodeProperties(updatedNodes, switchNode.id, ['bus', 'element_type', 'element']);
+  }
+}
+
+/**
  * 连接删除时执行反向联动
  */
 export function performReverseLinkage(
   deletedEdge: Edge,
-  nodes: Node[]
+  nodes: Node[],
+  edges: Edge[]
 ): Node[] {
   const sourceNode = nodes.find(n => n.id === deletedEdge.source);
   const targetNode = nodes.find(n => n.id === deletedEdge.target);
@@ -634,6 +1023,8 @@ export function performReverseLinkage(
   updatedNodes = reverseLinkageLineToBus(updatedNodes, deletedEdge, sourceNode, targetNode, sourceType, targetType);
   updatedNodes = reverseLinkageTransformerToBus(updatedNodes, deletedEdge, sourceNode, targetNode, sourceType, targetType);
   updatedNodes = reverseLinkageMeter(updatedNodes, sourceNode, targetNode, sourceType, targetType);
+  updatedNodes = reverseLinkageSwitchToBus(updatedNodes, deletedEdge, sourceNode, targetNode, sourceType, targetType, edges);
+  updatedNodes = reverseLinkageSwitchToLineOrTransformer(updatedNodes, deletedEdge, sourceNode, targetNode, sourceType, targetType, edges);
 
   // 注意：开关闭合连接的反向联动较为复杂，暂不自动处理
 

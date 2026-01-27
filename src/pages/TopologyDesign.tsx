@@ -343,13 +343,26 @@ export default function TopologyDesign() {
 
   // 通过拖拽添加设备
   const handleDeviceAdd = useCallback((deviceType: DeviceType, position: { x: number; y: number }) => {
+    // === 全局约束检查 ===
+    // 外部电网设备数量限制（最多1个）
+    if (deviceType === 'external_grid') {
+      const existingExternalGrid = nodes.find(n => n.data.deviceType === 'external_grid');
+      if (existingExternalGrid) {
+        alert('外部电网设备数量已达上限（1个），无法继续添加');
+        return;
+      }
+    }
+
     const deviceId = deviceIdCounter.current++;
     const typeName = DEVICE_TYPE_TO_CN[deviceType] || deviceType;
     
     const newNode: Node = {
       id: `device-${deviceId}`,
       type: 'device',
-      position,
+      position: {
+        x: position.x || 100,
+        y: position.y || 100,
+      },
       data: {
         name: `${typeName}-${deviceId}`,
         deviceType,
@@ -357,8 +370,14 @@ export default function TopologyDesign() {
       },
     };
     
-    setNodes((nds) => [...nds, newNode]);
-  }, []);
+    // 使用函数式更新，确保立即应用
+    setNodes((nds) => {
+      const updated = [...nds, newNode];
+      // 保存状态
+      saveStateToSession(updated, edges, deviceIdCounter.current);
+      return updated;
+    });
+  }, [nodes, edges]);
 
   // 通过点击添加设备
   const handleDeviceSelect = useCallback((deviceType: DeviceType) => {

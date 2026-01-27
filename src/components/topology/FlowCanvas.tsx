@@ -126,7 +126,9 @@ function FlowCanvasInner({
             const deletedEdge = edges.find(e => e.id === change.id);
             if (deletedEdge) {
               // 调用连接决策模块的反向联动函数
-              currentNodes = performReverseLinkage(deletedEdge, currentNodes);
+              // 传入剩余的edges（排除被删除的edge）
+              const remainingEdges = edges.filter(e => e.id !== change.id);
+              currentNodes = performReverseLinkage(deletedEdge, currentNodes, remainingEdges);
             }
           }
         }
@@ -156,12 +158,15 @@ function FlowCanvasInner({
   // ============================================================================
   // 连接决策：实时验证（用于拖拽时的视觉反馈）
   // ============================================================================
-
+  // 注意：始终返回 true，允许所有连接点被捕获和高亮
+  // 实际的连接验证在 handleConnect 中进行，这样可以先让用户看到连接点，再通过规则过滤
   const checkIsValidConnection = useCallback(
     (connection: Connection): boolean => {
-      return isConnectionValid(connection, nodes, edges);
+      // 始终返回 true，允许所有连接点显示高亮
+      // 连接规则验证在 handleConnect 中执行
+      return true;
     },
-    [nodes, edges]
+    []
   );
 
   // ============================================================================
@@ -227,6 +232,7 @@ function FlowCanvasInner({
       const bounds = reactFlowWrapper.current?.getBoundingClientRect();
       if (!bounds) return;
 
+      // 使用 project 函数将屏幕坐标转换为流程坐标
       const position = screenToFlowPosition({
         x: e.clientX,
         y: e.clientY,
@@ -238,11 +244,17 @@ function FlowCanvasInner({
         y: Math.round(position.y / GRID_SIZE) * GRID_SIZE,
       };
 
-      onDeviceAdd?.(deviceType, snappedPosition);
+      // 确保位置在视口内（如果位置无效，使用默认位置）
+      const finalPosition = {
+        x: isNaN(snappedPosition.x) || !isFinite(snappedPosition.x) ? 100 : snappedPosition.x,
+        y: isNaN(snappedPosition.y) || !isFinite(snappedPosition.y) ? 100 : snappedPosition.y,
+      };
+
+      onDeviceAdd?.(deviceType, finalPosition);
 
       setTimeout(() => {
         isDroppingRef.current = false;
-      }, 100);
+      }, 50);
     },
     [screenToFlowPosition, onDeviceAdd]
   );
