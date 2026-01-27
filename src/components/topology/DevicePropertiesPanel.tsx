@@ -82,12 +82,41 @@ export default function DevicePropertiesPanel({
   onUpdate,
 }: DevicePropertiesPanelProps) {
   const [formData, setFormData] = useState<Record<string, any>>({});
+  const [newCustomKey, setNewCustomKey] = useState('');
+  const [newCustomValue, setNewCustomValue] = useState('');
 
   const deviceType = device.deviceType as DeviceType;
   const propertyFields = useMemo(() => 
     DEVICE_PROPERTY_FIELDS[deviceType] || [], 
     [deviceType]
   );
+
+  // 保留字段（不作为自定义字段显示）
+  const reservedKeys = useMemo(() => {
+    const keys = new Set<string>();
+    // 基础字段
+    keys.add('name');
+    // 联动连接字段
+    [
+      'bus',
+      'from_bus',
+      'to_bus',
+      'hv_bus',
+      'lv_bus',
+      'element_type',
+      'element',
+      'side',
+    ].forEach(k => keys.add(k));
+    // 仿真参数字段
+    [
+      'response_delay',
+      'measurement_error',
+      'data_collection_frequency',
+    ].forEach(k => keys.add(k));
+    // 预定义属性字段
+    propertyFields.forEach(f => keys.add(f.key));
+    return keys;
+  }, [propertyFields]);
 
   useEffect(() => {
     const loadDeviceMetadata = async () => {
@@ -103,6 +132,40 @@ export default function DevicePropertiesPanel({
       initialData.response_delay = device.properties.response_delay ?? null;
       initialData.measurement_error = device.properties.measurement_error ?? null;
       initialData.data_collection_frequency = device.properties.data_collection_frequency ?? null;
+
+      // 为功率设备和测量设备预置通信相关自定义字段（仅在不存在时设置默认值）
+      const isPowerOrMeter =
+        deviceType === 'static_generator' ||
+        deviceType === 'storage' ||
+        deviceType === 'load' ||
+        deviceType === 'charger' ||
+        deviceType === 'external_grid' ||
+        deviceType === 'meter';
+
+      if (isPowerOrMeter) {
+        if (initialData.ip === undefined) {
+          initialData.ip = device.properties.ip ?? '127.0.0.1';
+        }
+        if (initialData.port === undefined) {
+          initialData.port = device.properties.port ?? 5020;
+        }
+        if (initialData.baudrate === undefined) {
+          initialData.baudrate = device.properties.baudrate ?? 9600;
+        }
+        if (initialData.parity === undefined) {
+          initialData.parity = device.properties.parity ?? 'none';
+        }
+        if (initialData.comm_mode === undefined) {
+          initialData.comm_mode = device.properties.comm_mode ?? 'tcp'; // 可选值：'485' | 'tcp'
+        }
+      }
+
+       // 将已有的自定义字段也一并载入（排除保留字段）
+       Object.entries(device.properties).forEach(([key, value]) => {
+         if (!reservedKeys.has(key)) {
+           initialData[key] = value;
+         }
+       });
       
       // 尝试从后端获取设备元数据（如果 properties 中没有）
       try {
@@ -132,7 +195,7 @@ export default function DevicePropertiesPanel({
     };
     
     loadDeviceMetadata();
-  }, [device, propertyFields]);
+  }, [device, propertyFields, reservedKeys]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +233,22 @@ export default function DevicePropertiesPanel({
   const handleFieldChange = (key: string, value: any) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
+
+  // 删除自定义字段
+  const removeCustomField = (key: string) => {
+    setFormData((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  // 计算当前自定义字段列表
+  const customKeys = useMemo(() => {
+    return Object.keys(formData).filter(
+      (key) => !reservedKeys.has(key)
+    );
+  }, [formData, reservedKeys]);
 
   return (
     <div className="absolute right-0 top-0 h-full w-72 bg-white border-l border-gray-200 shadow-lg z-10 flex flex-col">
@@ -450,6 +529,89 @@ export default function DevicePropertiesPanel({
             placeholder="1.0"
           />
           <p className="text-xs text-gray-400 mt-1">数据采集间隔时间（秒），例如：1.0 表示每秒采集一次</p>
+        </div>
+
+        {/* 自定义属性字段 */}
+        <div className="border-t border-gray-200 my-3"></div>
+        <div className="mb-2">
+          <h3 className="text-xs font-semibold text-gray-700 mb-2">自定义属性</h3>
+          <p className="text-[11px] text-gray-400">
+            这里可以为设备添加额外的自定义属性键值对，这些字段会一并保存在拓扑文件中。
+          </p>
+        </div>
+
+        {/* 已有自定义字段列表 */}
+        {customKeys.map((key) => (
+          <div key={key} className="mb-2">
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={key}
+                disabled
+                className="w-24 px-2 py-1 bg-gray-50 border border-gray-200 rounded text-xs text-gray-500"
+              />
+              <span className="text-xs text-gray-400 px-1">=</span>
+              <input
+                type="text"
+                value={formData[key] ?? ''}
+                onChange={(e) => handleFieldChange(key, e.target.value)}
+                className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => removeCustomField(key)}
+                className="px-2 py-1 text-[11px] border border-red-300 text-red-500 rounded hover:bg-red-50"
+              >
+                删
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {/* 新增自定义字段 */}
+        <div className="mt-2 space-y-1">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            新增自定义属性
+          </label>
+          <div className="flex gap-1 mb-1">
+            <input
+              type="text"
+              placeholder="键（英文/下划线）"
+              value={newCustomKey}
+              onChange={(e) => setNewCustomKey(e.target.value)}
+              className="w-2/5 px-2 py-1.5 bg-white border border-gray-300 rounded text-xs text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            />
+            <input
+              type="text"
+              placeholder="值"
+              value={newCustomValue}
+              onChange={(e) => setNewCustomValue(e.target.value)}
+              className="flex-1 px-2 py-1.5 bg-white border border-gray-300 rounded text-xs text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const key = newCustomKey.trim();
+                if (!key) return;
+                if (reservedKeys.has(key)) {
+                  alert('该键名与内置字段冲突，请使用其他名称。');
+                  return;
+                }
+                setFormData((prev) => ({
+                  ...prev,
+                  [key]: newCustomValue,
+                }));
+                setNewCustomKey('');
+                setNewCustomValue('');
+              }}
+              className="px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-[11px] text-white"
+            >
+              添加
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400">
+            注意：自定义键名不应与上方固定字段（如 voltage_kv、bus 等）重复。
+          </p>
         </div>
 
         {/* 动态属性字段 */}
