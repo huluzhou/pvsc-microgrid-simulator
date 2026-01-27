@@ -2,6 +2,7 @@
  * 拓扑设计页面 - 浅色主题
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { Node, Edge, Connection } from 'reactflow';
@@ -69,6 +70,9 @@ function saveStateToSession(nodes: Node[], edges: Edge[], counter: number) {
 }
 
 export default function TopologyDesign() {
+  // 获取当前路由位置，用于检测标签页切换
+  const location = useLocation();
+  
   // 初始化时尝试从 sessionStorage 恢复状态
   const savedState = loadStateFromSession();
   
@@ -95,6 +99,9 @@ export default function TopologyDesign() {
   
   // FlowCanvas ref（用于调用 fitView）
   const flowCanvasRef = useRef<FlowCanvasRef>(null);
+  
+  // 标记是否已经适配过视图（避免重复适配）
+  const hasFittedViewRef = useRef(false);
   
   // 处理鼠标移动
   const handleMouseMove = useCallback((position: { x: number; y: number }) => {
@@ -176,6 +183,8 @@ export default function TopologyDesign() {
           padding: 0.1, // 10% 的边距
           duration: 300, // 300ms 的动画时长
         });
+        // 标记已经适配过，避免路由切换时重复适配
+        hasFittedViewRef.current = true;
       }
     }, 100);
   }, []);
@@ -508,7 +517,7 @@ export default function TopologyDesign() {
 
   // 更新设备属性
   const updateDevice = useCallback(
-    (deviceId: string, updates: { name: string; properties: Record<string, any> }) => {
+    async (deviceId: string, updates: { name: string; properties: Record<string, any> }) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === deviceId
@@ -523,8 +532,21 @@ export default function TopologyDesign() {
         )
       );
       setShowPropertiesPanel(false);
+      
+      // 保存历史记录
+      setTimeout(() => {
+        if (!isRestoringRef.current) {
+          historyManager.current.snapshot({
+            nodes,
+            edges,
+            counter: deviceIdCounter.current,
+          });
+          setCanUndo(historyManager.current.canUndo());
+          setCanRedo(historyManager.current.canRedo());
+        }
+      }, 150);
     },
-    []
+    [nodes, edges]
   );
 
   // 节点点击处理
@@ -850,6 +872,30 @@ export default function TopologyDesign() {
   useEffect(() => {
     saveStateToSession(nodes, edges, deviceIdCounter.current);
   }, [nodes, edges]);
+
+  // 当路由切换到拓扑设计页面时，如果有设备，自动适配视图
+  useEffect(() => {
+    // 检查是否在拓扑设计页面
+    if (location.pathname === '/topology' || location.pathname === '/') {
+      // 如果有设备，延迟一点后适配视图（确保 ReactFlow 已经渲染完成）
+      if (nodes.length > 0 && flowCanvasRef.current) {
+        // 重置适配标记，允许重新适配
+        hasFittedViewRef.current = false;
+        
+        const timer = setTimeout(() => {
+          if (flowCanvasRef.current && !hasFittedViewRef.current) {
+            flowCanvasRef.current.fitView({ 
+              padding: 0.1,
+              duration: 300,
+            });
+            hasFittedViewRef.current = true;
+          }
+        }, 200); // 200ms 延迟，确保 ReactFlow 完全渲染
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [location.pathname, nodes.length]);
 
   return (
     <div className="flex h-full bg-gray-50">

@@ -90,21 +90,81 @@ export default function DevicePropertiesPanel({
   );
 
   useEffect(() => {
-    const initialData: Record<string, any> = {
-      name: device.name,
+    const loadDeviceMetadata = async () => {
+      const initialData: Record<string, any> = {
+        name: device.name,
+      };
+      
+      propertyFields.forEach((field) => {
+        initialData[field.key] = device.properties[field.key] ?? field.defaultValue;
+      });
+      
+      // 从设备 properties 中读取仿真参数（如果已保存）
+      initialData.response_delay = device.properties.response_delay ?? null;
+      initialData.measurement_error = device.properties.measurement_error ?? null;
+      initialData.data_collection_frequency = device.properties.data_collection_frequency ?? null;
+      
+      // 尝试从后端获取设备元数据（如果 properties 中没有）
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const metadata = await invoke<{
+          response_delay?: number | null;
+          measurement_error?: number | null;
+          data_collection_frequency?: number | null;
+        }>('get_device', { deviceId: device.id });
+        
+        // 如果 properties 中没有，使用元数据中的值
+        if (initialData.response_delay === null && metadata.response_delay !== null && metadata.response_delay !== undefined) {
+          initialData.response_delay = metadata.response_delay;
+        }
+        if (initialData.measurement_error === null && metadata.measurement_error !== null && metadata.measurement_error !== undefined) {
+          initialData.measurement_error = metadata.measurement_error;
+        }
+        if (initialData.data_collection_frequency === null && metadata.data_collection_frequency !== null && metadata.data_collection_frequency !== undefined) {
+          initialData.data_collection_frequency = metadata.data_collection_frequency;
+        }
+      } catch (error) {
+        // 如果获取失败，使用 properties 中的值（已设置）
+        console.warn('Failed to load device metadata:', error);
+      }
+      
+      setFormData(initialData);
     };
     
-    propertyFields.forEach((field) => {
-      initialData[field.key] = device.properties[field.key] ?? field.defaultValue;
-    });
-    
-    setFormData(initialData);
+    loadDeviceMetadata();
   }, [device, propertyFields]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { name, ...properties } = formData;
-    onUpdate(device.id, { name, properties });
+    const { name, response_delay, measurement_error, data_collection_frequency, ...properties } = formData;
+    
+    // 将仿真参数也保存到 properties 中，以便保存到拓扑文件
+    const updatedProperties = {
+      ...properties,
+      ...(response_delay !== null && response_delay !== undefined ? { response_delay } : {}),
+      ...(measurement_error !== null && measurement_error !== undefined ? { measurement_error } : {}),
+      ...(data_collection_frequency !== null && data_collection_frequency !== undefined ? { data_collection_frequency } : {}),
+    };
+    
+    // 更新设备基本属性和仿真参数
+    onUpdate(device.id, { name, properties: updatedProperties });
+    
+    // 更新设备仿真参数（通过 Tauri 命令，保存到设备元数据）
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('update_device_config', {
+        config: {
+          device_id: device.id,
+          work_mode: null,
+          response_delay: response_delay !== null && response_delay !== undefined ? response_delay : null,
+          measurement_error: measurement_error !== null && measurement_error !== undefined ? measurement_error : null,
+          data_collection_frequency: data_collection_frequency !== null && data_collection_frequency !== undefined ? data_collection_frequency : null,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to update device config:', error);
+      // 不阻止保存，只记录错误
+    }
   };
 
   const handleFieldChange = (key: string, value: any) => {
@@ -330,6 +390,67 @@ export default function DevicePropertiesPanel({
           ((deviceType === 'static_generator' || deviceType === 'storage' || deviceType === 'load' || deviceType === 'charger' || deviceType === 'external_grid') && device.properties.bus !== undefined)) && (
           <div className="border-t border-gray-200 my-3"></div>
         )}
+
+        {/* 仿真参数设置 */}
+        <div className="border-t border-gray-200 my-3"></div>
+        <div className="mb-2">
+          <h3 className="text-xs font-semibold text-gray-700 mb-2">仿真参数</h3>
+        </div>
+        
+        {/* 响应延迟 */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            响应延迟
+            <span className="text-gray-400 ml-1">(秒)</span>
+          </label>
+          <input
+            type="number"
+            step="0.001"
+            min="0"
+            value={formData.response_delay ?? (device.properties.response_delay ?? '')}
+            onChange={(e) => handleFieldChange('response_delay', e.target.value ? parseFloat(e.target.value) : null)}
+            className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            placeholder="0.1"
+          />
+          <p className="text-xs text-gray-400 mt-1">设备响应延迟时间（秒），例如：0.1 表示 100ms</p>
+        </div>
+
+        {/* 测量误差 */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            测量误差
+            <span className="text-gray-400 ml-1">(%)</span>
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            max="100"
+            value={formData.measurement_error ?? (device.properties.measurement_error ?? '')}
+            onChange={(e) => handleFieldChange('measurement_error', e.target.value ? parseFloat(e.target.value) : null)}
+            className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            placeholder="1.0"
+          />
+          <p className="text-xs text-gray-400 mt-1">测量误差百分比，例如：1.0 表示 ±1%</p>
+        </div>
+
+        {/* 数据采集频率 */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            数据采集频率
+            <span className="text-gray-400 ml-1">(秒)</span>
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            min="0.1"
+            value={formData.data_collection_frequency ?? (device.properties.data_collection_frequency ?? '')}
+            onChange={(e) => handleFieldChange('data_collection_frequency', e.target.value ? parseFloat(e.target.value) : null)}
+            className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            placeholder="1.0"
+          />
+          <p className="text-xs text-gray-400 mt-1">数据采集间隔时间（秒），例如：1.0 表示每秒采集一次</p>
+        </div>
 
         {/* 动态属性字段 */}
         {propertyFields.map((field) => (
