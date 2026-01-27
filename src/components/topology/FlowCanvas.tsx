@@ -5,7 +5,7 @@
  * 连接决策流程参考：doc/TopoRule.md
  * 连接逻辑实现：./connectionDecision.ts
  */
-import { useCallback, useRef, useState, useMemo, DragEvent } from 'react';
+import { useCallback, useRef, useState, useMemo, useEffect, DragEvent } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -29,7 +29,6 @@ import ConnectionEdge from './ConnectionEdge';
 import { DEVICE_TYPES, DeviceType } from '../../constants/deviceTypes';
 import {
   validateConnectionPhase1,
-  isConnectionValid,
   performLinkageUpdatePhase3,
   performReverseLinkage,
 } from './connectionDecision';
@@ -51,6 +50,7 @@ const edgeTypes = {
 const defaultEdgeOptions = {
   type: 'connection',
   style: { stroke: '#666', strokeWidth: 2 },
+  selectable: true, // 允许选择边
 };
 
 interface FlowCanvasProps {
@@ -61,6 +61,8 @@ interface FlowCanvasProps {
   onConnect?: (connection: Connection) => void;
   onNodeClick?: (event: React.MouseEvent, node: Node) => void;
   onDeviceAdd?: (deviceType: DeviceType, position: { x: number; y: number }) => void;
+  onNodesDelete?: (nodes: Node[]) => void;
+  onEdgesDelete?: (edges: Edge[]) => void;
 }
 
 // 错误提示组件
@@ -90,9 +92,11 @@ function FlowCanvasInner({
   onConnect: onConnectExternal,
   onNodeClick,
   onDeviceAdd,
+  onNodesDelete,
+  onEdgesDelete,
 }: FlowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
   
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isDroppingRef = useRef(false);
@@ -161,7 +165,7 @@ function FlowCanvasInner({
   // 注意：始终返回 true，允许所有连接点被捕获和高亮
   // 实际的连接验证在 handleConnect 中进行，这样可以先让用户看到连接点，再通过规则过滤
   const checkIsValidConnection = useCallback(
-    (connection: Connection): boolean => {
+    (_connection: Connection): boolean => {
       // 始终返回 true，允许所有连接点显示高亮
       // 连接规则验证在 handleConnect 中执行
       return true;
@@ -265,6 +269,138 @@ function FlowCanvasInner({
     return DEVICE_TYPES[deviceType]?.color ?? '#999';
   }, []);
 
+  // ============================================================================
+  // 删除处理
+  // ============================================================================
+
+  const handleNodesDelete = useCallback(
+    (deletedNodes: Node[]) => {
+      if (deletedNodes.length === 0) return;
+      
+      // 获取被删除节点的ID
+      const deletedNodeIds = new Set(deletedNodes.map(n => n.id));
+      
+      // 删除与这些节点相关的所有连接
+      const remainingEdges = edges.filter(e => 
+        !deletedNodeIds.has(e.source) && !deletedNodeIds.has(e.target)
+      );
+      
+      // 对每个被删除的连接执行反向联动
+      const edgesToDelete = edges.filter(e => 
+        deletedNodeIds.has(e.source) || deletedNodeIds.has(e.target)
+      );
+      
+      let updatedNodes = nodes.filter(n => !deletedNodeIds.has(n.id));
+      
+      // 执行反向联动（只对剩余的连接，因为节点已删除）
+      for (const deletedEdge of edgesToDelete) {
+        const remainingEdgesForLinkage = remainingEdges.filter(e => e.id !== deletedEdge.id);
+        updatedNodes = performReverseLinkage(deletedEdge, updatedNodes, remainingEdgesForLinkage);
+      }
+      
+      // 更新状态
+      onNodesChangeExternal(updatedNodes);
+      onEdgesChangeExternal(remainingEdges);
+      onNodesDelete?.(deletedNodes);
+    },
+    [nodes, edges, onNodesChangeExternal, onEdgesChangeExternal, onNodesDelete]
+  );
+
+  const handleEdgesDelete = useCallback(
+    (deletedEdges: Edge[]) => {
+      if (deletedEdges.length === 0) return;
+      
+      const deletedEdgeIds = new Set(deletedEdges.map(e => e.id));
+      const remainingEdges = edges.filter(e => !deletedEdgeIds.has(e.id));
+      
+      // 对每个被删除的连接执行反向联动
+      let updatedNodes = nodes;
+      for (const deletedEdge of deletedEdges) {
+        updatedNodes = performReverseLinkage(deletedEdge, updatedNodes, remainingEdges);
+      }
+      
+      // 更新状态
+      if (updatedNodes !== nodes) {
+        onNodesChangeExternal(updatedNodes);
+      }
+      onEdgesChangeExternal(remainingEdges);
+      onEdgesDelete?.(deletedEdges);
+    },
+    [nodes, edges, onNodesChangeExternal, onEdgesChangeExternal, onEdgesDelete]
+  );
+
+  // 合并删除处理：同时删除节点和边
+  const handleCombinedDelete = useCallback(
+    (nodesToDelete: Node[], edgesToDelete: Edge[]) => {
+      if (nodesToDelete.length === 0 && edgesToDelete.length === 0) return;
+
+      // 获取被删除节点的ID
+      const deletedNodeIds = new Set(nodesToDelete.map(n => n.id));
+      const deletedEdgeIds = new Set(edgesToDelete.map(e => e.id));
+
+      // 计算需要删除的所有边：
+      // 1. 用户选中的边
+      // 2. 与删除节点相关的所有边
+      const edgesToRemove = new Set([
+        ...edgesToDelete.map(e => e.id),
+        ...edges.filter(e => 
+          deletedNodeIds.has(e.source) || deletedNodeIds.has(e.target)
+        ).map(e => e.id)
+      ]);
+
+      // 计算剩余的边
+      const remainingEdges = edges.filter(e => !edgesToRemove.has(e.id));
+
+      // 计算剩余的节点
+      let updatedNodes = nodes.filter(n => !deletedNodeIds.has(n.id));
+
+      // 对所有被删除的边执行反向联动
+      const allDeletedEdges = edges.filter(e => edgesToRemove.has(e.id));
+      for (const deletedEdge of allDeletedEdges) {
+        updatedNodes = performReverseLinkage(deletedEdge, updatedNodes, remainingEdges);
+      }
+
+      // 更新状态
+      if (updatedNodes !== nodes) {
+        onNodesChangeExternal(updatedNodes);
+      }
+      onEdgesChangeExternal(remainingEdges);
+      
+      if (nodesToDelete.length > 0) {
+        onNodesDelete?.(nodesToDelete);
+      }
+      if (edgesToDelete.length > 0) {
+        onEdgesDelete?.(edgesToDelete);
+      }
+    },
+    [nodes, edges, onNodesChangeExternal, onEdgesChangeExternal, onNodesDelete, onEdgesDelete]
+  );
+
+  // 键盘事件处理 - 支持Delete键删除
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 如果焦点在输入框等元素上，不处理删除
+      if (e.target instanceof HTMLInputElement || 
+          e.target instanceof HTMLTextAreaElement ||
+          (e.target as HTMLElement)?.isContentEditable) {
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const selectedNodes = getNodes().filter(n => n.selected);
+        const selectedEdges = getEdges().filter(e => e.selected);
+        
+        if (selectedNodes.length > 0 || selectedEdges.length > 0) {
+          e.preventDefault();
+          handleCombinedDelete(selectedNodes, selectedEdges);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [getNodes, getEdges, handleCombinedDelete]);
+
   // ReactFlow 配置
   const reactFlowConfig = useMemo(() => ({
     fitView: false,
@@ -277,9 +413,12 @@ function FlowCanvasInner({
     connectionLineStyle: { stroke: '#3b82f6', strokeWidth: 2 },
     nodesDraggable: true,
     nodesConnectable: true,
-    elementsSelectable: true,
+    elementsSelectable: true, // 控制节点和边的选择
     nodeDragThreshold: 5,
     selectNodesOnDrag: false,
+    // 启用框选功能：禁用默认的拖拽平移，启用选择框
+    panOnDrag: [1, 2], // 只有中键和右键可以平移，左键用于选择
+    selectionOnDrag: true, // 启用拖拽选择框
     // 增加连接点捕获范围（类似 CAD 的捕捉功能）
     connectionRadius: 50,
   }), []);
@@ -311,6 +450,8 @@ function FlowCanvasInner({
         edges={edges}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
+        onNodesDelete={handleNodesDelete}
+        onEdgesDelete={handleEdgesDelete}
         onConnect={handleConnect}
         onNodeClick={onNodeClick}
         isValidConnection={checkIsValidConnection}

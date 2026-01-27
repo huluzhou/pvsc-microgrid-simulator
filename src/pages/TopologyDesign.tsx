@@ -387,18 +387,48 @@ export default function TopologyDesign() {
     handleDeviceAdd(deviceType, { x: baseX, y: baseY });
   }, [handleDeviceAdd]);
 
-  // 删除选中节点
-  const deleteSelectedNode = useCallback(() => {
-    if (selectedNode) {
-      const nodeId = selectedNode.id;
-      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
-      setEdges((eds) =>
-        eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
-      );
-      setSelectedNode(null);
-      setShowPropertiesPanel(false);
+  // 删除选中的元素（节点和边）
+  const deleteSelectedElements = useCallback(() => {
+    // 获取所有选中的节点和边
+    const selectedNodes = nodes.filter(n => n.selected);
+    const selectedEdges = edges.filter(e => e.selected);
+    
+    if (selectedNodes.length === 0 && selectedEdges.length === 0) {
+      // 如果没有选中的元素，尝试删除最后选中的节点（向后兼容）
+      if (selectedNode) {
+        const nodeId = selectedNode.id;
+        setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+        setEdges((eds) =>
+          eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
+        );
+        setSelectedNode(null);
+        setShowPropertiesPanel(false);
+      }
+      return;
     }
-  }, [selectedNode]);
+
+    // 删除选中的节点
+    if (selectedNodes.length > 0) {
+      const selectedNodeIds = new Set(selectedNodes.map(n => n.id));
+      setNodes((nds) => nds.filter((n) => !selectedNodeIds.has(n.id)));
+      // 删除与这些节点相关的所有连接
+      setEdges((eds) =>
+        eds.filter((e) => !selectedNodeIds.has(e.source) && !selectedNodeIds.has(e.target))
+      );
+      
+      // 如果当前选中的节点被删除，清除选中状态
+      if (selectedNode && selectedNodeIds.has(selectedNode.id)) {
+        setSelectedNode(null);
+        setShowPropertiesPanel(false);
+      }
+    }
+
+    // 删除选中的边
+    if (selectedEdges.length > 0) {
+      const selectedEdgeIds = new Set(selectedEdges.map(e => e.id));
+      setEdges((eds) => eds.filter((e) => !selectedEdgeIds.has(e.id)));
+    }
+  }, [nodes, edges, selectedNode]);
 
   // 更新设备属性
   const updateDevice = useCallback(
@@ -442,12 +472,24 @@ export default function TopologyDesign() {
     setEdges(newEdges);
   }, []);
 
-  // 快捷键处理
+  // 处理节点删除（由FlowCanvas的onNodesDelete触发）
+  const handleNodesDelete = useCallback((deletedNodes: Node[]) => {
+    // 如果删除的节点中包含当前选中的节点，清除选中状态
+    if (selectedNode && deletedNodes.some(n => n.id === selectedNode.id)) {
+      setSelectedNode(null);
+      setShowPropertiesPanel(false);
+    }
+  }, [selectedNode]);
+
+  // 处理边删除（由FlowCanvas的onEdgesDelete触发）
+  const handleEdgesDelete = useCallback((_deletedEdges: Edge[]) => {
+    // 边删除不需要额外处理，状态已由FlowCanvas更新
+  }, []);
+
+  // 快捷键处理（保留Ctrl+S保存）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' && selectedNode) {
-        deleteSelectedNode();
-      }
+      // 删除操作由ReactFlow的onNodesDelete/onEdgesDelete处理
       if (e.ctrlKey && e.key === 's') {
         e.preventDefault();
         quickSaveTopology();
@@ -456,7 +498,7 @@ export default function TopologyDesign() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, deleteSelectedNode, quickSaveTopology]);
+  }, [quickSaveTopology]);
 
   useEffect(() => {
     loadTopology();
@@ -517,15 +559,17 @@ export default function TopologyDesign() {
 
           <div className="flex-1" />
 
-          <div className="text-xs text-gray-500">
-            设备: {nodes.length} | 连接: {edges.length}
+          <div className="text-xs text-gray-500 flex items-center gap-2">
+            <span>设备: {nodes.length} | 连接: {edges.length}</span>
+            <span className="text-gray-400">|</span>
+            <span className="text-gray-400">提示: 框选或点击选择，按 Delete 键删除</span>
           </div>
 
-          {selectedNode && (
+          {(selectedNode || nodes.some(n => n.selected) || edges.some(e => e.selected)) && (
             <button
-              onClick={deleteSelectedNode}
+              onClick={deleteSelectedElements}
               className="px-3 py-1.5 bg-red-500 hover:bg-red-600 rounded text-white flex items-center gap-1.5 text-sm transition-colors"
-              title="删除选中设备 (Delete)"
+              title="删除选中元素 (Delete)"
             >
               <Trash2 className="w-4 h-4" />
               删除
@@ -540,6 +584,8 @@ export default function TopologyDesign() {
             edges={edges}
             onNodesChange={handleNodesUpdate}
             onEdgesChange={handleEdgesUpdate}
+            onNodesDelete={handleNodesDelete}
+            onEdgesDelete={handleEdgesDelete}
             onConnect={handleConnect}
             onNodeClick={handleNodeClick}
             onDeviceAdd={handleDeviceAdd}

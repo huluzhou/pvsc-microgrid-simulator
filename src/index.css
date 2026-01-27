@@ -98,6 +98,15 @@ textarea,
   cursor: pointer !important;
 }
 
+/* 框选模式下的画布光标 */
+.react-flow__pane {
+  cursor: default !important;
+}
+
+.react-flow__pane.selecting {
+  cursor: crosshair !important;
+}
+
 /* 确保拖拽时的视觉反馈 */
 [draggable="true"] {
   cursor: grab !important;
