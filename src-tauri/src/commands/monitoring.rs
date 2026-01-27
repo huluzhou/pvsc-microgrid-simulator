@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::services::database::Database;
 use crate::domain::metadata::DeviceMetadataStore;
+use crate::commands::topology::device_type_to_string;
 use std::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -19,6 +20,7 @@ pub struct DeviceDataPoint {
 pub struct DeviceStatus {
     pub device_id: String,
     pub name: String,
+    pub device_type: String,  // 添加设备类型字段
     pub is_online: bool,
     pub last_update: Option<f64>,
     pub current_voltage: Option<f64>,
@@ -99,6 +101,7 @@ pub async fn get_all_devices_status(
         statuses.push(DeviceStatus {
             device_id: device.id.clone(),
             name: device.name.clone(),
+            device_type: device_type_to_string(&device.device_type),  // 添加设备类型
             is_online: recent_data.is_some(),
             last_update,
             current_voltage: voltage,
@@ -136,6 +139,7 @@ pub async fn get_device_status(
     Ok(DeviceStatus {
         device_id: device.id.clone(),
         name: device.name.clone(),
+        device_type: device_type_to_string(&device.device_type),  // 添加设备类型
         is_online: recent_data.is_some(),
         last_update,
         current_voltage: voltage,

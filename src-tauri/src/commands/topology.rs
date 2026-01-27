@@ -6,13 +6,13 @@ use crate::domain::metadata::DeviceMetadataStore;
 use std::sync::Mutex;
 use std::collections::HashMap;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopologyData {
     pub devices: Vec<DeviceData>,
     pub connections: Vec<ConnectionData>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceData {
     pub id: String,
     pub name: String,
@@ -22,21 +22,21 @@ pub struct DeviceData {
     pub location: Option<LocationData>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PositionData {
     pub x: f64,
     pub y: f64,
     pub z: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocationData {
     pub latitude: f64,
     pub longitude: f64,
     pub altitude: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionData {
     pub id: String,
     pub from: String,
@@ -84,7 +84,7 @@ fn parse_device_type(s: &str) -> Result<DeviceType, String> {
 }
 
 /// 将 DeviceType 枚举转换为前端期望的字符串格式
-fn device_type_to_string(device_type: &DeviceType) -> String {
+pub fn device_type_to_string(device_type: &DeviceType) -> String {
     match device_type {
         DeviceType::Node => "bus".to_string(),
         DeviceType::Line => "line".to_string(),
@@ -1235,6 +1235,16 @@ pub async fn load_and_validate_topology(
         TopologyData { devices, connections }
     } else if let Some(data) = try_convert_legacy_format(&content) {
         // 旧格式（pandapower 格式）
+        // 将 TopologyData 转换为 Topology 并更新元数据仓库
+        match convert_topology_data(data.clone()) {
+            Ok(topology) => {
+                metadata_store.lock().unwrap().set_topology(topology);
+            }
+            Err(e) => {
+                // 如果转换失败，记录错误但不阻止加载
+                eprintln!("Warning: Failed to convert legacy topology to metadata store: {}", e);
+            }
+        }
         data
     } else {
         return Err("无法解析拓扑文件：既不是新格式也不是旧格式".to_string());

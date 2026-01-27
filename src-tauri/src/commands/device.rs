@@ -4,7 +4,9 @@ use tauri::State;
 use crate::domain::metadata::DeviceMetadataStore;
 use crate::domain::device::DeviceMetadata;
 use crate::services::simulation_engine::SimulationEngine;
+use crate::commands::topology::device_type_to_string;
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeviceConfig {
@@ -15,21 +17,25 @@ pub struct DeviceConfig {
     pub data_collection_frequency: Option<f64>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub device_type: String,  // 使用字符串类型，方便前端使用
+    pub properties: HashMap<String, serde_json::Value>,
+}
+
 #[tauri::command]
 pub async fn get_all_devices(
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
-) -> Result<Vec<DeviceMetadata>, String> {
+) -> Result<Vec<DeviceInfo>, String> {
     let metadata_store = metadata_store.lock().unwrap();
     Ok(metadata_store.get_all_devices().iter().map(|d| {
-        DeviceMetadata {
+        DeviceInfo {
             id: d.id.clone(),
             name: d.name.clone(),
-            device_type: d.device_type.clone(),
+            device_type: device_type_to_string(&d.device_type),  // 转换为字符串
             properties: d.properties.clone(),
-            work_mode: None,
-            response_delay: None,
-            measurement_error: None,
-            data_collection_frequency: None,
         }
     }).collect())
 }

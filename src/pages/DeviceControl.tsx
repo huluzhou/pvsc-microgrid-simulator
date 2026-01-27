@@ -31,18 +31,25 @@ export default function DeviceControl() {
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
     try {
-      const topologyData = await invoke<{ devices: Array<{ id: string; name: string; device_type: string }> }>('load_topology', { path: 'topology.json' });
-      const powerDevices = topologyData.devices
+      // 从后端元数据存储获取设备（与拓扑设计页面同步）
+      const devicesMetadata = await invoke<Array<{ id: string; name: string; device_type: string }>>('get_all_devices');
+      const powerDevices = devicesMetadata
         .filter((d) => POWER_DEVICE_TYPES.includes(d.device_type as DeviceType))
         .map((d) => ({ id: d.id, name: d.name, deviceType: d.device_type as DeviceType }));
       setDevices(powerDevices);
     } catch (error) {
-      setDevices([
-        { id: 'device-1', name: '光伏-1', deviceType: 'static_generator' },
-        { id: 'device-2', name: '储能-2', deviceType: 'storage' },
-        { id: 'device-3', name: '负载-3', deviceType: 'load' },
-        { id: 'device-4', name: '充电桩-4', deviceType: 'charger' },
-      ]);
+      console.error('Failed to load devices from metadata:', error);
+      // 如果后端元数据为空，尝试从默认拓扑文件加载
+      try {
+        const topologyData = await invoke<{ devices: Array<{ id: string; name: string; device_type: string }> }>('load_topology', { path: 'topology.json' });
+        const powerDevices = topologyData.devices
+          .filter((d) => POWER_DEVICE_TYPES.includes(d.device_type as DeviceType))
+          .map((d) => ({ id: d.id, name: d.name, deviceType: d.device_type as DeviceType }));
+        setDevices(powerDevices);
+      } catch (fallbackError) {
+        console.error('Failed to load from topology file:', fallbackError);
+        setDevices([]);
+      }
     } finally {
       setIsLoading(false);
     }

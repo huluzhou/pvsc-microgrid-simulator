@@ -176,17 +176,20 @@ export default function TopologyDesign() {
     deviceIdCounter.current = maxId + 1;
     
     // 导入后自动适配视图，确保所有设备可见
-    // 使用 setTimeout 确保 DOM 更新完成后再调用 fitView
-    setTimeout(() => {
-      if (flowCanvasRef.current && updatedNodes.length > 0) {
-        flowCanvasRef.current.fitView({ 
-          padding: 0.1, // 10% 的边距
-          duration: 300, // 300ms 的动画时长
-        });
-        // 标记已经适配过，避免路由切换时重复适配
-        hasFittedViewRef.current = true;
-      }
-    }, 100);
+    // 使用更长的延迟确保 ReactFlow 完全渲染
+    // 使用 requestAnimationFrame 确保在下一帧渲染后再适配
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        if (flowCanvasRef.current && updatedNodes.length > 0) {
+          flowCanvasRef.current.fitView({ 
+            padding: 0.1, // 10% 的边距
+            duration: 300, // 300ms 的动画时长
+          });
+          // 标记已经适配过，避免路由切换时重复适配
+          hasFittedViewRef.current = true;
+        }
+      }, 300); // 增加到 300ms，确保 ReactFlow 完全渲染
+    });
   }, []);
 
   // 标记是否已初始化，避免切换标签时清空画布
@@ -882,17 +885,30 @@ export default function TopologyDesign() {
         // 重置适配标记，允许重新适配
         hasFittedViewRef.current = false;
         
-        const timer = setTimeout(() => {
-          if (flowCanvasRef.current && !hasFittedViewRef.current) {
-            flowCanvasRef.current.fitView({ 
-              padding: 0.1,
-              duration: 300,
-            });
-            hasFittedViewRef.current = true;
-          }
-        }, 200); // 200ms 延迟，确保 ReactFlow 完全渲染
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        let rafId: number | null = null;
         
-        return () => clearTimeout(timer);
+        // 使用 requestAnimationFrame 确保在下一帧渲染后再适配
+        rafId = requestAnimationFrame(() => {
+          timer = setTimeout(() => {
+            if (flowCanvasRef.current && !hasFittedViewRef.current) {
+              flowCanvasRef.current.fitView({ 
+                padding: 0.1,
+                duration: 300,
+              });
+              hasFittedViewRef.current = true;
+            }
+          }, 300); // 300ms 延迟，确保 ReactFlow 完全渲染
+        });
+        
+        return () => {
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+          }
+          if (timer !== null) {
+            clearTimeout(timer);
+          }
+        };
       }
     }
   }, [location.pathname, nodes.length]);
