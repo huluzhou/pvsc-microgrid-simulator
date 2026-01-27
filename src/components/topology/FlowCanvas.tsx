@@ -63,6 +63,7 @@ interface FlowCanvasProps {
   onDeviceAdd?: (deviceType: DeviceType, position: { x: number; y: number }) => void;
   onNodesDelete?: (nodes: Node[]) => void;
   onEdgesDelete?: (edges: Edge[]) => void;
+  onMouseMove?: (position: { x: number; y: number }) => void;
 }
 
 // 错误提示组件
@@ -94,12 +95,24 @@ function FlowCanvasInner({
   onDeviceAdd,
   onNodesDelete,
   onEdgesDelete,
+  onMouseMove,
 }: FlowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
   
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isDroppingRef = useRef(false);
+  
+  // 跟踪鼠标位置
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (onMouseMove) {
+      const position = screenToFlowPosition({
+        x: e.clientX,
+        y: e.clientY,
+      });
+      onMouseMove(position);
+    }
+  }, [screenToFlowPosition, onMouseMove]);
 
   // ============================================================================
   // 节点变化处理
@@ -336,7 +349,6 @@ function FlowCanvasInner({
 
       // 获取被删除节点的ID
       const deletedNodeIds = new Set(nodesToDelete.map(n => n.id));
-      const deletedEdgeIds = new Set(edgesToDelete.map(e => e.id));
 
       // 计算需要删除的所有边：
       // 1. 用户选中的边
@@ -436,6 +448,7 @@ function FlowCanvasInner({
       }}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onMouseMove={handleMouseMove}
     >
       {/* 错误提示 */}
       {errorMessage && (

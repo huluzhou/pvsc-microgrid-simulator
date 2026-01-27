@@ -88,6 +88,14 @@ export default function TopologyDesign() {
   
   // 是否正在从历史记录恢复（避免触发新的历史记录）
   const isRestoringRef = useRef(false);
+  
+  // 鼠标位置（用于粘贴时定位）
+  const mousePositionRef = useRef<{ x: number; y: number } | null>(null);
+  
+  // 处理鼠标移动
+  const handleMouseMove = useCallback((position: { x: number; y: number }) => {
+    mousePositionRef.current = position;
+  }, []);
 
   // 更新节点和边
   const updateNodesAndEdges = useCallback((data: TopologyData) => {
@@ -611,36 +619,103 @@ export default function TopologyDesign() {
     const { nodes: copiedNodes, edges: copiedEdges } = clipboardRef.current;
     if (copiedNodes.length === 0) return;
 
+    // 检查是否有外部电网，如果画布中已存在外部电网，则不允许粘贴外部电网
+    const hasExternalGridInClipboard = copiedNodes.some(n => n.data.deviceType === 'external_grid');
+    if (hasExternalGridInClipboard) {
+      const existingExternalGrid = nodes.find(n => n.data.deviceType === 'external_grid');
+      if (existingExternalGrid) {
+        alert('画布中已存在外部电网设备，无法粘贴外部电网（最多只能有1个外部电网）');
+        return;
+      }
+    }
+
+    // 计算粘贴位置
+    // 如果有鼠标位置，使用鼠标位置；否则使用第一个节点的位置
+    const pastePosition: { x: number; y: number } = mousePositionRef.current || 
+      (copiedNodes[0]?.position || { x: 100, y: 100 });
+
+    // 计算所有复制节点的中心点
+    const copiedCenter = copiedNodes.reduce(
+      (acc, node) => ({
+        x: acc.x + node.position.x,
+        y: acc.y + node.position.y,
+      }),
+      { x: 0, y: 0 }
+    );
+    const centerX = copiedCenter.x / copiedNodes.length;
+    const centerY = copiedCenter.y / copiedNodes.length;
+
     // 生成新的节点ID映射
     const nodeIdMap = new Map<string, string>();
     const newNodes: Node[] = copiedNodes.map((node) => {
-      const newId = `device-${deviceIdCounter.current++}`;
+      const newDeviceId = deviceIdCounter.current++;
+      const newId = `device-${newDeviceId}`;
       nodeIdMap.set(node.id, newId);
       
-      // 计算新位置（偏移一定距离）
-      const offset = { x: 50, y: 50 };
+      // 获取设备类型的中文名称
+      const deviceType = node.data.deviceType as DeviceType;
+      const typeName = DEVICE_TYPE_TO_CN[deviceType] || deviceType;
+      
+      // 清除连接相关的属性（这些会在重新连接时更新）
+      const cleanProperties = { ...node.data.properties };
+      // 根据设备类型清除相应的连接属性
+      if (deviceType === 'bus') {
+        // 母线没有连接属性需要清除
+      } else if (deviceType === 'line') {
+        delete cleanProperties.from_bus;
+        delete cleanProperties.to_bus;
+      } else if (deviceType === 'transformer') {
+        delete cleanProperties.hv_bus;
+        delete cleanProperties.lv_bus;
+      } else if (deviceType === 'switch') {
+        delete cleanProperties.bus;
+        delete cleanProperties.element_type;
+        delete cleanProperties.element;
+      } else if (deviceType === 'meter') {
+        delete cleanProperties.element_type;
+        delete cleanProperties.element;
+        delete cleanProperties.side;
+      } else {
+        // 其他电力设备（static_generator, storage, load, charger, external_grid）
+        delete cleanProperties.bus;
+      }
+      
+      // 计算新位置：相对于原中心点的偏移，然后平移到鼠标位置
+      const offsetX = node.position.x - centerX;
+      const offsetY = node.position.y - centerY;
       return {
         ...node,
         id: newId,
         position: {
-          x: node.position.x + offset.x,
-          y: node.position.y + offset.y,
+          x: pastePosition.x + offsetX,
+          y: pastePosition.y + offsetY,
+        },
+        data: {
+          ...node.data,
+          name: `${typeName}-${newDeviceId}`, // 使用新的设备ID更新名称
+          properties: cleanProperties, // 使用清理后的属性
         },
         selected: false, // 取消选中状态
       };
     });
 
     // 生成新的边，更新source和target ID
-    const newEdges: Edge[] = copiedEdges.map((edge) => {
-      const newId = `edge-${nodeIdMap.get(edge.source)}-${nodeIdMap.get(edge.target)}-${Date.now()}`;
-      return {
-        ...edge,
-        id: newId,
-        source: nodeIdMap.get(edge.source)!,
-        target: nodeIdMap.get(edge.target)!,
-        selected: false,
-      };
-    });
+    // 只保留连接两个已粘贴节点的边
+    const newEdges: Edge[] = copiedEdges
+      .filter((edge) => {
+        // 确保边的source和target都在粘贴的节点中
+        return nodeIdMap.has(edge.source) && nodeIdMap.has(edge.target);
+      })
+      .map((edge) => {
+        const newId = `edge-${nodeIdMap.get(edge.source)}-${nodeIdMap.get(edge.target)}-${Date.now()}`;
+        return {
+          ...edge,
+          id: newId,
+          source: nodeIdMap.get(edge.source)!,
+          target: nodeIdMap.get(edge.target)!,
+          selected: false,
+        };
+      });
 
     // 添加到画布
     const updatedNodes = [...nodes, ...newNodes];
@@ -851,6 +926,7 @@ export default function TopologyDesign() {
             onConnect={handleConnect}
             onNodeClick={handleNodeClick}
             onDeviceAdd={handleDeviceAdd}
+            onMouseMove={handleMouseMove}
           />
 
           {/* 属性面板 */}
