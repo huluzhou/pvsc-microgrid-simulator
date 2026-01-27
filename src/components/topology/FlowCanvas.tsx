@@ -5,7 +5,7 @@
  * 连接决策流程参考：doc/TopoRule.md
  * 连接逻辑实现：./connectionDecision.ts
  */
-import { useCallback, useRef, useState, useMemo, useEffect, DragEvent } from 'react';
+import { useCallback, useRef, useState, useMemo, useEffect, DragEvent, forwardRef, useImperativeHandle } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -66,6 +66,10 @@ interface FlowCanvasProps {
   onMouseMove?: (position: { x: number; y: number }) => void;
 }
 
+export interface FlowCanvasRef {
+  fitView: (options?: { padding?: number; duration?: number; maxZoom?: number; minZoom?: number }) => void;
+}
+
 // 错误提示组件
 function ErrorToast({ 
   message, 
@@ -85,7 +89,7 @@ function ErrorToast({
 }
 
 // 内部画布组件
-function FlowCanvasInner({
+const FlowCanvasInner = forwardRef<FlowCanvasRef, FlowCanvasProps>(({
   nodes,
   edges,
   onNodesChange: onNodesChangeExternal,
@@ -96,9 +100,16 @@ function FlowCanvasInner({
   onNodesDelete,
   onEdgesDelete,
   onMouseMove,
-}: FlowCanvasProps) {
+}, ref) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
+  const { screenToFlowPosition, getNodes, getEdges, fitView } = useReactFlow();
+  
+  // 暴露 fitView 方法给父组件
+  useImperativeHandle(ref, () => ({
+    fitView: (options?: { padding?: number; duration?: number; maxZoom?: number; minZoom?: number }) => {
+      fitView(options);
+    },
+  }), [fitView]);
   
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isDroppingRef = useRef(false);
@@ -488,13 +499,19 @@ function FlowCanvasInner({
       </ReactFlow>
     </div>
   );
-}
+});
+
+FlowCanvasInner.displayName = 'FlowCanvasInner';
 
 // 导出包装后的组件
-export default function FlowCanvas(props: FlowCanvasProps) {
+const FlowCanvas = forwardRef<FlowCanvasRef, FlowCanvasProps>((props, ref) => {
   return (
     <ReactFlowProvider>
-      <FlowCanvasInner {...props} />
+      <FlowCanvasInner {...props} ref={ref} />
     </ReactFlowProvider>
   );
-}
+});
+
+FlowCanvas.displayName = 'FlowCanvas';
+
+export default FlowCanvas;

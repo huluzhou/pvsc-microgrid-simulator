@@ -1,0 +1,117 @@
+{
+  "Measurement": [
+    {
+      "index": 2,
+      "geodata": [
+        2250.0,
+        2350.0
+      ],
+      "meas_type": "p",
+      "element_type": "storage",
+      "value": 0.0,
+      "std_dev": 0.01,
+      "element": 1,
+      "side": null,
+      "in_service": true,
+      "name": "Meter 2",
+      "sn": "THMEMET000AVVVUOEP7JL",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "404",
+      "protocol": "modbus_tcp",
+      "baud_rate": 9600,
+      "parity": "None",
+      "custom_fields": {}
+    },
+    {
+      "index": 1,
+      "geodata": [
+        2650.0,
+        2200.0
+      ],
+      "meas_type": "p",
+      "element_type": "ext_grid",
+      "value": 0.0,
+      "std_dev": 0.01,
+      "element": 0,
+      "side": null,
+      "in_service": true,
+      "name": "Meter 1",
+      "sn": "THMEMET000JMQQY0VKZMM",
+      "brand": "",
+      "ip": "0.0.0.0",
+      "port": "403",
+      "protocol": "modbus_tcp",
+      "baud_rate": 9600,
+      "parity": "None",
+      "custom_fields": {}
+    }
+  ],
+  "Load": [
+    {
+      "index": 1,
+      "geodata": [
+        2550.0,
+        2450.0
+      ],
+      "p_mw": 0.0,
+      "q_mvar": 0.0,
+      "name": "Load 1",
+      "bus": 1,
+      "custom_fields": {}
+    }
+  ],
+  "External_Grid": [
+    {
+      "index": 0,
+      "geodata": [
+        2399.0,
+        2171.0
+      ],
+      "vm_pu": 1.0,
+      "va_degree": 0.0,
+      "name": "External Grid 1",
+      "s_sc_max_mva": 1000.0,
+      "s_sc_min_mva": 800.0,
+      "rx_max": 0.1,
+      "rx_min": 0.1,
+      "bus": 1,
+      "custom_fields": {}
+    }
+  ],
+  "Storage": [
+    {
+      "name": "储能 1",
+      "index": 1,
+      "sn_mva": 1.0,
+      "geodata": [
+        2400.0,
+        2450.0
+      ],
+      "p_mw": 0.0,
+      "max_e_mwh": 1.0,
+      "soc_percent": 0.5,
+      "bus": 1,
+      "sn": "THBESS0000AHDVJ73VPD2",
+      "brand": "德联",
+      "ip": "0.0.0.0",
+      "port": "502",
+      "protocol": "modbus_tcp",
+      "baud_rate": 9600,
+      "parity": "None",
+      "custom_fields": {}
+    }
+  ],
+  "Bus": [
+    {
+      "index": 1,
+      "vn_kv": 20.0,
+      "geodata": [
+        2400.0,
+        2300.0
+      ],
+      "name": "Bus 1",
+      "custom_fields": {}
+    }
+  ]
+}

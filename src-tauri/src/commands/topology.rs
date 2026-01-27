@@ -940,17 +940,32 @@ fn try_convert_legacy_format(content: &str) -> Option<TopologyData> {
                 // 构建属性
                 let mut properties = serde_json::Map::new();
                 for (key, value) in item.as_object().unwrap_or(&serde_json::Map::new()) {
-                    if key != "name" && key != "index" {
+                    if key != "name" && key != "index" && key != "geodata" {
                         properties.insert(key.clone(), value.clone());
                     }
                 }
+                
+                // 提取位置信息（geodata）
+                let position = item.get("geodata")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| {
+                        if arr.len() >= 2 {
+                            Some(PositionData {
+                                x: arr[0].as_f64().unwrap_or(0.0),
+                                y: arr[1].as_f64().unwrap_or(0.0),
+                                z: arr.get(2).and_then(|v| v.as_f64()).unwrap_or(0.0),
+                            })
+                        } else {
+                            None
+                        }
+                    });
                 
                 devices.push(DeviceData {
                     id: device_id,
                     name: name.to_string(),
                     device_type: new_type.to_string(),
                     properties: serde_json::Value::Object(properties),
-                    position: None,
+                    position,
                     location: None,
                 });
             }
@@ -970,31 +985,41 @@ fn try_convert_legacy_format(content: &str) -> Option<TopologyData> {
                 // 线路连接
                 if *new_type == "line" {
                     if let Some(from_bus) = item.get("from_bus").and_then(|v| v.as_i64()) {
-                        if let Some(bus_id) = index_to_id.get(&("Bus".to_string(), from_bus)) {
-                            connections.push(ConnectionData {
-                                id: format!("conn-{}", conn_id_counter),
-                                from: device_id.clone(),
-                                to: bus_id.clone(),
-                                from_port: Some("top".to_string()),    // 线路起点
-                                to_port: Some("center".to_string()),   // 母线中心
-                                connection_type: "line".to_string(),
-                                properties: Some(serde_json::json!({"port": "from_bus"})),
-                            });
-                            conn_id_counter += 1;
+                        let bus_key = ("Bus".to_string(), from_bus);
+                        if let Some(bus_id) = index_to_id.get(&bus_key) {
+                            // 验证设备是否存在
+                            let bus_exists = devices.iter().any(|d| d.id == *bus_id);
+                            if bus_exists {
+                                connections.push(ConnectionData {
+                                    id: format!("conn-{}", conn_id_counter),
+                                    from: device_id.clone(),
+                                    to: bus_id.clone(),
+                                    from_port: Some("top".to_string()),    // 线路起点
+                                    to_port: Some("center".to_string()),   // 母线中心
+                                    connection_type: "line".to_string(),
+                                    properties: Some(serde_json::json!({"port": "from_bus"})),
+                                });
+                                conn_id_counter += 1;
+                            }
                         }
                     }
                     if let Some(to_bus) = item.get("to_bus").and_then(|v| v.as_i64()) {
-                        if let Some(bus_id) = index_to_id.get(&("Bus".to_string(), to_bus)) {
-                            connections.push(ConnectionData {
-                                id: format!("conn-{}", conn_id_counter),
-                                from: device_id.clone(),
-                                to: bus_id.clone(),
-                                from_port: Some("bottom".to_string()), // 线路终点
-                                to_port: Some("center".to_string()),   // 母线中心
-                                connection_type: "line".to_string(),
-                                properties: Some(serde_json::json!({"port": "to_bus"})),
-                            });
-                            conn_id_counter += 1;
+                        let bus_key = ("Bus".to_string(), to_bus);
+                        if let Some(bus_id) = index_to_id.get(&bus_key) {
+                            // 验证设备是否存在
+                            let bus_exists = devices.iter().any(|d| d.id == *bus_id);
+                            if bus_exists {
+                                connections.push(ConnectionData {
+                                    id: format!("conn-{}", conn_id_counter),
+                                    from: device_id.clone(),
+                                    to: bus_id.clone(),
+                                    from_port: Some("bottom".to_string()), // 线路终点
+                                    to_port: Some("center".to_string()),   // 母线中心
+                                    connection_type: "line".to_string(),
+                                    properties: Some(serde_json::json!({"port": "to_bus"})),
+                                });
+                                conn_id_counter += 1;
+                            }
                         }
                     }
                 }
@@ -1002,31 +1027,43 @@ fn try_convert_legacy_format(content: &str) -> Option<TopologyData> {
                 // 变压器连接
                 if *new_type == "transformer" {
                     if let Some(hv_bus) = item.get("hv_bus").and_then(|v| v.as_i64()) {
-                        if let Some(bus_id) = index_to_id.get(&("Bus".to_string(), hv_bus)) {
-                            connections.push(ConnectionData {
-                                id: format!("conn-{}", conn_id_counter),
-                                from: device_id.clone(),
-                                to: bus_id.clone(),
-                                from_port: Some("top".to_string()),    // 变压器高压侧
-                                to_port: Some("center".to_string()),   // 母线中心
-                                connection_type: "transformer".to_string(),
-                                properties: Some(serde_json::json!({"port": "hv_bus"})),
-                            });
-                            conn_id_counter += 1;
+                        // 查找对应的 Bus 设备
+                        let bus_key = ("Bus".to_string(), hv_bus);
+                        if let Some(bus_id) = index_to_id.get(&bus_key) {
+                            // 验证设备是否存在
+                            let bus_exists = devices.iter().any(|d| d.id == *bus_id);
+                            if bus_exists {
+                                connections.push(ConnectionData {
+                                    id: format!("conn-{}", conn_id_counter),
+                                    from: device_id.clone(),
+                                    to: bus_id.clone(),
+                                    from_port: Some("top".to_string()),    // 变压器高压侧
+                                    to_port: Some("center".to_string()),   // 母线中心
+                                    connection_type: "transformer".to_string(),
+                                    properties: Some(serde_json::json!({"port": "hv_bus"})),
+                                });
+                                conn_id_counter += 1;
+                            }
                         }
                     }
                     if let Some(lv_bus) = item.get("lv_bus").and_then(|v| v.as_i64()) {
-                        if let Some(bus_id) = index_to_id.get(&("Bus".to_string(), lv_bus)) {
-                            connections.push(ConnectionData {
-                                id: format!("conn-{}", conn_id_counter),
-                                from: device_id.clone(),
-                                to: bus_id.clone(),
-                                from_port: Some("bottom".to_string()), // 变压器低压侧
-                                to_port: Some("center".to_string()),   // 母线中心
-                                connection_type: "transformer".to_string(),
-                                properties: Some(serde_json::json!({"port": "lv_bus"})),
-                            });
-                            conn_id_counter += 1;
+                        // 查找对应的 Bus 设备
+                        let bus_key = ("Bus".to_string(), lv_bus);
+                        if let Some(bus_id) = index_to_id.get(&bus_key) {
+                            // 验证设备是否存在
+                            let bus_exists = devices.iter().any(|d| d.id == *bus_id);
+                            if bus_exists {
+                                connections.push(ConnectionData {
+                                    id: format!("conn-{}", conn_id_counter),
+                                    from: device_id.clone(),
+                                    to: bus_id.clone(),
+                                    from_port: Some("bottom".to_string()), // 变压器低压侧
+                                    to_port: Some("center".to_string()),   // 母线中心
+                                    connection_type: "transformer".to_string(),
+                                    properties: Some(serde_json::json!({"port": "lv_bus"})),
+                                });
+                                conn_id_counter += 1;
+                            }
                         }
                     }
                 }
@@ -1034,17 +1071,104 @@ fn try_convert_legacy_format(content: &str) -> Option<TopologyData> {
                 // 功率设备连接
                 if ["load", "static_generator", "storage", "charger", "external_grid"].contains(new_type) {
                     if let Some(bus) = item.get("bus").and_then(|v| v.as_i64()) {
-                        if let Some(bus_id) = index_to_id.get(&("Bus".to_string(), bus)) {
-                            connections.push(ConnectionData {
-                                id: format!("conn-{}", conn_id_counter),
-                                from: device_id.clone(),
-                                to: bus_id.clone(),
-                                from_port: Some("top".to_string()),    // 功率设备连接点
-                                to_port: Some("center".to_string()),   // 母线中心
-                                connection_type: "power".to_string(),
-                                properties: None,
-                            });
-                            conn_id_counter += 1;
+                        let bus_key = ("Bus".to_string(), bus);
+                        if let Some(bus_id) = index_to_id.get(&bus_key) {
+                            // 验证设备是否存在
+                            let bus_exists = devices.iter().any(|d| d.id == *bus_id);
+                            if bus_exists {
+                                connections.push(ConnectionData {
+                                    id: format!("conn-{}", conn_id_counter),
+                                    from: device_id.clone(),
+                                    to: bus_id.clone(),
+                                    from_port: Some("top".to_string()),    // 功率设备连接点
+                                    to_port: Some("center".to_string()),   // 母线中心
+                                    connection_type: "power".to_string(),
+                                    properties: None,
+                                });
+                                conn_id_counter += 1;
+                            }
+                        }
+                    }
+                }
+                
+                // 电表连接（Measurement）
+                if *new_type == "meter" {
+                    // 电表通过 element_type 和 element 指向其他设备
+                    if let Some(element_type) = item.get("element_type").and_then(|v| v.as_str()) {
+                        if let Some(element_index) = item.get("element").and_then(|v| v.as_i64()) {
+                            // 映射 element_type 到旧格式类型名
+                            let target_legacy_type_opt = match element_type {
+                                "ext_grid" => Some("External_Grid"),
+                                "trafo" => Some("Transformer"),
+                                "line" => Some("Line"),
+                                "bus" => Some("Bus"),
+                                "storage" => Some("Storage"),
+                                "load" => Some("Load"),
+                                "static_generator" => Some("Static_Generator"),
+                                "charger" => Some("Charger"),
+                                _ => None,
+                            };
+                            
+                            if let Some(target_legacy_type) = target_legacy_type_opt {
+                                let target_key = (target_legacy_type.to_string(), element_index);
+                                if let Some(target_id) = index_to_id.get(&target_key) {
+                                    // 验证目标设备是否存在
+                                    let target_exists = devices.iter().any(|d| d.id == *target_id);
+                                    if target_exists {
+                                        // 确定连接端口（side）
+                                        let side = item.get("side").and_then(|v| v.as_str()).unwrap_or("");
+                                        let from_port = match side {
+                                            "hv" => Some("top".to_string()),
+                                            "lv" => Some("bottom".to_string()),
+                                            "from" => Some("top".to_string()),
+                                            "to" => Some("bottom".to_string()),
+                                            _ => Some("center".to_string()),
+                                        };
+                                        
+                                        // 确定目标设备的连接点
+                                        let to_port = match target_legacy_type {
+                                            "Bus" => Some("center".to_string()),
+                                            "Transformer" => {
+                                                if side == "hv" {
+                                                    Some("top".to_string())
+                                                } else if side == "lv" {
+                                                    Some("bottom".to_string())
+                                                } else {
+                                                    Some("center".to_string())
+                                                }
+                                            },
+                                            "Line" => {
+                                                if side == "from" {
+                                                    Some("top".to_string())
+                                                } else if side == "to" {
+                                                    Some("bottom".to_string())
+                                                } else {
+                                                    Some("center".to_string())
+                                                }
+                                            },
+                                            "External_Grid" | "Storage" | "Load" | "Static_Generator" | "Charger" => {
+                                                Some("top".to_string()) // 功率设备通常连接到顶部
+                                            },
+                                            _ => Some("center".to_string()),
+                                        };
+                                        
+                                        connections.push(ConnectionData {
+                                            id: format!("conn-{}", conn_id_counter),
+                                            from: device_id.clone(),
+                                            to: target_id.clone(),
+                                            from_port,
+                                            to_port,
+                                            connection_type: "meter".to_string(),
+                                            properties: Some(serde_json::json!({
+                                                "element_type": element_type,
+                                                "element": element_index,
+                                                "side": side
+                                            })),
+                                        });
+                                        conn_id_counter += 1;
+                                    }
+                                }
+                            }
                         }
                     }
                 }

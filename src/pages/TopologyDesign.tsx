@@ -5,12 +5,13 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { Node, Edge, Connection } from 'reactflow';
-import FlowCanvas from '../components/topology/FlowCanvas';
+import FlowCanvas, { FlowCanvasRef } from '../components/topology/FlowCanvas';
 import DevicePanel from '../components/topology/DevicePanel';
 import DevicePropertiesPanel from '../components/topology/DevicePropertiesPanel';
 import { Save, FolderOpen, Trash2, FilePlus, FileDown, CheckCircle, Undo2, Redo2, Copy, Clipboard, Scissors } from 'lucide-react';
 import { DeviceType, DEVICE_TYPE_TO_CN } from '../constants/deviceTypes';
 import { HistoryManager } from '../utils/historyManager';
+import { performLinkageUpdatePhase3 } from '../components/topology/connectionDecision';
 
 // 拓扑验证结果接口
 interface ValidationResult {
@@ -92,6 +93,9 @@ export default function TopologyDesign() {
   // 鼠标位置（用于粘贴时定位）
   const mousePositionRef = useRef<{ x: number; y: number } | null>(null);
   
+  // FlowCanvas ref（用于调用 fitView）
+  const flowCanvasRef = useRef<FlowCanvasRef>(null);
+  
   // 处理鼠标移动
   const handleMouseMove = useCallback((position: { x: number; y: number }) => {
     mousePositionRef.current = position;
@@ -112,20 +116,50 @@ export default function TopologyDesign() {
       },
     }));
 
-    const newEdges: Edge[] = data.connections.map((conn) => ({
-      id: conn.id,
-      source: conn.from,
-      target: conn.to,
-      sourceHandle: conn.from_port || undefined,
-      targetHandle: conn.to_port || undefined,
-      type: 'connection',
-      data: {
-        connectionType: conn.connection_type,
-        properties: conn.properties || {},
-      },
-    }));
+    const newEdges: Edge[] = data.connections.map((conn) => {
+      // 修复 Handle ID 匹配问题：
+      // - source Handle 的 ID 格式是 `${portId}-source`（例如 "top-source"）
+      // - target Handle 的 ID 格式是 `${portId}`（例如 "center"）
+      const sourceHandle = conn.from_port 
+        ? (conn.from_port.includes('-source') ? conn.from_port : `${conn.from_port}-source`)
+        : undefined;
+      const targetHandle = conn.to_port || undefined;
+      
+      return {
+        id: conn.id,
+        source: conn.from,
+        target: conn.to,
+        sourceHandle,
+        targetHandle,
+        type: 'connection',
+        data: {
+          connectionType: conn.connection_type,
+          properties: conn.properties || {},
+        },
+      };
+    });
 
-    setNodes(newNodes);
+    // 导入后触发联动更新，确保设备属性正确设置
+    // 对每个连接执行联动更新
+    let updatedNodes = newNodes;
+    for (const edge of newEdges) {
+      const sourceNode = updatedNodes.find(n => n.id === edge.source);
+      const targetNode = updatedNodes.find(n => n.id === edge.target);
+      
+      if (sourceNode && targetNode) {
+        const connection: Connection = {
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle ? edge.sourceHandle : null,
+          targetHandle: edge.targetHandle ? edge.targetHandle : null,
+        };
+        
+        // 执行联动更新
+        updatedNodes = performLinkageUpdatePhase3(connection, updatedNodes, newEdges);
+      }
+    }
+
+    setNodes(updatedNodes);
     setEdges(newEdges);
 
     const maxId = data.devices.reduce((max, d) => {
@@ -133,6 +167,17 @@ export default function TopologyDesign() {
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0);
     deviceIdCounter.current = maxId + 1;
+    
+    // 导入后自动适配视图，确保所有设备可见
+    // 使用 setTimeout 确保 DOM 更新完成后再调用 fitView
+    setTimeout(() => {
+      if (flowCanvasRef.current && updatedNodes.length > 0) {
+        flowCanvasRef.current.fitView({ 
+          padding: 0.1, // 10% 的边距
+          duration: 300, // 300ms 的动画时长
+        });
+      }
+    }, 100);
   }, []);
 
   // 标记是否已初始化，避免切换标签时清空画布
@@ -353,6 +398,17 @@ export default function TopologyDesign() {
   const newTopology = useCallback(() => {
     setNodes([]);
     setEdges([]);
+    deviceIdCounter.current = 1;
+    isInitialized.current = false; // 重置初始化标志，允许重新加载
+    // 重置视图到默认位置
+    setTimeout(() => {
+      if (flowCanvasRef.current) {
+        flowCanvasRef.current.fitView({ 
+          padding: 0.1,
+          duration: 300,
+        });
+      }
+    }, 100);
     setSelectedNode(null);
     setShowPropertiesPanel(false);
     setCurrentFilePath(null);
@@ -917,6 +973,7 @@ export default function TopologyDesign() {
         {/* 画布区域 */}
         <div className="flex-1 relative">
           <FlowCanvas
+            ref={flowCanvasRef}
             nodes={nodes}
             edges={edges}
             onNodesChange={handleNodesUpdate}
