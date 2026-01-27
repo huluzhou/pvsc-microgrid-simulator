@@ -8,8 +8,9 @@ import { Node, Edge, Connection } from 'reactflow';
 import FlowCanvas from '../components/topology/FlowCanvas';
 import DevicePanel from '../components/topology/DevicePanel';
 import DevicePropertiesPanel from '../components/topology/DevicePropertiesPanel';
-import { Save, FolderOpen, Trash2, FilePlus, FileDown, CheckCircle } from 'lucide-react';
+import { Save, FolderOpen, Trash2, FilePlus, FileDown, CheckCircle, Undo2, Redo2, Copy, Clipboard, Scissors } from 'lucide-react';
 import { DeviceType, DEVICE_TYPE_TO_CN } from '../constants/deviceTypes';
+import { HistoryManager } from '../utils/historyManager';
 
 // 拓扑验证结果接口
 interface ValidationResult {
@@ -76,6 +77,17 @@ export default function TopologyDesign() {
   const [showPropertiesPanel, setShowPropertiesPanel] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const deviceIdCounter = useRef(savedState?.counter || 1);
+  
+  // 历史记录管理器
+  const historyManager = useRef(new HistoryManager());
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  
+  // 剪贴板（用于复制/粘贴）
+  const clipboardRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
+  
+  // 是否正在从历史记录恢复（避免触发新的历史记录）
+  const isRestoringRef = useRef(false);
 
   // 更新节点和边
   const updateNodesAndEdges = useCallback((data: TopologyData) => {
@@ -462,15 +474,50 @@ export default function TopologyDesign() {
     // 连接已在 FlowCanvas 内部处理
   }, []);
 
+  // 初始化历史记录
+  useEffect(() => {
+    historyManager.current.initialize({
+      nodes,
+      edges,
+      counter: deviceIdCounter.current,
+    });
+    setCanUndo(false);
+    setCanRedo(false);
+  }, []); // 只在组件挂载时初始化一次
+
   // 处理节点更新
   const handleNodesUpdate = useCallback((newNodes: Node[]) => {
     setNodes(newNodes);
-  }, []);
+    // 延迟保存历史记录，避免频繁操作时产生过多历史
+    setTimeout(() => {
+      if (!isRestoringRef.current) {
+        historyManager.current.snapshot({
+          nodes: newNodes,
+          edges,
+          counter: deviceIdCounter.current,
+        });
+        setCanUndo(historyManager.current.canUndo());
+        setCanRedo(historyManager.current.canRedo());
+      }
+    }, 100);
+  }, [edges]);
 
   // 处理边更新
   const handleEdgesUpdate = useCallback((newEdges: Edge[]) => {
     setEdges(newEdges);
-  }, []);
+    // 延迟保存历史记录
+    setTimeout(() => {
+      if (!isRestoringRef.current) {
+        historyManager.current.snapshot({
+          nodes,
+          edges: newEdges,
+          counter: deviceIdCounter.current,
+        });
+        setCanUndo(historyManager.current.canUndo());
+        setCanRedo(historyManager.current.canRedo());
+      }
+    }, 100);
+  }, [nodes]);
 
   // 处理节点删除（由FlowCanvas的onNodesDelete触发）
   const handleNodesDelete = useCallback((deletedNodes: Node[]) => {
@@ -486,19 +533,183 @@ export default function TopologyDesign() {
     // 边删除不需要额外处理，状态已由FlowCanvas更新
   }, []);
 
-  // 快捷键处理（保留Ctrl+S保存）
+  // 撤销操作
+  const handleUndo = useCallback(() => {
+    if (!historyManager.current.canUndo()) return;
+    
+    isRestoringRef.current = true;
+    const state = historyManager.current.undo();
+    if (state) {
+      setNodes(state.nodes);
+      setEdges(state.edges);
+      deviceIdCounter.current = state.counter;
+      setCanUndo(historyManager.current.canUndo());
+      setCanRedo(historyManager.current.canRedo());
+    }
+    setTimeout(() => {
+      isRestoringRef.current = false;
+    }, 200);
+  }, []);
+
+  // 恢复操作
+  const handleRedo = useCallback(() => {
+    if (!historyManager.current.canRedo()) return;
+    
+    isRestoringRef.current = true;
+    const state = historyManager.current.redo();
+    if (state) {
+      setNodes(state.nodes);
+      setEdges(state.edges);
+      deviceIdCounter.current = state.counter;
+      setCanUndo(historyManager.current.canUndo());
+      setCanRedo(historyManager.current.canRedo());
+    }
+    setTimeout(() => {
+      isRestoringRef.current = false;
+    }, 200);
+  }, []);
+
+  // 复制选中的元素
+  const handleCopy = useCallback(() => {
+    const selectedNodes = nodes.filter(n => n.selected);
+    const selectedEdges = edges.filter(e => e.selected);
+    
+    if (selectedNodes.length === 0 && selectedEdges.length === 0) {
+      // 如果没有选中的元素，尝试复制最后选中的节点
+      if (selectedNode) {
+        clipboardRef.current = {
+          nodes: [selectedNode],
+          edges: edges.filter(e => e.source === selectedNode.id || e.target === selectedNode.id),
+        };
+      }
+      return;
+    }
+
+    // 只复制选中的节点之间的连接
+    const selectedNodeIds = new Set(selectedNodes.map(n => n.id));
+    const copiedEdges = selectedEdges.filter(e => 
+      selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+    );
+
+    clipboardRef.current = {
+      nodes: selectedNodes,
+      edges: copiedEdges,
+    };
+  }, [nodes, edges, selectedNode]);
+
+  // 剪切选中的元素（复制+删除）
+  const handleCut = useCallback(() => {
+    handleCopy();
+    // 删除选中的元素
+    deleteSelectedElements();
+  }, [handleCopy, deleteSelectedElements]);
+
+  // 粘贴元素
+  const handlePaste = useCallback(() => {
+    if (!clipboardRef.current) return;
+
+    const { nodes: copiedNodes, edges: copiedEdges } = clipboardRef.current;
+    if (copiedNodes.length === 0) return;
+
+    // 生成新的节点ID映射
+    const nodeIdMap = new Map<string, string>();
+    const newNodes: Node[] = copiedNodes.map((node) => {
+      const newId = `device-${deviceIdCounter.current++}`;
+      nodeIdMap.set(node.id, newId);
+      
+      // 计算新位置（偏移一定距离）
+      const offset = { x: 50, y: 50 };
+      return {
+        ...node,
+        id: newId,
+        position: {
+          x: node.position.x + offset.x,
+          y: node.position.y + offset.y,
+        },
+        selected: false, // 取消选中状态
+      };
+    });
+
+    // 生成新的边，更新source和target ID
+    const newEdges: Edge[] = copiedEdges.map((edge) => {
+      const newId = `edge-${nodeIdMap.get(edge.source)}-${nodeIdMap.get(edge.target)}-${Date.now()}`;
+      return {
+        ...edge,
+        id: newId,
+        source: nodeIdMap.get(edge.source)!,
+        target: nodeIdMap.get(edge.target)!,
+        selected: false,
+      };
+    });
+
+    // 添加到画布
+    const updatedNodes = [...nodes, ...newNodes];
+    const updatedEdges = [...edges, ...newEdges];
+    
+    setNodes(updatedNodes);
+    setEdges(updatedEdges);
+
+    // 保存历史记录（使用更新后的状态）
+    setTimeout(() => {
+      if (!isRestoringRef.current) {
+        historyManager.current.snapshot({
+          nodes: updatedNodes,
+          edges: updatedEdges,
+          counter: deviceIdCounter.current,
+        });
+        setCanUndo(historyManager.current.canUndo());
+        setCanRedo(historyManager.current.canRedo());
+      }
+    }, 150);
+  }, [nodes, edges]);
+
+  // 快捷键处理
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 删除操作由ReactFlow的onNodesDelete/onEdgesDelete处理
-      if (e.ctrlKey && e.key === 's') {
-        e.preventDefault();
-        quickSaveTopology();
+      // 如果焦点在输入框等元素上，不处理快捷键
+      if (e.target instanceof HTMLInputElement || 
+          e.target instanceof HTMLTextAreaElement ||
+          (e.target as HTMLElement)?.isContentEditable) {
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key.toLowerCase()) {
+          case 's':
+            e.preventDefault();
+            quickSaveTopology();
+            break;
+          case 'z':
+            e.preventDefault();
+            if (e.shiftKey) {
+              handleRedo();
+            } else {
+              handleUndo();
+            }
+            break;
+          case 'y':
+            e.preventDefault();
+            handleRedo();
+            break;
+          case 'c':
+            e.preventDefault();
+            handleCopy();
+            break;
+          case 'v':
+            e.preventDefault();
+            handlePaste();
+            break;
+          case 'x':
+            e.preventDefault();
+            handleCut();
+            break;
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [quickSaveTopology]);
+  }, [quickSaveTopology, handleUndo, handleRedo, handleCopy, handlePaste, handleCut]);
 
   useEffect(() => {
     loadTopology();
@@ -555,6 +766,57 @@ export default function TopologyDesign() {
           >
             <FileDown className="w-4 h-4" />
             导出
+          </button>
+
+          <div className="w-px h-5 bg-gray-300 mx-1" />
+
+          {/* 撤销/恢复 */}
+          <button
+            onClick={handleUndo}
+            disabled={!canUndo}
+            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 flex items-center gap-1.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="撤销 (Ctrl+Z)"
+          >
+            <Undo2 className="w-4 h-4" />
+            撤销
+          </button>
+          <button
+            onClick={handleRedo}
+            disabled={!canRedo}
+            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 flex items-center gap-1.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="恢复 (Ctrl+Y 或 Ctrl+Shift+Z)"
+          >
+            <Redo2 className="w-4 h-4" />
+            恢复
+          </button>
+
+          <div className="w-px h-5 bg-gray-300 mx-1" />
+
+          {/* 复制/粘贴/剪切 */}
+          <button
+            onClick={handleCopy}
+            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 flex items-center gap-1.5 text-sm transition-colors"
+            title="复制 (Ctrl+C)"
+          >
+            <Copy className="w-4 h-4" />
+            复制
+          </button>
+          <button
+            onClick={handlePaste}
+            disabled={!clipboardRef.current}
+            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 flex items-center gap-1.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="粘贴 (Ctrl+V)"
+          >
+            <Clipboard className="w-4 h-4" />
+            粘贴
+          </button>
+          <button
+            onClick={handleCut}
+            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 flex items-center gap-1.5 text-sm transition-colors"
+            title="剪切 (Ctrl+X)"
+          >
+            <Scissors className="w-4 h-4" />
+            剪切
           </button>
 
           <div className="flex-1" />
