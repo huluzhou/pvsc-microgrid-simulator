@@ -1062,6 +1062,7 @@ export default function TopologyDesign() {
                 setSelectedNode(null);
               }}
               onUpdate={updateDevice}
+              allNodes={nodes}
             />
           )}
         </div>

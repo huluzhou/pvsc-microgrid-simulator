@@ -14,6 +14,7 @@ interface DevicePropertiesPanelProps {
   };
   onClose: () => void;
   onUpdate: (deviceId: string, updates: { name: string; properties: Record<string, any> }) => void;
+  allNodes?: Array<{ id: string; data: { deviceType: string } }>; // 所有节点，用于计算端口
 }
 
 // 设备属性字段定义
@@ -80,6 +81,7 @@ export default function DevicePropertiesPanel({
   device,
   onClose,
   onUpdate,
+  allNodes = [],
 }: DevicePropertiesPanelProps) {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [newCustomKey, setNewCustomKey] = useState('');
@@ -133,22 +135,49 @@ export default function DevicePropertiesPanel({
       initialData.measurement_error = device.properties.measurement_error ?? null;
       initialData.data_collection_frequency = device.properties.data_collection_frequency ?? null;
 
-      // 为功率设备和测量设备预置通信相关自定义字段（仅在不存在时设置默认值）
-      const isPowerOrMeter =
-        deviceType === 'static_generator' ||
-        deviceType === 'storage' ||
-        deviceType === 'load' ||
-        deviceType === 'charger' ||
-        deviceType === 'external_grid' ||
-        deviceType === 'meter';
+      // 为需要通信的设备预置通信相关自定义字段（仅在不存在时设置默认值）
+      // 注意：外部电网和负载不需要通信配置，因为它们不能直接上传数据
+      const needsCommConfig =
+        deviceType === 'static_generator' ||  // 光伏
+        deviceType === 'storage' ||            // 储能
+        deviceType === 'charger' ||            // 充电桩
+        deviceType === 'meter';                // 测量设备
 
-      if (isPowerOrMeter) {
+      if (needsCommConfig) {
+        // IP 默认值
         if (initialData.ip === undefined) {
-          initialData.ip = device.properties.ip ?? '127.0.0.1';
+          initialData.ip = device.properties.ip ?? '0.0.0.0';
         }
+        
+        // 端口默认值：根据设备类型和同类型设备数量计算
         if (initialData.port === undefined) {
-          initialData.port = device.properties.port ?? 5020;
+          const existingPort = device.properties.port;
+          if (existingPort !== undefined) {
+            initialData.port = existingPort;
+          } else {
+            // 计算同类型设备数量（不包括当前设备）
+            const sameTypeCount = allNodes.filter(
+              (n) => n.data.deviceType === deviceType && n.id !== device.id
+            ).length;
+            
+            // 根据设备类型设置端口基地址
+            let basePort = 5020; // 默认值
+            if (deviceType === 'charger') {
+              basePort = 702; // 充电桩
+            } else if (deviceType === 'meter') {
+              basePort = 403; // 电表
+            } else if (deviceType === 'static_generator') {
+              basePort = 602; // 光伏
+            } else if (deviceType === 'storage') {
+              basePort = 502; // 储能设备
+            }
+            // 注意：负载(load)和外部电网(external_grid)不需要通信配置
+            
+            // 端口 = 基地址 + 同类型设备数量
+            initialData.port = basePort + sameTypeCount;
+          }
         }
+        
         if (initialData.baudrate === undefined) {
           initialData.baudrate = device.properties.baudrate ?? 9600;
         }
@@ -156,16 +185,23 @@ export default function DevicePropertiesPanel({
           initialData.parity = device.properties.parity ?? 'none';
         }
         if (initialData.comm_mode === undefined) {
-          initialData.comm_mode = device.properties.comm_mode ?? 'tcp'; // 可选值：'485' | 'tcp'
+          initialData.comm_mode = device.properties.comm_mode ?? 'tcp';
         }
       }
 
-       // 将已有的自定义字段也一并载入（排除保留字段）
-       Object.entries(device.properties).forEach(([key, value]) => {
-         if (!reservedKeys.has(key)) {
-           initialData[key] = value;
-         }
-       });
+      // 将已有的自定义字段也一并载入（排除保留字段和空值字段）
+      Object.entries(device.properties).forEach(([key, value]) => {
+        if (!reservedKeys.has(key)) {
+          // 过滤掉空值：null、undefined、空字符串、空对象、空数组
+          if (value !== null && 
+              value !== undefined && 
+              value !== '' &&
+              !(typeof value === 'object' && Object.keys(value).length === 0) &&
+              !(Array.isArray(value) && value.length === 0)) {
+            initialData[key] = value;
+          }
+        }
+      });
       
       // 尝试从后端获取设备元数据（如果 properties 中没有）
       try {
@@ -551,12 +587,50 @@ export default function DevicePropertiesPanel({
                 className="w-24 px-2 py-1 bg-gray-50 border border-gray-200 rounded text-xs text-gray-500"
               />
               <span className="text-xs text-gray-400 px-1">=</span>
-              <input
-                type="text"
-                value={formData[key] ?? ''}
-                onChange={(e) => handleFieldChange(key, e.target.value)}
-                className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              />
+
+              {/* 针对预定义通信字段使用下拉枚举 */}
+              {key === 'baudrate' ? (
+                <select
+                  value={formData[key] ?? ''}
+                  onChange={(e) => handleFieldChange(key, Number(e.target.value))}
+                  className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">选择波特率</option>
+                  <option value={4800}>4800</option>
+                  <option value={9600}>9600</option>
+                  <option value={19200}>19200</option>
+                  <option value={38400}>38400</option>
+                  <option value={57600}>57600</option>
+                  <option value={115200}>115200</option>
+                </select>
+              ) : key === 'parity' ? (
+                <select
+                  value={formData[key] ?? 'none'}
+                  onChange={(e) => handleFieldChange(key, e.target.value)}
+                  className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="none">无校验 (none)</option> 
+                  <option value="even">偶校验 (even)</option>
+                  <option value="odd">奇校验 (odd)</option>
+                </select>
+              ) : key === 'comm_mode' ? (
+                <select
+                  value={formData[key] ?? 'tcp'}
+                  onChange={(e) => handleFieldChange(key, e.target.value)}
+                  className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="tcp">TCP</option>
+                  <option value="rs485">RS-485</option>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={formData[key] ?? ''}
+                  onChange={(e) => handleFieldChange(key, e.target.value)}
+                  className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                />
+              )}
+
               <button
                 type="button"
                 onClick={() => removeCustomField(key)}
