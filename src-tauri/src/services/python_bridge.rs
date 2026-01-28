@@ -70,7 +70,6 @@ impl PythonBridge {
             let script_path = Self::get_python_script_path()?;
             (python_path, vec![script_path])
         };
-
         let mut cmd = Command::new(&executable_path);
         for arg in args {
             cmd.arg(arg);
@@ -164,6 +163,7 @@ impl PythonBridge {
         // 发送请求
         if let Some(ref stdin) = self.stdin {
             let mut stdin = stdin.lock().await;
+
             stdin.write_all(request_json.as_bytes()).await?;
             stdin.write_all(b"\n").await?;
             stdin.flush().await?;
@@ -172,14 +172,21 @@ impl PythonBridge {
         }
 
         // 等待响应（带超时）
-        match timeout(Duration::from_secs(30), rx).await {
+        // 对于设置拓扑等可能耗时较长的操作，使用更长的超时时间
+        let timeout_duration = if method == "simulation.set_topology" {
+            Duration::from_secs(60)  // 设置拓扑可能需要更长时间
+        } else {
+            Duration::from_secs(30)  // 其他操作使用默认超时
+        };
+        
+        match timeout(timeout_duration, rx).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(anyhow::anyhow!("Response channel closed")),
             Err(_) => {
                 // 超时，移除 pending 请求
                 let mut pending = self.pending_requests.lock().await;
                 pending.remove(&request_id);
-                Err(anyhow::anyhow!("Request timeout"))
+                Err(anyhow::anyhow!("Request timeout after {} seconds", timeout_duration.as_secs()))
             }
         }
     }
@@ -201,10 +208,27 @@ impl PythonBridge {
     }
 
     fn get_python_script_path() -> Result<String> {
-        // 获取 Python 内核脚本路径
+        // 获取 Python 内核脚本路径（兼容 src-tauri 作为当前工作目录的情况）
         let current_dir = std::env::current_dir()?;
-        let script_path = current_dir.join("python-kernel").join("main.py");
-        Ok(script_path.to_string_lossy().to_string())
+
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+        // 1. 当前目录下的 python-kernel/main.py
+        candidates.push(current_dir.join("python-kernel").join("main.py"));
+        // 2. 父目录下的 python-kernel/main.py（开发时常见：项目根有 python-kernel，当前在 src-tauri）
+        if let Some(parent) = current_dir.parent() {
+            candidates.push(parent.join("python-kernel").join("main.py"));
+        }
+
+        for path in &candidates {
+            if path.exists() {
+                return Ok(path.to_string_lossy().to_string());
+            }
+        }
+
+        Err(anyhow::anyhow!(format!(
+            "Python kernel script not found. Tried paths: {:?}",
+            candidates
+        )))
     }
 
     async fn find_packed_executable() -> Result<String> {

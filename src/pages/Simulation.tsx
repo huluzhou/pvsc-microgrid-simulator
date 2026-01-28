@@ -3,7 +3,8 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Play, Pause, Square, RefreshCw, Settings, Radio, Clock, Activity, Zap, AlertTriangle } from 'lucide-react';
+import { listen } from '@tauri-apps/api/event';
+import { Play, Pause, Square, RefreshCw, Settings, Radio, Clock, Activity, Zap, AlertTriangle, ChevronDown, ChevronRight, Info, AlertCircle } from 'lucide-react';
 
 interface SimulationStatus {
   state: 'Stopped' | 'Running' | 'Paused';
@@ -11,6 +12,16 @@ interface SimulationStatus {
   elapsed_time: number;
   calculation_count: number;
   average_delay: number;
+  errors?: SimulationError[];
+}
+
+interface SimulationError {
+  error_type: string;  // "adapter" | "topology" | "calculation" | "runtime"
+  severity: string;    // "error" | "warning" | "info"
+  message: string;
+  device_id?: string;
+  details: any;
+  timestamp: number;
 }
 
 interface SimulationConfig {
@@ -20,16 +31,28 @@ interface SimulationConfig {
 }
 
 export default function Simulation() {
-  const [status, setStatus] = useState<SimulationStatus>({ state: 'Stopped', elapsed_time: 0, calculation_count: 0, average_delay: 0 });
+  const [status, setStatus] = useState<SimulationStatus>({ state: 'Stopped', elapsed_time: 0, calculation_count: 0, average_delay: 0, errors: [] });
   const [config, setConfig] = useState<SimulationConfig>({ calculationInterval: 1000, remoteControlEnabled: false, autoStartModbus: false });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
+  const [errorFilter, setErrorFilter] = useState<'all' | 'error' | 'warning' | 'info'>('all');
 
   const loadStatus = useCallback(async () => {
     try {
       const currentStatus = await invoke<SimulationStatus>('get_simulation_status');
       setStatus(currentStatus);
       setError(null);
+      
+      // 同时加载错误信息（如果状态中没有）
+      if (!currentStatus.errors || currentStatus.errors.length === 0) {
+        try {
+          const errors = await invoke<SimulationError[]>('get_simulation_errors');
+          setStatus(prev => ({ ...prev, errors }));
+        } catch (err) {
+          // 忽略错误信息加载失败
+        }
+      }
     } catch (err) {
       setError('无法获取仿真状态');
     }
@@ -38,7 +61,18 @@ export default function Simulation() {
   useEffect(() => {
     loadStatus();
     const interval = setInterval(loadStatus, 1000);
-    return () => clearInterval(interval);
+    
+    // 监听错误更新事件
+    const errorListener = listen('simulation-errors-update', (event: any) => {
+      if (event.payload && event.payload.errors) {
+        setStatus(prev => ({ ...prev, errors: event.payload.errors }));
+      }
+    });
+    
+    return () => {
+      clearInterval(interval);
+      errorListener.then(unlisten => unlisten());
+    };
   }, [loadStatus]);
 
   const handleStart = async () => {
@@ -100,6 +134,50 @@ export default function Simulation() {
     if (hrs > 0) return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'error': return 'text-red-600 bg-red-50 border-red-200';
+      case 'warning': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+      case 'info': return 'text-blue-600 bg-blue-50 border-blue-200';
+      default: return 'text-gray-600 bg-gray-50 border-gray-200';
+    }
+  };
+
+  const getErrorTypeLabel = (errorType: string) => {
+    switch (errorType) {
+      case 'adapter': return '适配器';
+      case 'topology': return '拓扑';
+      case 'calculation': return '计算';
+      case 'runtime': return '运行时';
+      default: return errorType;
+    }
+  };
+
+  const getSeverityLabel = (severity: string) => {
+    switch (severity) {
+      case 'error': return '错误';
+      case 'warning': return '警告';
+      case 'info': return '信息';
+      default: return severity;
+    }
+  };
+
+  const toggleErrorExpanded = (index: number) => {
+    setExpandedErrors(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
+
+  const filteredErrors = status.errors?.filter(err => 
+    errorFilter === 'all' || err.severity === errorFilter
+  ) || [];
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
@@ -182,6 +260,94 @@ export default function Simulation() {
               </div>
             </div>
           </div>
+          {status.errors && status.errors.length > 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-orange-500" />
+                  <h2 className="text-sm font-semibold text-gray-700">错误信息</h2>
+                  <span className="text-xs text-gray-500">({status.errors.length})</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setErrorFilter('all')}
+                    className={`px-2 py-1 text-xs rounded ${errorFilter === 'all' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}
+                  >
+                    全部
+                  </button>
+                  <button
+                    onClick={() => setErrorFilter('error')}
+                    className={`px-2 py-1 text-xs rounded ${errorFilter === 'error' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600'}`}
+                  >
+                    错误
+                  </button>
+                  <button
+                    onClick={() => setErrorFilter('warning')}
+                    className={`px-2 py-1 text-xs rounded ${errorFilter === 'warning' ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-600'}`}
+                  >
+                    警告
+                  </button>
+                  <button
+                    onClick={() => setErrorFilter('info')}
+                    className={`px-2 py-1 text-xs rounded ${errorFilter === 'info' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}
+                  >
+                    信息
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {filteredErrors.length === 0 ? (
+                  <div className="text-sm text-gray-500 text-center py-4">暂无{errorFilter !== 'all' ? getSeverityLabel(errorFilter) : ''}信息</div>
+                ) : (
+                  filteredErrors.map((err, index) => {
+                    const isExpanded = expandedErrors.has(index);
+                    const severityColor = getSeverityColor(err.severity);
+                    return (
+                      <div key={index} className={`border rounded p-3 ${severityColor}`}>
+                        <div 
+                          className="flex items-start gap-2 cursor-pointer"
+                          onClick={() => toggleErrorExpanded(index)}
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-medium px-2 py-0.5 rounded bg-white/50">
+                                {getErrorTypeLabel(err.error_type)}
+                              </span>
+                              <span className="text-xs font-medium px-2 py-0.5 rounded bg-white/50">
+                                {getSeverityLabel(err.severity)}
+                              </span>
+                              {err.device_id && (
+                                <span className="text-xs text-gray-600">设备: {err.device_id}</span>
+                              )}
+                              <span className="text-xs text-gray-500 ml-auto">
+                                {err.timestamp > 10000000000 
+                                  ? new Date(err.timestamp).toLocaleTimeString() 
+                                  : new Date(err.timestamp * 1000).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <div className="text-sm font-medium">{err.message}</div>
+                            {isExpanded && (
+                              <div className="mt-2 pt-2 border-t border-current/20">
+                                <div className="text-xs font-medium mb-1">详细信息:</div>
+                                <pre className="text-xs bg-white/50 p-2 rounded overflow-auto max-h-40">
+                                  {JSON.stringify(err.details, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

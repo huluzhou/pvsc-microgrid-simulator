@@ -4,7 +4,7 @@ use tauri::State;
 use crate::services::database::Database;
 use crate::domain::metadata::DeviceMetadataStore;
 use crate::commands::topology::device_type_to_string;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex as StdMutex};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeviceDataPoint {
@@ -27,6 +27,7 @@ pub struct DeviceStatus {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct Alert {
     pub id: String,
     pub device_id: String,
@@ -40,7 +41,7 @@ pub struct Alert {
 #[tauri::command]
 pub async fn record_device_data(
     data: DeviceDataPoint,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Arc<StdMutex<Database>>>,
 ) -> Result<(), String> {
     let json_str = data.data_json.as_ref()
         .and_then(|v| serde_json::to_string(v).ok());
@@ -62,7 +63,7 @@ pub async fn query_device_data(
     device_id: String,
     start_time: Option<f64>,
     end_time: Option<f64>,
-    db: State<'_, Mutex<Database>>,
+    db: State<'_, Arc<StdMutex<Database>>>,
     ) -> Result<Vec<(f64, Option<f64>, Option<f64>)>, String> {
     let db = db.lock().unwrap();
     db.query_device_data(&device_id, start_time, end_time)
@@ -71,8 +72,8 @@ pub async fn query_device_data(
 
 #[tauri::command]
 pub async fn get_all_devices_status(
-    metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
-    db: State<'_, Mutex<Database>>,
+    metadata_store: State<'_, StdMutex<DeviceMetadataStore>>,
+    db: State<'_, Arc<StdMutex<Database>>>,
 ) -> Result<Vec<DeviceStatus>, String> {
     let devices = {
         let metadata_store = metadata_store.lock().unwrap();
@@ -112,8 +113,8 @@ pub async fn get_all_devices_status(
 #[tauri::command]
 pub async fn get_device_status(
     device_id: String,
-    metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
-    db: State<'_, Mutex<Database>>,
+    metadata_store: State<'_, StdMutex<DeviceMetadataStore>>,
+    db: State<'_, Arc<StdMutex<Database>>>,
 ) -> Result<DeviceStatus, String> {
     let metadata_store = metadata_store.lock().unwrap();
     let device = metadata_store.get_device(&device_id)
@@ -126,10 +127,10 @@ pub async fn get_device_status(
             .and_then(|data| data.last().cloned())
     };
     
-    let (voltage, current, power, last_update) = if let Some((t, v, c, p)) = recent_data {
-        (v, c, p, Some(t))
+    let (p_active, p_reactive, last_update) = if let Some((t, p_a, p_r)) = recent_data {
+        (p_a, p_r, Some(t))
     } else {
-        (None, None, None, None)
+        (None, None, None)
     };
     
     Ok(DeviceStatus {
@@ -138,8 +139,7 @@ pub async fn get_device_status(
         device_type: device_type_to_string(&device.device_type),  // 添加设备类型
         is_online: recent_data.is_some(),
         last_update,
-        current_voltage: voltage,
-        current_current: current,
-        current_power: power,
+        current_p_active: p_active,
+        current_p_reactive: p_reactive,
     })
 }

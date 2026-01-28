@@ -31,6 +31,34 @@ impl SimulationEngine {
     }
 
     pub async fn start(&self, app_handle: Option<AppHandle>, calculation_interval_ms: u64) -> Result<(), String> {
+        // 检查 Python bridge 是否已就绪（应该在应用启动时已启动）
+        {
+            let mut bridge = self.python_bridge.lock().await;
+            // 尝试 ping 确认 bridge 已就绪
+            // 如果失败，说明启动时有问题，返回错误
+            let mut retries = 3;
+            let mut bridge_ready = false;
+            
+            while retries > 0 && !bridge_ready {
+                match bridge.call("ping", serde_json::json!({})).await {
+                    Ok(_) => {
+                        bridge_ready = true;
+                    }
+                    Err(e) => {
+                        eprintln!("Python bridge 未就绪 (剩余重试: {}): {}", retries - 1, e);
+                        retries -= 1;
+                        if retries > 0 {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                        }
+                    }
+                }
+            }
+            
+            if !bridge_ready {
+                return Err("Python 内核未就绪，请检查启动日志".to_string());
+            }
+        }
+        
         // 获取拓扑数据
         let topology = self.topology.lock().await.clone();
         if topology.is_none() {
@@ -180,7 +208,12 @@ impl SimulationEngine {
                         let mut status_guard = status.lock().await;
                         status_guard.errors = errors_array.iter()
                             .filter_map(|e| {
-                                serde_json::from_value::<crate::domain::simulation::SimulationError>(e.clone()).ok()
+                                // 转换时间戳：Python返回float（秒），需要转换为u64
+                                let mut error_obj = e.clone();
+                                if let Some(timestamp) = error_obj.get("timestamp").and_then(|v| v.as_f64()) {
+                                    error_obj["timestamp"] = serde_json::json!(timestamp as u64);
+                                }
+                                serde_json::from_value::<crate::domain::simulation::SimulationError>(error_obj).ok()
                             })
                             .collect();
                         drop(status_guard);
@@ -190,8 +223,9 @@ impl SimulationEngine {
                     }
                 }
                 
-                // 获取最后一次计算结果
-                if let Ok(result_data) = bridge.call("simulation.get_last_result", serde_json::json!({})).await {
+                // 主动触发计算并获取结果（避免时序问题）
+                // 这样可以确保获取的是最新计算结果，而不是滞后的结果
+                if let Ok(result_data) = bridge.call("simulation.perform_calculation", serde_json::json!({})).await {
                     if let Some(result) = result_data.get("result") {
                         // 处理计算结果并存储到数据库
                         if let Some(devices) = result.get("devices") {
@@ -251,8 +285,8 @@ impl SimulationEngine {
         // 处理计算结果并存储到数据库
         // 同时发送事件通知前端
         
-        // 建立设备ID到设备类型的映射，用于查找设备
-        let device_id_to_type: HashMap<String, &str> = devices.iter()
+        // 建立设备ID到设备类型的映射，用于查找设备（保留以备将来使用）
+        let _device_id_to_type: HashMap<String, &str> = devices.iter()
             .map(|(id, device)| (id.clone(), match device.device_type {
                 crate::domain::topology::DeviceType::Node => "Node",
                 crate::domain::topology::DeviceType::Line => "Line",
@@ -270,16 +304,16 @@ impl SimulationEngine {
         // 处理母线结果（电压数据）
         // 注意：pandapower返回的buses是按索引组织的，需要根据拓扑中的Node设备来映射
         if let Some(buses) = results.get("buses").and_then(|v| v.as_object()) {
-            for (bus_idx_str, bus_data) in buses {
+            for (_bus_idx_str, bus_data) in buses {
                 // 尝试从拓扑中找到对应的Node设备
                 // 由于pandapower索引和设备ID的映射关系复杂，这里使用设备名称匹配
                 if let Some(bus_name) = bus_data.get("name").and_then(|v| v.as_str()) {
                     // 查找名称匹配的Node设备
-                    for (device_id, device) in devices {
+                    for (_device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Node 
                             && device.name == bus_name {
-                            // 提取电压值
-                            let voltage = bus_data.get("vm_pu")
+                            // 提取电压值（用于验证，但不存储）
+                            let _voltage = bus_data.get("vm_pu")
                                 .and_then(|v| v.as_f64())
                                 .map(|vm_pu| {
                                     // 从设备属性中获取基准电压（vn_kv），转换为实际电压（V）
@@ -473,8 +507,9 @@ impl SimulationEngine {
         // 这里主要发送事件通知前端
         
         // 处理母线结果（电压数据）
-        if let Some(buses) = results.get("buses").and_then(|v| v.as_object()) {
-            for (_bus_idx_str, bus_data) in buses {
+            if let Some(buses) = results.get("buses").and_then(|v| v.as_object()) {
+                for (bus_idx_str, bus_data) in buses {
+                    let _ = bus_idx_str; // 保留变量名用于调试
                 if let Some(_voltage_pu) = bus_data.get("vm_pu").and_then(|v| v.as_f64()) {
                     // 发送电压数据更新事件
                     let _ = app.emit("bus-voltage-update", bus_data);

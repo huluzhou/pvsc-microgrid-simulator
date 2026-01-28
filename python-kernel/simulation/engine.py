@@ -140,11 +140,104 @@ class SimulationEngine:
         注意：此方法已简化，设备数据应从计算结果中获取
         """
         # 如果仿真运行中且有计算结果，从计算结果中获取
-        if self.is_running and self.last_calculation_result:
-            devices = self.last_calculation_result.get("devices", {})
-            # 尝试从计算结果中获取设备数据
-            # TODO: 根据设备ID映射到计算结果
-            pass
+        if self.is_running and self.last_calculation_result and self.topology_data:
+            devices_result = self.last_calculation_result.get("devices", {})
+            devices_dict = self.topology_data.get("devices", {})
+            
+            if isinstance(devices_dict, list):
+                devices_dict = {d.get("id", ""): d for d in devices_dict if d.get("id")}
+            
+            device = devices_dict.get(device_id)
+            if not device:
+                return {
+                    "voltage": 0.0,
+                    "current": 0.0,
+                    "power": 0.0,
+                    "timestamp": time.time(),
+                }
+            
+            device_type = device.get("device_type", "")
+            device_name = device.get("name", "")
+            result_data = {}
+            
+            # 根据设备类型从计算结果中提取数据
+            if device_type == "Node":
+                # Node设备对应Bus，使用bus_map查找
+                if device_id in self.cached_bus_map:
+                    bus_idx = self.cached_bus_map[device_id]
+                    buses = devices_result.get("buses", {})
+                    if isinstance(buses, dict) and str(bus_idx) in buses:
+                        bus_data = buses[str(bus_idx)]
+                        vm_pu = bus_data.get("vm_pu", 0.0)
+                        voltage_level = device.get("properties", {}).get("voltage_level", 0.4)
+                        result_data["voltage"] = vm_pu * voltage_level * 1000.0  # 转换为V
+                        result_data["voltage_pu"] = vm_pu
+                        result_data["angle"] = bus_data.get("va_degree", 0.0)
+            
+            elif device_type == "Line":
+                # Line设备，使用device_map查找
+                if device_id in self.cached_device_map.get("lines", {}):
+                    line_idx = self.cached_device_map["lines"][device_id]
+                    lines = devices_result.get("lines", {})
+                    if isinstance(lines, dict) and str(line_idx) in lines:
+                        line_data = lines[str(line_idx)]
+                        result_data["p_from_mw"] = line_data.get("p_from_mw", 0.0)
+                        result_data["q_from_mvar"] = line_data.get("q_from_mvar", 0.0)
+                        result_data["p_to_mw"] = line_data.get("p_to_mw", 0.0)
+                        result_data["q_to_mvar"] = line_data.get("q_to_mvar", 0.0)
+                        result_data["i_from_ka"] = line_data.get("i_from_ka", 0.0)
+                        result_data["i_to_ka"] = line_data.get("i_to_ka", 0.0)
+                        result_data["loading_percent"] = line_data.get("loading_percent", 0.0)
+            
+            elif device_type == "Transformer":
+                # Transformer设备
+                if device_id in self.cached_device_map.get("transformers", {}):
+                    trafo_idx = self.cached_device_map["transformers"][device_id]
+                    transformers = devices_result.get("transformers", {})
+                    if isinstance(transformers, dict) and str(trafo_idx) in transformers:
+                        trafo_data = transformers[str(trafo_idx)]
+                        result_data["p_hv_mw"] = trafo_data.get("p_hv_mw", 0.0)
+                        result_data["q_hv_mvar"] = trafo_data.get("q_hv_mvar", 0.0)
+                        result_data["p_lv_mw"] = trafo_data.get("p_lv_mw", 0.0)
+                        result_data["q_lv_mvar"] = trafo_data.get("q_lv_mvar", 0.0)
+                        result_data["loading_percent"] = trafo_data.get("loading_percent", 0.0)
+            
+            elif device_type == "Load":
+                # Load设备
+                if device_id in self.cached_device_map.get("loads", {}):
+                    load_idx = self.cached_device_map["loads"][device_id]
+                    loads = devices_result.get("loads", {})
+                    if isinstance(loads, dict) and str(load_idx) in loads:
+                        load_data = loads[str(load_idx)]
+                        result_data["p_mw"] = load_data.get("p_mw", 0.0)
+                        result_data["q_mvar"] = load_data.get("q_mvar", 0.0)
+            
+            elif device_type == "Pv":
+                # Pv设备对应Generator
+                if device_id in self.cached_device_map.get("generators", {}):
+                    gen_idx = self.cached_device_map["generators"][device_id]
+                    generators = devices_result.get("generators", {})
+                    if isinstance(generators, dict) and str(gen_idx) in generators:
+                        gen_data = generators[str(gen_idx)]
+                        result_data["p_mw"] = gen_data.get("p_mw", 0.0)
+                        result_data["q_mvar"] = gen_data.get("q_mvar", 0.0)
+            
+            elif device_type == "Storage":
+                # Storage设备
+                if device_id in self.cached_device_map.get("storages", {}):
+                    storage_idx = self.cached_device_map["storages"][device_id]
+                    storages = devices_result.get("storages", {})
+                    if isinstance(storages, dict) and str(storage_idx) in storages:
+                        storage_data = storages[str(storage_idx)]
+                        result_data["p_mw"] = storage_data.get("p_mw", 0.0)
+                        result_data["q_mvar"] = storage_data.get("q_mvar", 0.0)
+            
+            if result_data:
+                result_data["timestamp"] = time.time()
+                result_data["device_id"] = device_id
+                result_data["device_name"] = device_name
+                result_data["device_type"] = device_type
+                return result_data
         
         # 返回默认值
         return {
@@ -155,31 +248,77 @@ class SimulationEngine:
         }
     
     def _calculation_loop(self):
-        """周期性计算循环"""
-        while self.is_running:
-            if not self.is_paused:
-                try:
-                    # 执行一次计算
-                    result = self._perform_calculation()
-                    self.last_calculation_result = result
-                    self.calculation_count += 1
-                    self.last_calculation_time = time.time()
-                except Exception as e:
-                    # 记录错误但不中断循环
-                    error_info = {
-                        "type": "runtime",
-                        "severity": "error",
-                        "message": f"计算循环异常: {str(e)}",
-                        "timestamp": time.time(),
-                        "details": {"exception": str(e), "type": type(e).__name__}
-                    }
-                    self.calculation_errors.append(error_info)
-                    # 只保留最近100个错误
-                    if len(self.calculation_errors) > 100:
-                        self.calculation_errors = self.calculation_errors[-100:]
+        """
+        周期性计算循环（已弃用）
+        
+        注意：此方法已不再使用。计算现在由Rust端主动触发，
+        通过调用 perform_calculation 方法来实现。
+        这样可以避免Python端和Rust端循环不同步导致的时序问题。
+        """
+        # 保留方法定义以保持接口兼容性，但不再执行任何操作
+        pass
+    
+    def perform_calculation(self) -> Dict[str, Any]:
+        """
+        执行一次计算（由Rust端主动调用）
+        
+        返回:
+            计算结果字典
+        """
+        if not self.is_running:
+            return {
+                "converged": False,
+                "errors": [{
+                    "type": "runtime",
+                    "severity": "error",
+                    "message": "仿真未启动",
+                    "details": {}
+                }],
+                "devices": {}
+            }
+        
+        if self.is_paused:
+            # 暂停时返回上次结果
+            return self.last_calculation_result or {
+                "converged": False,
+                "errors": [],
+                "devices": {}
+            }
+        
+        try:
+            # 执行一次计算
+            result = self._perform_calculation()
+            self.last_calculation_result = result
+            self.calculation_count += 1
+            self.last_calculation_time = time.time()
             
-            # 等待计算间隔
-            time.sleep(self.calculation_interval_ms / 1000.0)
+            # 更新错误列表
+            if "errors" in result:
+                self.calculation_errors.extend(result["errors"])
+                # 只保留最近100个错误
+                if len(self.calculation_errors) > 100:
+                    self.calculation_errors = self.calculation_errors[-100:]
+            
+            return result
+        except Exception as e:
+            # 记录错误
+            error_info = {
+                "type": "runtime",
+                "severity": "error",
+                "message": f"计算异常: {str(e)}",
+                "timestamp": time.time(),
+                "details": {"exception": str(e), "type": type(e).__name__}
+            }
+            self.calculation_errors.append(error_info)
+            # 只保留最近100个错误
+            if len(self.calculation_errors) > 100:
+                self.calculation_errors = self.calculation_errors[-100:]
+            
+            return {
+                "converged": False,
+                "errors": [error_info],
+                "devices": {}
+            }
     
     def _perform_calculation(self) -> Dict[str, Any]:
         """执行一次潮流计算"""
@@ -350,7 +489,13 @@ class SimulationEngine:
             pass
     
     def start(self, calculation_interval_ms: int = 1000):
-        """启动仿真"""
+        """
+        启动仿真
+        
+        注意：为了与Rust端同步，Python端不再启动自己的循环
+        Rust端会主动调用 perform_calculation 来触发计算
+        这样可以避免时序问题，确保Rust端获取的是最新计算结果
+        """
         if self.is_running:
             return
         
@@ -363,9 +508,8 @@ class SimulationEngine:
         self.calculation_count = 0
         self.calculation_errors = []
         
-        # 启动计算线程
-        self.calculation_thread = threading.Thread(target=self._calculation_loop, daemon=True)
-        self.calculation_thread.start()
+        # 不再启动独立的计算线程，由Rust端控制计算节奏
+        # 这样可以避免时序问题，确保Rust端获取的是最新计算结果
     
     def stop(self):
         """停止仿真"""

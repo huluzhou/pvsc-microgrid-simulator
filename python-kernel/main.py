@@ -125,6 +125,12 @@ class PythonKernel:
                 return {"result": result}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
+        elif method == "simulation.perform_calculation":
+            try:
+                result = self.simulation_engine.perform_calculation()
+                return {"result": result}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
         else:
             return {"status": "not_implemented"}
     

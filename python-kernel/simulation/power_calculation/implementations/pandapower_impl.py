@@ -4,6 +4,7 @@ pandapower 计算内核实现
 
 from typing import Dict, Any, List, Union
 from ..interface import PowerCalculationKernel
+import pandas as pd
 
 
 class PandapowerKernel(PowerCalculationKernel):
@@ -192,16 +193,95 @@ class PandapowerKernel(PowerCalculationKernel):
         try:
             # 检查线路错误
             if hasattr(net, 'res_line') and net.res_line is not None:
-                # pandapower在某些情况下会在结果中标记错误
-                # 这里可以检查特定的错误条件
-                pass
+                # 检查线路过载（loading > 100%）
+                if 'loading_percent' in net.res_line.columns:
+                    overloaded_lines = net.res_line[net.res_line['loading_percent'] > 100.0]
+                    for idx, row in overloaded_lines.iterrows():
+                        line_name = net.line.loc[idx, 'name'] if 'name' in net.line.columns else f"Line {idx}"
+                        errors.append({
+                            "type": "calculation",
+                            "severity": "warning",
+                            "message": f"线路 {line_name} 过载: {row['loading_percent']:.2f}%",
+                            "device_id": None,
+                            "details": {
+                                "line_index": int(idx),
+                                "loading_percent": float(row['loading_percent']),
+                                "p_from_mw": float(row.get('p_from_mw', 0.0)),
+                                "p_to_mw": float(row.get('p_to_mw', 0.0))
+                            }
+                        })
+                
+                # 检查线路电流超限
+                if 'i_from_ka' in net.res_line.columns and 'max_i_ka' in net.line.columns:
+                    for idx in net.res_line.index:
+                        if idx in net.line.index:
+                            i_from = net.res_line.loc[idx, 'i_from_ka']
+                            max_i = net.line.loc[idx, 'max_i_ka']
+                            if not pd.isna(i_from) and not pd.isna(max_i) and i_from > max_i * 1.1:  # 允许10%余量
+                                line_name = net.line.loc[idx, 'name'] if 'name' in net.line.columns else f"Line {idx}"
+                                errors.append({
+                                    "type": "calculation",
+                                    "severity": "warning",
+                                    "message": f"线路 {line_name} 电流超限: {i_from:.3f} kA > {max_i:.3f} kA",
+                                    "device_id": None,
+                                    "details": {
+                                        "line_index": int(idx),
+                                        "current_ka": float(i_from),
+                                        "max_current_ka": float(max_i)
+                                    }
+                                })
             
             # 检查变压器错误
             if hasattr(net, 'res_trafo') and net.res_trafo is not None:
-                pass
-        except Exception:
-            # 忽略检查错误
-            pass
+                # 检查变压器过载
+                if 'loading_percent' in net.res_trafo.columns:
+                    overloaded_trafos = net.res_trafo[net.res_trafo['loading_percent'] > 100.0]
+                    for idx, row in overloaded_trafos.iterrows():
+                        trafo_name = net.trafo.loc[idx, 'name'] if 'name' in net.trafo.columns else f"Transformer {idx}"
+                        errors.append({
+                            "type": "calculation",
+                            "severity": "warning",
+                            "message": f"变压器 {trafo_name} 过载: {row['loading_percent']:.2f}%",
+                            "device_id": None,
+                            "details": {
+                                "trafo_index": int(idx),
+                                "loading_percent": float(row['loading_percent']),
+                                "p_hv_mw": float(row.get('p_hv_mw', 0.0)),
+                                "p_lv_mw": float(row.get('p_lv_mw', 0.0))
+                            }
+                        })
+            
+            # 检查母线电压越限
+            if hasattr(net, 'res_bus') and net.res_bus is not None:
+                if 'vm_pu' in net.res_bus.columns:
+                    # 检查电压是否在合理范围内（0.9-1.1 pu）
+                    voltage_issues = net.res_bus[
+                        (net.res_bus['vm_pu'] < 0.9) | (net.res_bus['vm_pu'] > 1.1)
+                    ]
+                    for idx, row in voltage_issues.iterrows():
+                        bus_name = net.bus.loc[idx, 'name'] if 'name' in net.bus.columns else f"Bus {idx}"
+                        vm_pu = row['vm_pu']
+                        severity = "error" if vm_pu < 0.85 or vm_pu > 1.15 else "warning"
+                        errors.append({
+                            "type": "calculation",
+                            "severity": severity,
+                            "message": f"母线 {bus_name} 电压异常: {vm_pu:.3f} pu",
+                            "device_id": None,
+                            "details": {
+                                "bus_index": int(idx),
+                                "voltage_pu": float(vm_pu),
+                                "vn_kv": float(net.bus.loc[idx, 'vn_kv']) if 'vn_kv' in net.bus.columns else 0.0
+                            }
+                        })
+        except Exception as e:
+            # 记录检查错误但不影响主流程
+            errors.append({
+                "type": "runtime",
+                "severity": "warning",
+                "message": f"结果错误检查失败: {str(e)}",
+                "device_id": None,
+                "details": {"exception": str(e)}
+            })
     
     def convert_topology(self, topology: Dict[str, Any]) -> Any:
         """
