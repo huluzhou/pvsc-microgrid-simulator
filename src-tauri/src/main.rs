@@ -45,14 +45,15 @@ fn main() {
 
             // 初始化仿真引擎
             let python_bridge_arc = Arc::new(TokioMutex::new(python_bridge));
-            let simulation_engine = Arc::new(SimulationEngine::new(python_bridge_arc.clone()));
+            let db_arc = Arc::new(StdMutex::new(db));
+            let simulation_engine = Arc::new(SimulationEngine::new(python_bridge_arc.clone(), db_arc.clone()));
 
             // 初始化 Modbus 服务
             let modbus_service = ModbusService::new();
 
             // 将服务存储到应用状态
             app.manage(python_bridge_arc);
-            app.manage(StdMutex::new(db));
+            app.manage(db_arc);
             app.manage(StdMutex::new(metadata_store));
             app.manage(simulation_engine);
             app.manage(modbus_service);
@@ -70,6 +71,7 @@ fn main() {
             commands::simulation::pause_simulation,
             commands::simulation::resume_simulation,
             commands::simulation::get_simulation_status,
+            commands::simulation::get_simulation_errors,
             commands::simulation::set_device_mode,
             commands::simulation::get_device_data,
             commands::monitoring::record_device_data,

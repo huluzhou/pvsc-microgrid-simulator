@@ -45,3 +45,4 @@ ENV/
 
 # IDE
 .cursor/
+venv-build/

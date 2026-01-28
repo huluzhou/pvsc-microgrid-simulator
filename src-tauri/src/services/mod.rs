@@ -9,4 +9,4 @@ pub mod modbus;
 pub mod database;
 pub mod ssh;
 
-pub use modbus::ModbusService;
+// pub use modbus::ModbusService; // 已移除 modbus 模块

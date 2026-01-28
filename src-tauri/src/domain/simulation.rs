@@ -12,12 +12,24 @@ pub enum SimulationState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationError {
+    pub error_type: String,  // "adapter" | "topology" | "calculation" | "runtime"
+    pub severity: String,     // "error" | "warning" | "info"
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
+    pub details: serde_json::Value,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimulationStatus {
     pub state: SimulationState,
     pub start_time: Option<u64>,
     pub elapsed_time: u64, // 秒
     pub calculation_count: u64,
     pub average_delay: f64, // 毫秒
+    pub errors: Vec<SimulationError>,
 }
 
 impl SimulationStatus {
@@ -28,6 +40,7 @@ impl SimulationStatus {
             elapsed_time: 0,
             calculation_count: 0,
             average_delay: 0.0,
+            errors: Vec::new(),
         }
     }
 

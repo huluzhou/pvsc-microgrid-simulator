@@ -48,16 +48,40 @@ impl PythonBridge {
     }
 
     pub async fn start(&mut self) -> Result<()> {
-        let python_path = Self::find_python().await?;
-        let script_path = Self::get_python_script_path()?;
+        // 优先尝试使用打包后的可执行文件
+        let (executable_path, args) = if cfg!(not(debug_assertions)) {
+            // 发布模式：使用打包后的可执行文件
+            match Self::find_packed_executable().await {
+                Ok(path) => {
+                    eprintln!("使用打包后的Python内核: {}", path);
+                    (path, Vec::<String>::new())
+                }
+                Err(e) => {
+                    eprintln!("未找到打包后的可执行文件: {}, 回退到Python脚本", e);
+                    // 回退到Python脚本模式
+                    let python_path = Self::find_python().await?;
+                    let script_path = Self::get_python_script_path()?;
+                    (python_path, vec![script_path])
+                }
+            }
+        } else {
+            // 开发模式：使用Python脚本
+            let python_path = Self::find_python().await?;
+            let script_path = Self::get_python_script_path()?;
+            (python_path, vec![script_path])
+        };
 
-        let mut child = Command::new(python_path)
-            .arg(script_path)
+        let mut cmd = Command::new(&executable_path);
+        for arg in args {
+            cmd.arg(arg);
+        }
+        
+        let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .context("Failed to start Python process")?;
+            .context(format!("Failed to start Python process: {}", executable_path))?;
 
         let stdout = child.stdout.take()
             .ok_or_else(|| anyhow::anyhow!("Failed to get stdout"))?;
@@ -181,6 +205,61 @@ impl PythonBridge {
         let current_dir = std::env::current_dir()?;
         let script_path = current_dir.join("python-kernel").join("main.py");
         Ok(script_path.to_string_lossy().to_string())
+    }
+
+    async fn find_packed_executable() -> Result<String> {
+        // 查找打包后的Python内核可执行文件
+        // 优先级：
+        // 1. 环境变量 PYTHON_KERNEL_PATH
+        // 2. 与可执行文件同目录下的 python-kernel/python-kernel(.exe)
+        // 3. 当前目录下的 dist/python-kernel/python-kernel(.exe)
+        // 4. src-tauri/target/release 或 debug 目录
+        
+        // 检查环境变量
+        if let Ok(env_path) = std::env::var("PYTHON_KERNEL_PATH") {
+            let path = std::path::Path::new(&env_path);
+            if path.exists() {
+                return Ok(env_path);
+            }
+        }
+        
+        // 获取可执行文件所在目录
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                // 检查同目录下的 python-kernel 子目录
+                let kernel_path = exe_dir.join("python-kernel").join(
+                    if cfg!(target_os = "windows") { "python-kernel.exe" } else { "python-kernel" }
+                );
+                if kernel_path.exists() {
+                    return Ok(kernel_path.to_string_lossy().to_string());
+                }
+            }
+        }
+        
+        // 检查当前目录下的 dist/python-kernel
+        let current_dir = std::env::current_dir()?;
+        let dist_path = current_dir.join("dist").join("python-kernel").join(
+            if cfg!(target_os = "windows") { "python-kernel.exe" } else { "python-kernel" }
+        );
+        if dist_path.exists() {
+            return Ok(dist_path.to_string_lossy().to_string());
+        }
+        
+        // 检查 src-tauri/target/release 或 debug 目录
+        let target_dir = if cfg!(debug_assertions) {
+            current_dir.join("src-tauri").join("target").join("debug")
+        } else {
+            current_dir.join("src-tauri").join("target").join("release")
+        };
+        
+        let target_kernel_path = target_dir.join("python-kernel").join(
+            if cfg!(target_os = "windows") { "python-kernel.exe" } else { "python-kernel" }
+        );
+        if target_kernel_path.exists() {
+            return Ok(target_kernel_path.to_string_lossy().to_string());
+        }
+        
+        Err(anyhow::anyhow!("Python kernel executable not found"))
     }
 }
 

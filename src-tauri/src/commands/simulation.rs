@@ -2,8 +2,15 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use crate::services::simulation_engine::SimulationEngine;
-use crate::domain::simulation::SimulationStatus;
-use std::sync::Arc;
+use crate::domain::simulation::{SimulationStatus, SimulationError};
+use crate::domain::metadata::DeviceMetadataStore;
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SimulationConfig {
+    pub calculation_interval_ms: u64,
+    pub remote_control_enabled: bool,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SimulationControlRequest {
@@ -19,9 +26,25 @@ pub struct DeviceModeRequest {
 #[tauri::command]
 pub async fn start_simulation(
     app: AppHandle,
+    config: SimulationConfig,
     engine: State<'_, Arc<SimulationEngine>>,
+    metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
 ) -> Result<(), String> {
-    engine.start(Some(app)).await
+    // 从元数据存储获取拓扑数据
+    let topology = {
+        let store = metadata_store.lock().unwrap();
+        store.get_topology()
+    };
+    
+    if let Some(topology) = topology {
+        // 设置拓扑数据到仿真引擎
+        engine.set_topology(topology).await;
+    } else {
+        return Err("未找到拓扑数据，请先加载拓扑".to_string());
+    }
+    
+    // 启动仿真
+    engine.start(Some(app), config.calculation_interval_ms).await
 }
 
 #[tauri::command]
@@ -67,4 +90,12 @@ pub async fn get_device_data(
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<serde_json::Value, String> {
     engine.get_device_data(&device_id).await
+}
+
+#[tauri::command]
+pub async fn get_simulation_errors(
+    engine: State<'_, Arc<SimulationEngine>>,
+) -> Result<Vec<SimulationError>, String> {
+    let status = engine.get_status().await;
+    Ok(status.errors)
 }

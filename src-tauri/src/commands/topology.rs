@@ -177,6 +177,7 @@ pub async fn save_topology(
     topology_data: TopologyData,
     path: String,
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
+    engine: State<'_, std::sync::Arc<crate::services::simulation_engine::SimulationEngine>>,
 ) -> Result<(), String> {
     let topology = convert_topology_data(topology_data)?;
     
@@ -187,7 +188,10 @@ pub async fn save_topology(
         .map_err(|e| format!("Failed to write file: {}", e))?;
 
     // 更新元数据仓库
-    metadata_store.lock().unwrap().set_topology(topology);
+    metadata_store.lock().unwrap().set_topology(topology.clone());
+    
+    // 同步到仿真引擎（克隆拓扑数据）
+    engine.set_topology(topology.clone()).await;
 
     Ok(())
 }
@@ -598,6 +602,7 @@ pub async fn save_topology_legacy(
 pub async fn load_topology(
     path: String,
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
+    engine: State<'_, std::sync::Arc<crate::services::simulation_engine::SimulationEngine>>,
 ) -> Result<TopologyData, String> {
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file: {}", e))?;
@@ -607,6 +612,9 @@ pub async fn load_topology(
 
     // 更新元数据仓库
     metadata_store.lock().unwrap().set_topology(topology.clone());
+    
+    // 同步到仿真引擎（克隆拓扑数据，因为后面还需要使用）
+    engine.set_topology(topology.clone()).await;
 
     // 转换回 TopologyData
     let devices: Vec<DeviceData> = topology.devices.values().map(|d| {
@@ -1191,6 +1199,7 @@ pub async fn validate_topology(
 pub async fn load_and_validate_topology(
     path: String,
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
+    engine: State<'_, std::sync::Arc<crate::services::simulation_engine::SimulationEngine>>,
 ) -> Result<LoadAndValidateResult, String> {
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file: {}", e))?;
@@ -1230,7 +1239,10 @@ pub async fn load_and_validate_topology(
         }).collect();
 
         // 更新元数据仓库
-        metadata_store.lock().unwrap().set_topology(topology);
+        metadata_store.lock().unwrap().set_topology(topology.clone());
+        
+        // 同步到仿真引擎（克隆拓扑数据）
+        engine.set_topology(topology.clone()).await;
 
         TopologyData { devices, connections }
     } else if let Some(data) = try_convert_legacy_format(&content) {
@@ -1238,7 +1250,9 @@ pub async fn load_and_validate_topology(
         // 将 TopologyData 转换为 Topology 并更新元数据仓库
         match convert_topology_data(data.clone()) {
             Ok(topology) => {
-                metadata_store.lock().unwrap().set_topology(topology);
+                metadata_store.lock().unwrap().set_topology(topology.clone());
+                // 同步到仿真引擎（克隆拓扑数据）
+                engine.set_topology(topology.clone()).await;
             }
             Err(e) => {
                 // 如果转换失败，记录错误但不阻止加载

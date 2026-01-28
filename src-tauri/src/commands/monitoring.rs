@@ -10,9 +10,8 @@ use std::sync::Mutex;
 pub struct DeviceDataPoint {
     pub device_id: String,
     pub timestamp: f64,
-    pub voltage: Option<f64>,
-    pub current: Option<f64>,
-    pub power: Option<f64>,
+    pub p_active: Option<f64>,    // 有功功率 (kW)
+    pub p_reactive: Option<f64>,  // 无功功率 (kVar)
     pub data_json: Option<serde_json::Value>,
 }
 
@@ -23,9 +22,8 @@ pub struct DeviceStatus {
     pub device_type: String,  // 添加设备类型字段
     pub is_online: bool,
     pub last_update: Option<f64>,
-    pub current_voltage: Option<f64>,
-    pub current_current: Option<f64>,
-    pub current_power: Option<f64>,
+    pub current_p_active: Option<f64>,    // 当前有功功率 (kW)
+    pub current_p_reactive: Option<f64>,  // 当前无功功率 (kVar)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,9 +49,8 @@ pub async fn record_device_data(
     db.insert_device_data(
         &data.device_id,
         data.timestamp,
-        data.voltage,
-        data.current,
-        data.power,
+        data.p_active,
+        data.p_reactive,
         json_str.as_deref(),
     )
     .map_err(|e| format!("Failed to insert device data: {}", e))?;
@@ -66,7 +63,7 @@ pub async fn query_device_data(
     start_time: Option<f64>,
     end_time: Option<f64>,
     db: State<'_, Mutex<Database>>,
-) -> Result<Vec<(f64, Option<f64>, Option<f64>, Option<f64>)>, String> {
+    ) -> Result<Vec<(f64, Option<f64>, Option<f64>)>, String> {
     let db = db.lock().unwrap();
     db.query_device_data(&device_id, start_time, end_time)
         .map_err(|e| format!("Failed to query device data: {}", e))
@@ -92,10 +89,10 @@ pub async fn get_all_devices_status(
                 .and_then(|data| data.last().cloned())
         };
         
-        let (voltage, current, power, last_update) = if let Some((t, v, c, p)) = recent_data {
-            (v, c, p, Some(t))
+        let (p_active, p_reactive, last_update) = if let Some((t, p_a, p_r)) = recent_data {
+            (p_a, p_r, Some(t))
         } else {
-            (None, None, None, None)
+            (None, None, None)
         };
         
         statuses.push(DeviceStatus {
@@ -104,9 +101,8 @@ pub async fn get_all_devices_status(
             device_type: device_type_to_string(&device.device_type),  // 添加设备类型
             is_online: recent_data.is_some(),
             last_update,
-            current_voltage: voltage,
-            current_current: current,
-            current_power: power,
+            current_p_active: p_active,
+            current_p_reactive: p_reactive,
         });
     }
     

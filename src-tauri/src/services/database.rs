@@ -24,14 +24,14 @@ impl Database {
 
     fn init_schema(&self) -> SqlResult<()> {
         // 创建设备数据表
+        // 当前只关注有功功率和无功功率，其他字段后续再加
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS device_data (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 device_id TEXT NOT NULL,
                 timestamp REAL NOT NULL,
-                voltage REAL,
-                current REAL,
-                power REAL,
+                p_active REAL,
+                p_reactive REAL,
                 data_json TEXT
             )",
             [],
@@ -50,15 +50,14 @@ impl Database {
         &self,
         device_id: &str,
         timestamp: f64,
-        voltage: Option<f64>,
-        current: Option<f64>,
-        power: Option<f64>,
+        p_active: Option<f64>,
+        p_reactive: Option<f64>,
         data_json: Option<&str>,
     ) -> SqlResult<()> {
         self.conn.execute(
-            "INSERT INTO device_data (device_id, timestamp, voltage, current, power, data_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![device_id, timestamp, voltage, current, power, data_json],
+            "INSERT INTO device_data (device_id, timestamp, p_active, p_reactive, data_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![device_id, timestamp, p_active, p_reactive, data_json],
         )?;
         Ok(())
     }
@@ -68,8 +67,8 @@ impl Database {
         device_id: &str,
         start_time: Option<f64>,
         end_time: Option<f64>,
-    ) -> SqlResult<Vec<(f64, Option<f64>, Option<f64>, Option<f64>)>> {
-        let mut query = "SELECT timestamp, voltage, current, power FROM device_data WHERE device_id = ?1".to_string();
+    ) -> SqlResult<Vec<(f64, Option<f64>, Option<f64>)>> {
+        let mut query = "SELECT timestamp, p_active, p_reactive FROM device_data WHERE device_id = ?1".to_string();
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(device_id)];
 
         if let Some(start) = start_time {
@@ -91,7 +90,6 @@ impl Database {
                     row.get(0)?,
                     row.get(1)?,
                     row.get(2)?,
-                    row.get(3)?,
                 ))
             },
         )?;
