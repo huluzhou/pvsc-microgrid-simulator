@@ -22,6 +22,21 @@ pub struct SimulationError {
     pub timestamp: u64,
 }
 
+// 手动实现 PartialEq，比较时忽略 timestamp 字段
+// 这样可以避免因时间戳不同而将相同错误视为不同错误
+impl PartialEq for SimulationError {
+    fn eq(&self, other: &Self) -> bool {
+        self.error_type == other.error_type
+            && self.severity == other.severity
+            && self.message == other.message
+            && self.device_id == other.device_id
+            && self.details == other.details
+            // 不比较 timestamp
+    }
+}
+
+impl Eq for SimulationError {}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimulationStatus {
     pub state: SimulationState,

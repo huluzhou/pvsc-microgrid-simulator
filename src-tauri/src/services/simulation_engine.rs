@@ -205,21 +205,64 @@ impl SimulationEngine {
                 // 获取错误信息
                 if let Ok(errors_result) = bridge.call("simulation.get_errors", serde_json::json!({})).await {
                     if let Some(errors_array) = errors_result.get("errors").and_then(|v| v.as_array()) {
-                        let mut status_guard = status.lock().await;
-                        status_guard.errors = errors_array.iter()
+                        // 将 Python 返回的错误数组转换为 Rust 结构
+                        let new_errors: Vec<crate::domain::simulation::SimulationError> = errors_array
+                            .iter()
                             .filter_map(|e| {
-                                // 转换时间戳：Python返回float（秒），需要转换为u64
+                                // 转换字段名和格式：Python 返回 "type"，Rust 期望 "error_type"
                                 let mut error_obj = e.clone();
-                                if let Some(timestamp) = error_obj.get("timestamp").and_then(|v| v.as_f64()) {
-                                    error_obj["timestamp"] = serde_json::json!(timestamp as u64);
+                                
+                                // 将 "type" 字段重命名为 "error_type"
+                                // 需要先检查是否是 Object 类型，然后转换为 Map 进行操作
+                                if let serde_json::Value::Object(ref mut map) = error_obj {
+                                    if let Some(type_value) = map.remove("type") {
+                                        map.insert("error_type".to_string(), type_value);
+                                    }
+                                    
+                                    // 转换时间戳：Python 返回 float（秒），需要转换为 u64
+                                    if let Some(serde_json::Value::Number(timestamp_num)) = map.get("timestamp") {
+                                        if let Some(timestamp_f64) = timestamp_num.as_f64() {
+                                            map.insert("timestamp".to_string(), serde_json::json!(timestamp_f64 as u64));
+                                        }
+                                    }
                                 }
-                                serde_json::from_value::<crate::domain::simulation::SimulationError>(error_obj).ok()
+                                
+                                serde_json::from_value::<crate::domain::simulation::SimulationError>(error_obj)
+                                    .map_err(|err| {
+                                        eprintln!("解析错误对象失败: {} - 原始数据: {}", err, serde_json::to_string(e).unwrap_or_default());
+                                    })
+                                    .ok()
                             })
                             .collect();
+
+                        let status_guard = status.lock().await;
+                        let current_errors = status_guard.errors.clone();
                         drop(status_guard);
-                        
-                        // 发送错误更新事件
-                        let _ = app.emit("simulation-errors-update", &errors_result);
+
+                        eprintln!("获取到错误: Python返回 {} 个，当前状态 {} 个", new_errors.len(), current_errors.len());
+
+                        // 如果 Python 返回空错误列表，而当前仍有错误，则保留最后一次错误信息，
+                        // 避免在仿真暂停/停止后错误面板被立即清空，便于用户查看错误原因。
+                        if new_errors.is_empty() && !current_errors.is_empty() {
+                            // 保留当前错误，不更新状态，也不发送事件（避免清空）
+                            // 前端可以通过 get_simulation_status 查询到保留的错误
+                            eprintln!("保留当前错误，不发送事件");
+                        } else if new_errors != current_errors {
+                            // 只有在错误内容实际发生变化时才更新状态并发送事件，
+                            // 避免同一条错误在高频刷新时造成前端“闪烁”体验。
+                            let mut status_guard = status.lock().await;
+                            status_guard.errors = new_errors.clone();
+                            drop(status_guard);
+
+                            // 发送错误更新事件，使用转换后的错误数组（确保时间戳格式正确）
+                            eprintln!("发送错误更新事件，错误数量: {}", new_errors.len());
+                            let _ = app.emit("simulation-errors-update", serde_json::json!({
+                                "errors": new_errors
+                            }));
+                        } else {
+                            // 错误内容未变，不做任何更新，减少无意义刷新
+                            eprintln!("错误内容未变，不发送事件");
+                        }
                     }
                 }
                 
@@ -227,6 +270,53 @@ impl SimulationEngine {
                 // 这样可以确保获取的是最新计算结果，而不是滞后的结果
                 if let Ok(result_data) = bridge.call("simulation.perform_calculation", serde_json::json!({})).await {
                     if let Some(result) = result_data.get("result") {
+                        // 检查是否因错误需要自动停止：显式 auto_paused 或（未收敛且有错误）
+                        let auto_paused = result.get("auto_paused").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let converged = result.get("converged").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let has_errors = result.get("errors").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
+                        let should_stop = auto_paused || (!converged && has_errors);
+                        if should_stop {
+                            // 先把本次 result 里的错误写入状态并通知前端，否则第一次停止时 get_errors 尚未更新，界面会看不到错误
+                            if let Some(errors_array) = result.get("errors").and_then(|v| v.as_array()) {
+                                let new_errors: Vec<crate::domain::simulation::SimulationError> = errors_array
+                                    .iter()
+                                    .filter_map(|e| {
+                                        let mut error_obj = e.clone();
+                                        if let serde_json::Value::Object(ref mut map) = error_obj {
+                                            if let Some(type_value) = map.remove("type") {
+                                                map.insert("error_type".to_string(), type_value);
+                                            }
+                                            if let Some(serde_json::Value::Number(timestamp_num)) = map.get("timestamp") {
+                                                if let Some(timestamp_f64) = timestamp_num.as_f64() {
+                                                    map.insert("timestamp".to_string(), serde_json::json!(timestamp_f64 as u64));
+                                                }
+                                            }
+                                        }
+                                        serde_json::from_value::<crate::domain::simulation::SimulationError>(error_obj).ok()
+                                    })
+                                    .collect();
+                                if !new_errors.is_empty() {
+                                    let mut status_guard = status.lock().await;
+                                    status_guard.errors = new_errors.clone();
+                                    drop(status_guard);
+                                    let _ = app.emit("simulation-errors-update", serde_json::json!({ "errors": new_errors }));
+                                }
+                            }
+                            // 再执行停止，与用户点击「停止」一致
+                            let mut status_guard = status.lock().await;
+                            status_guard.stop();
+                            drop(status_guard);
+
+                            let stop_params = serde_json::json!({ "action": "stop" });
+                            if let Err(e) = bridge.call("simulation.stop", stop_params).await {
+                                eprintln!("自动停止时调用 simulation.stop 失败: {}", e);
+                            }
+                            eprintln!("检测到严重错误，仿真已自动停止");
+                            let _ = app.emit("simulation-auto-stopped", serde_json::json!({
+                                "reason": "严重错误导致计算失败"
+                            }));
+                        }
+                        
                         // 处理计算结果并存储到数据库
                         if let Some(devices) = result.get("devices") {
                             // 提取设备数据并存储

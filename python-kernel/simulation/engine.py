@@ -292,16 +292,16 @@ class SimulationEngine:
             self.calculation_count += 1
             self.last_calculation_time = time.time()
             
-            # 更新错误列表
+            # 更新错误列表：只保留当前计算的错误，不累积历史错误
+            # 如果需要查看历史错误，应该通过日志系统而不是内存累积
             if "errors" in result:
-                self.calculation_errors.extend(result["errors"])
-                # 只保留最近100个错误
-                if len(self.calculation_errors) > 100:
-                    self.calculation_errors = self.calculation_errors[-100:]
+                self.calculation_errors = result["errors"]
+            else:
+                self.calculation_errors = []
             
             return result
         except Exception as e:
-            # 记录错误
+            # 记录错误，并标记需自动停止
             error_info = {
                 "type": "runtime",
                 "severity": "error",
@@ -309,15 +309,13 @@ class SimulationEngine:
                 "timestamp": time.time(),
                 "details": {"exception": str(e), "type": type(e).__name__}
             }
-            self.calculation_errors.append(error_info)
-            # 只保留最近100个错误
-            if len(self.calculation_errors) > 100:
-                self.calculation_errors = self.calculation_errors[-100:]
-            
+            self.calculation_errors = [error_info]
+            self.is_paused = True
             return {
                 "converged": False,
                 "errors": [error_info],
-                "devices": {}
+                "devices": {},
+                "auto_paused": True
             }
     
     def _perform_calculation(self) -> Dict[str, Any]:
@@ -359,12 +357,14 @@ class SimulationEngine:
                     "timestamp": time.time()
                 })
             
-            # 如果适配器转换失败，返回错误
+            # 如果适配器转换失败，返回错误并标记需自动停止
             if not adapter_result.success:
+                self.is_paused = True
                 return {
                     "converged": False,
                     "errors": errors,
-                    "devices": {}
+                    "devices": {},
+                    "auto_paused": True
                 }
             
             # 缓存网络对象
@@ -387,13 +387,54 @@ class SimulationEngine:
             if "errors" in calculation_result:
                 errors.extend(calculation_result["errors"])
             
-            # 更新错误列表
-            self.calculation_errors = errors[-100:]  # 只保留最近100个错误
+            converged = calculation_result.get("converged", False)
+
+            # 错误去重：按 (type, severity, message, device_id, details) 维度去重
+            # 避免同一条错误在每次计算中被重复加入，导致错误数量无限增加。
+            unique_errors: List[Dict[str, Any]] = []
+            seen_keys = set()
+            for err in errors:
+                key = (
+                    err.get("type"),
+                    err.get("severity"),
+                    err.get("message"),
+                    err.get("device_id"),
+                    json.dumps(err.get("details", {}), sort_keys=True, ensure_ascii=False),
+                )
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                unique_errors.append(err)
+            errors = unique_errors
+
+            # 检查是否存在严重错误（severity == "error"），并判断是否需要自动暂停
+            has_critical_error = any(
+                err.get("severity") == "error"
+                for err in errors
+            )
+            # 只要计算未收敛，或者存在严重错误，就认为需要自动暂停，
+            # 防止在拓扑/参数有问题时周期性重复计算产生大量重复错误。
+            should_auto_pause = has_critical_error or not converged
+
+            # 如果需要自动暂停，清空缓存并暂停仿真，避免持续报错
+            if should_auto_pause:
+                # 清空缓存强制下次重新适配
+                self.cached_network = None
+                self.cached_bus_map = {}
+                self.cached_device_map = {}
+                
+                # 自动暂停仿真，避免周期性计算持续产生相同错误
+                self.is_paused = True
+                if errors:
+                    print(f"检测到严重错误或计算未收敛，已自动暂停仿真：{errors[0].get('message', '未知错误')}")
+                else:
+                    print("检测到计算未收敛，已自动暂停仿真")
             
             return {
-                "converged": calculation_result.get("converged", False),
+                "converged": converged,
                 "errors": errors,
-                "devices": calculation_result.get("devices", {})
+                "devices": calculation_result.get("devices", {}),
+                "auto_paused": should_auto_pause  # 标记是否自动暂停
             }
             
         except Exception as e:
@@ -404,12 +445,21 @@ class SimulationEngine:
                 "details": {"exception": str(e), "type": type(e).__name__},
                 "timestamp": time.time()
             })
-            self.calculation_errors = errors[-100:]
+            
+            # 计算异常，清空缓存强制下次重新适配
+            self.cached_network = None
+            self.cached_bus_map = {}
+            self.cached_device_map = {}
+            
+            # 自动暂停仿真，避免周期性计算持续产生相同错误
+            self.is_paused = True
+            print(f"计算异常，已自动暂停仿真：{str(e)}")
             
             return {
                 "converged": False,
                 "errors": errors,
-                "devices": {}
+                "devices": {},
+                "auto_paused": True  # 标记已自动暂停
             }
     
     def _update_network_power_values(self):

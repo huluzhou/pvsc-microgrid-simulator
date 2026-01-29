@@ -61,17 +61,23 @@ export default function Simulation() {
   useEffect(() => {
     loadStatus();
     const interval = setInterval(loadStatus, 1000);
-    
+
     // 监听错误更新事件
     const errorListener = listen('simulation-errors-update', (event: any) => {
       if (event.payload && event.payload.errors) {
         setStatus(prev => ({ ...prev, errors: event.payload.errors }));
       }
     });
-    
+
+    // 出现错误时后端会自动停止仿真（等价于按下停止按钮），立即刷新状态
+    const autoStoppedListener = listen('simulation-auto-stopped', () => {
+      loadStatus();
+    });
+
     return () => {
       clearInterval(interval);
       errorListener.then(unlisten => unlisten());
+      autoStoppedListener.then(unlisten => unlisten());
     };
   }, [loadStatus]);
 
@@ -201,7 +207,7 @@ export default function Simulation() {
               <button onClick={handleStart} disabled={isLoading || status.state === 'Running'} className="px-4 py-2 bg-green-500 hover:bg-green-600 rounded text-white text-sm flex items-center gap-1.5 transition-colors disabled:opacity-50">
                 <Play className="w-4 h-4" />启动仿真
               </button>
-              <button onClick={handleStop} disabled={isLoading || status.state === 'Stopped'} className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded text-white text-sm flex items-center gap-1.5 transition-colors disabled:opacity-50">
+              <button onClick={handleStop} disabled={isLoading} className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded text-white text-sm flex items-center gap-1.5 transition-colors disabled:opacity-50">
                 <Square className="w-4 h-4" />停止仿真
               </button>
               <button onClick={handlePause} disabled={isLoading || status.state !== 'Running'} className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 rounded text-white text-sm flex items-center gap-1.5 transition-colors disabled:opacity-50">
