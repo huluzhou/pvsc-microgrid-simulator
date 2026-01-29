@@ -3,7 +3,7 @@ Pandapower 拓扑数据适配器
 将标准拓扑数据格式转换为 pandapower 网络格式
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from .topology_adapter import TopologyAdapter, AdapterResult, AdapterError
 import warnings
 
@@ -93,48 +93,54 @@ class PandapowerTopologyAdapter(TopologyAdapter):
                             details={"device": device}
                         ))
             
-            # 获取连接列表
+            # 连接列表仅表示设备之间的连接关系（from/to），不表示“连接设备”本身
             connections = topology_data.get("connections", [])
             if isinstance(connections, list):
                 connections_list = connections
             else:
                 connections_list = list(connections.values()) if isinstance(connections, dict) else []
             
-            # 第二步：创建连接设备（Line, Transformer, Switch）
-            for conn in connections_list:
+            # 第二步：创建连接设备（Line/Transformer 须在 Switch 之前，因开关可能连到线路/变压器）
+            for device_id, device in devices_dict.items():
+                device_type = device.get("device_type", "")
+                if device_type not in ("Line", "Transformer"):
+                    continue
                 try:
-                    self._create_connection_device(
-                        net, conn, devices_dict, bus_map, device_map,
+                    self._create_connection_device_from_device(
+                        net, device_id, device, bus_map, device_map,
                         connections_list, errors, warnings_list
                     )
                 except Exception as e:
-                    conn_id = conn.get("id", "unknown") if isinstance(conn, dict) else getattr(conn, "id", "unknown")
                     errors.append(AdapterError(
                         error_type="topology",
                         severity="error",
                         message=f"创建连接设备失败: {str(e)}",
-                        device_id=conn_id,
-                        details={"connection": conn}
+                        device_id=device_id,
+                        details={"device": device}
                     ))
-            
-            # 第三步：创建功率设备（Pv, Load, Storage, Charger, ExternalGrid）
+            # 第三步：创建开关与功率设备（一次遍历）
             for device_id, device in devices_dict.items():
                 device_type = device.get("device_type", "")
-                
-                if device_type in ["Pv", "Load", "Storage", "Charger", "ExternalGrid"]:
-                    try:
+                try:
+                    if device_type == "Switch":
+                        self._create_switch_from_device(
+                            net, device_id, device, bus_map, device_map,
+                            connections_list, errors, warnings_list
+                        )
+                    elif device_type in ("Pv", "Load", "Storage", "Charger", "ExternalGrid"):
                         self._create_power_device(
                             net, device_id, device, devices_dict, connections_list,
                             bus_map, device_map, errors, warnings_list
                         )
-                    except Exception as e:
-                        errors.append(AdapterError(
-                            error_type="topology",
-                            severity="error",
-                            message=f"创建功率设备失败: {str(e)}",
-                            device_id=device_id,
-                            details={"device": device}
-                        ))
+                except Exception as e:
+                    msg = "创建开关失败" if device_type == "Switch" else "创建功率设备失败"
+                    errors.append(AdapterError(
+                        error_type="topology",
+                        severity="error",
+                        message=f"{msg}: {str(e)}",
+                        device_id=device_id,
+                        details={"device": device}
+                    ))
             
             # 检查是否有外部电网
             external_grids = [d for d in devices_dict.values() if d.get("device_type") == "ExternalGrid"]
@@ -175,8 +181,8 @@ class PandapowerTopologyAdapter(TopologyAdapter):
         """创建母线"""
         properties = device.get("properties", {})
         
-        # 获取电压等级
-        vn_kv = properties.get("voltage_level")
+        # 获取电压等级（标准格式用 voltage_level，旧格式/pandapower 用 vn_kv）
+        vn_kv = properties.get("voltage_level") or properties.get("vn_kv")
         if vn_kv is None:
             vn_kv = self.get_default_value("Node", "voltage_level")
             warnings.append(AdapterError(
@@ -225,96 +231,121 @@ class PandapowerTopologyAdapter(TopologyAdapter):
             ))
             return None
     
-    def _create_connection_device(self, net, conn: Dict[str, Any],
-                                  devices_dict: Dict[str, Dict[str, Any]],
-                                  bus_map: Dict[str, int],
-                                  device_map: Dict[str, Dict[str, int]],
-                                  connections_list: List[Dict[str, Any]],
-                                  errors: List[AdapterError],
-                                  warnings: List[AdapterError]):
-        """创建连接设备（Line, Transformer, Switch）"""
-        from_id = conn.get("from", "") if isinstance(conn, dict) else getattr(conn, "from_device_id", "")
-        to_id = conn.get("to", "") if isinstance(conn, dict) else getattr(conn, "to_device_id", "")
-        
-        # 检查母线是否存在
-        if from_id not in bus_map:
-            errors.append(AdapterError(
-                error_type="topology",
-                severity="error",
-                message=f"连接源设备 {from_id} 不是有效的母线",
-                details={"connection": conn}
-            ))
-            return
-        
-        if to_id not in bus_map:
-            errors.append(AdapterError(
-                error_type="topology",
-                severity="error",
-                message=f"连接目标设备 {to_id} 不是有效的母线",
-                details={"connection": conn}
-            ))
-            return
-        
-        from_bus = bus_map[from_id]
-        to_bus = bus_map[to_id]
-        
-        # 查找连接对应的设备
-        conn_device_id = None
-        conn_type = conn.get("connection_type", "line") if isinstance(conn, dict) else getattr(conn, "connection_type", "line")
-        
-        # 根据连接类型查找设备
-        for dev_id, dev in devices_dict.items():
-            dev_type = dev.get("device_type", "")
-            if conn_type == "line" and dev_type == "Line":
-                # 检查设备是否连接这两个母线
-                if self._device_connects_buses(dev_id, from_id, to_id, connections_list):
-                    conn_device_id = dev_id
-                    break
-            elif conn_type == "transformer" and dev_type == "Transformer":
-                if self._device_connects_buses(dev_id, from_id, to_id, connections_list):
-                    conn_device_id = dev_id
-                    break
-            elif conn_type == "switch" and dev_type == "Switch":
-                if self._device_connects_buses(dev_id, from_id, to_id, connections_list):
-                    conn_device_id = dev_id
-                    break
-        
-        if not conn_device_id:
-            # 如果没有找到对应设备，根据连接类型创建
-            if conn_type == "line":
-                self._create_line_direct(net, from_bus, to_bus, conn, errors, warnings)
-            return
-        
-        device = devices_dict.get(conn_device_id)
-        if not device:
-            return
-        
-        device_type = device.get("device_type", "")
-        properties = device.get("properties", {})
-        
-        if device_type == "Line":
-            self._create_line(net, conn_device_id, device, from_bus, to_bus, device_map, errors, warnings)
-        elif device_type == "Transformer":
-            self._create_transformer(net, conn_device_id, device, from_bus, to_bus, device_map, errors, warnings)
-        elif device_type == "Switch":
-            self._create_switch(net, conn_device_id, device, from_bus, to_bus, device_map, errors, warnings)
-    
-    def _device_connects_buses(self, device_id: str, bus1_id: str, bus2_id: str,
-                              connections_list: List[Dict[str, Any]]) -> bool:
-        """检查设备是否连接两个母线"""
+    def _get_connected_buses_for_device(
+        self,
+        device_id: str,
+        connections_list: List[Dict[str, Any]],
+        bus_map: Dict[str, int],
+    ) -> Optional[Tuple[int, int]]:
+        """根据连接关系解析连接设备两端对应的母线索引。连接列表元素仅表示设备间连接（from/to），不表示连接设备本身。"""
+        neighbor_ids = set()
         for conn in connections_list:
             from_id = conn.get("from", "") if isinstance(conn, dict) else getattr(conn, "from_device_id", "")
             to_id = conn.get("to", "") if isinstance(conn, dict) else getattr(conn, "to_device_id", "")
-            
-            # 检查设备是否在连接中
-            if (from_id == device_id and to_id in [bus1_id, bus2_id]) or \
-               (to_id == device_id and from_id in [bus1_id, bus2_id]):
-                # 检查另一个端点
-                other_id = bus2_id if from_id == bus1_id or to_id == bus1_id else bus1_id
-                if (from_id == other_id or to_id == other_id):
-                    return True
-        return False
+            if from_id == device_id and to_id in bus_map:
+                neighbor_ids.add(to_id)
+            elif to_id == device_id and from_id in bus_map:
+                neighbor_ids.add(from_id)
+        if len(neighbor_ids) != 2:
+            return None
+        n1, n2 = list(neighbor_ids)
+        return (bus_map[n1], bus_map[n2])
     
+    def _create_connection_device_from_device(
+        self,
+        net,
+        device_id: str,
+        device: Dict[str, Any],
+        bus_map: Dict[str, int],
+        device_map: Dict[str, Dict[str, int]],
+        connections_list: List[Dict[str, Any]],
+        errors: List[AdapterError],
+        warnings: List[AdapterError],
+    ) -> None:
+        """根据设备创建连接设备（Line/Transformer），用 connections 解析两端母线。开关由 _create_switch_from_device 处理。"""
+        buses = self._get_connected_buses_for_device(device_id, connections_list, bus_map)
+        if buses is None:
+            errors.append(AdapterError(
+                error_type="topology",
+                severity="error",
+                message=f"连接设备 {device_id} 必须通过连接关系恰好连接两个母线（Node），请检查 connections",
+                device_id=device_id,
+                details={"device": device},
+            ))
+            return
+        from_bus, to_bus = buses
+        device_type = device.get("device_type", "")
+        if device_type == "Line":
+            self._create_line(net, device_id, device, from_bus, to_bus, device_map, errors, warnings)
+        elif device_type == "Transformer":
+            self._create_transformer(net, device_id, device, from_bus, to_bus, device_map, errors, warnings)
+
+    def _get_switch_endpoints(
+        self,
+        device_id: str,
+        connections_list: List[Dict[str, Any]],
+        bus_map: Dict[str, int],
+        device_map: Dict[str, Dict[str, int]],
+    ) -> Optional[Tuple[int, int, str]]:
+        """解析开关两端：一端必须为母线，另一端可为母线(b)、线路(l)或变压器(t)。返回 (bus, element, et)。"""
+        neighbor_ids = set()
+        for conn in connections_list:
+            from_id = conn.get("from", "") if isinstance(conn, dict) else getattr(conn, "from_device_id", "")
+            to_id = conn.get("to", "") if isinstance(conn, dict) else getattr(conn, "to_device_id", "")
+            if from_id == device_id:
+                neighbor_ids.add(to_id)
+            elif to_id == device_id:
+                neighbor_ids.add(from_id)
+        if len(neighbor_ids) != 2:
+            return None
+        a_id, b_id = list(neighbor_ids)
+        bus_idx = None
+        element_idx = None
+        et = None
+        if a_id in bus_map and b_id in bus_map:
+            bus_idx, element_idx = bus_map[a_id], bus_map[b_id]
+            et = "b"
+        elif a_id in bus_map and b_id in device_map.get("lines", {}):
+            bus_idx, element_idx = bus_map[a_id], device_map["lines"][b_id]
+            et = "l"
+        elif b_id in bus_map and a_id in device_map.get("lines", {}):
+            bus_idx, element_idx = bus_map[b_id], device_map["lines"][a_id]
+            et = "l"
+        elif a_id in bus_map and b_id in device_map.get("transformers", {}):
+            bus_idx, element_idx = bus_map[a_id], device_map["transformers"][b_id]
+            et = "t"
+        elif b_id in bus_map and a_id in device_map.get("transformers", {}):
+            bus_idx, element_idx = bus_map[b_id], device_map["transformers"][a_id]
+            et = "t"
+        if bus_idx is not None and element_idx is not None and et is not None:
+            return (bus_idx, element_idx, et)
+        return None
+
+    def _create_switch_from_device(
+        self,
+        net,
+        device_id: str,
+        device: Dict[str, Any],
+        bus_map: Dict[str, int],
+        device_map: Dict[str, Dict[str, int]],
+        connections_list: List[Dict[str, Any]],
+        errors: List[AdapterError],
+        warnings: List[AdapterError],
+    ) -> None:
+        """根据设备创建开关；两端不一定都是母线，另一端可为线路或变压器。"""
+        endpoints = self._get_switch_endpoints(device_id, connections_list, bus_map, device_map)
+        if endpoints is None:
+            errors.append(AdapterError(
+                error_type="topology",
+                severity="error",
+                message=f"开关 {device_id} 必须通过连接关系连接两端：一端为母线（Node），另一端为母线/线路/变压器",
+                device_id=device_id,
+                details={"device": device},
+            ))
+            return
+        bus_idx, element_idx, et = endpoints
+        self._create_switch(net, device_id, device, bus_idx, element_idx, et, device_map, errors, warnings)
+
     def _create_line(self, net, device_id: str, device: Dict[str, Any],
                     from_bus: int, to_bus: int,
                     device_map: Dict[str, Dict[str, int]],
@@ -455,11 +486,12 @@ class PandapowerTopologyAdapter(TopologyAdapter):
         except Exception as e:
             # 如果标准类型不存在，尝试使用默认类型
             try:
+                std_type = self.get_default_value("Transformer", "std_type")
                 trafo_idx = self.pp.create_transformer(
                     net,
                     hv_bus=from_bus,
                     lv_bus=to_bus,
-                    std_type="0.25 MVA 20/0.4 kV",
+                    std_type=std_type,
                     name=device.get("name", device_id)
                 )
                 device_map["transformers"][device_id] = trafo_idx
@@ -479,19 +511,18 @@ class PandapowerTopologyAdapter(TopologyAdapter):
                 ))
     
     def _create_switch(self, net, device_id: str, device: Dict[str, Any],
-                     from_bus: int, to_bus: int,
+                     bus: int, element: int, et: str,
                      device_map: Dict[str, Dict[str, int]],
                      errors: List[AdapterError], warnings: List[AdapterError]):
-        """创建开关"""
+        """创建开关。et: 'b'=母线-母线, 'l'=母线-线路, 't'=母线-变压器。"""
         properties = device.get("properties", {})
         is_closed = properties.get("is_closed", True)
-        
         try:
             switch_idx = self.pp.create_switch(
                 net,
-                bus=from_bus,
-                element=to_bus,
-                et="b",  # bus-bus switch
+                bus=bus,
+                element=element,
+                et=et,
                 closed=bool(is_closed),
                 name=device.get("name", device_id)
             )
@@ -529,7 +560,7 @@ class PandapowerTopologyAdapter(TopologyAdapter):
         
         # 如果没有找到连接，创建默认母线
         if connected_bus is None:
-            vn_kv = properties.get("voltage_level")
+            vn_kv = properties.get("voltage_level") or properties.get("vn_kv")
             if vn_kv is None:
                 if device_type == "ExternalGrid":
                     vn_kv = self.get_default_value("ExternalGrid", "voltage_level")
@@ -573,30 +604,12 @@ class PandapowerTopologyAdapter(TopologyAdapter):
     def _create_generator(self, net, device_id: str, device: Dict[str, Any],
                          bus: int, device_map: Dict[str, Dict[str, int]],
                          errors: List[AdapterError], warnings: List[AdapterError]):
-        """创建发电机（光伏）"""
-        properties = device.get("properties", {})
-        
-        p_mw = properties.get("rated_power", 0.0)
-        if isinstance(p_mw, str):
-            try:
-                p_mw = float(p_mw) / 1000.0  # kW -> MW
-            except ValueError:
-                p_mw = 0.0
-                warnings.append(AdapterError(
-                    error_type="adapter",
-                    severity="warning",
-                    message=f"发电机 {device_id} 功率格式错误，使用默认值 0",
-                    device_id=device_id
-                ))
-        else:
-            p_mw = float(p_mw) / 1000.0 if p_mw else 0.0
-        
+        """创建发电机（光伏）"""  
         try:
-            gen_idx = self.pp.create_gen(
+            gen_idx = self.pp.create_sgen(
                 net,
                 bus=bus,
-                p_mw=p_mw,
-                vm_pu=1.0,
+                p_mw=0.0,
                 name=device.get("name", device_id)
             )
             device_map["generators"][device_id] = gen_idx
@@ -606,36 +619,18 @@ class PandapowerTopologyAdapter(TopologyAdapter):
                 severity="error",
                 message=f"创建发电机失败: {str(e)}",
                 device_id=device_id,
-                details={"p_mw": p_mw}
+                details={}
             ))
     
     def _create_load(self, net, device_id: str, device: Dict[str, Any],
                     bus: int, device_map: Dict[str, Dict[str, int]],
                     errors: List[AdapterError], warnings: List[AdapterError]):
         """创建负载"""
-        properties = device.get("properties", {})
-        
-        p_mw = properties.get("rated_power", 0.0)
-        if isinstance(p_mw, str):
-            try:
-                p_mw = float(p_mw) / 1000.0  # kW -> MW
-            except ValueError:
-                p_mw = 0.0
-                warnings.append(AdapterError(
-                    error_type="adapter",
-                    severity="warning",
-                    message=f"负载 {device_id} 功率格式错误，使用默认值 0",
-                    device_id=device_id
-                ))
-        else:
-            p_mw = float(p_mw) / 1000.0 if p_mw else 0.0
-        
         try:
             load_idx = self.pp.create_load(
                 net,
                 bus=bus,
-                p_mw=p_mw,
-                q_mvar=0.0,
+                p_mw=0.0,
                 name=device.get("name", device_id)
             )
             device_map["loads"][device_id] = load_idx
@@ -645,7 +640,7 @@ class PandapowerTopologyAdapter(TopologyAdapter):
                 severity="error",
                 message=f"创建负载失败: {str(e)}",
                 device_id=device_id,
-                details={"p_mw": p_mw}
+                details={}
             ))
     
     def _create_storage(self, net, device_id: str, device: Dict[str, Any],
@@ -653,15 +648,6 @@ class PandapowerTopologyAdapter(TopologyAdapter):
                        errors: List[AdapterError], warnings: List[AdapterError]):
         """创建储能设备"""
         properties = device.get("properties", {})
-        
-        p_mw = properties.get("rated_power", 0.0)
-        if isinstance(p_mw, str):
-            try:
-                p_mw = float(p_mw) / 1000.0  # kW -> MW
-            except ValueError:
-                p_mw = 0.0
-        else:
-            p_mw = float(p_mw) / 1000.0 if p_mw else 0.0
         
         max_e_mwh = properties.get("capacity", 0.0)
         if isinstance(max_e_mwh, str):
@@ -676,7 +662,7 @@ class PandapowerTopologyAdapter(TopologyAdapter):
             storage_idx = self.pp.create_storage(
                 net,
                 bus=bus,
-                p_mw=p_mw,
+                p_mw=0.0,
                 max_e_mwh=max_e_mwh,
                 name=device.get("name", device_id)
             )
@@ -687,7 +673,7 @@ class PandapowerTopologyAdapter(TopologyAdapter):
                 severity="error",
                 message=f"创建储能设备失败: {str(e)}",
                 device_id=device_id,
-                details={"p_mw": p_mw, "max_e_mwh": max_e_mwh}
+                details={"max_e_mwh": max_e_mwh}
             ))
     
     def _create_external_grid(self, net, device_id: str, device: Dict[str, Any],
@@ -695,7 +681,7 @@ class PandapowerTopologyAdapter(TopologyAdapter):
         """创建外部电网"""
         properties = device.get("properties", {})
         
-        vn_kv = properties.get("voltage_level", 10.0)
+        vn_kv = properties.get("voltage_level") or properties.get("vn_kv") or 10.0
         if isinstance(vn_kv, str):
             try:
                 vn_kv = float(vn_kv)

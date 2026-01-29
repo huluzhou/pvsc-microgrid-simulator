@@ -94,7 +94,7 @@ class TopologyAdapter(ABC):
                 "voltage_level": 0.4,  # kV
             },
             "ExternalGrid": {
-                "voltage_level": 10.0,  # kV
+                "voltage_level": 20.0,  # kV
             },
             "Line": {
                 "length": 1.0,  # km
@@ -104,6 +104,7 @@ class TopologyAdapter(ABC):
                 "rated_power": 0.63,  # MVA
                 "high_voltage": 20.0,  # kV
                 "low_voltage": 0.4,  # kV
+                "std_type": "0.25 MVA 20/0.4 kV",
             },
             "Pv": {
                 "rated_power": 0.0,  # kW

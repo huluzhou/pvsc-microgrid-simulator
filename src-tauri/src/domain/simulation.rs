@@ -43,7 +43,8 @@ pub struct SimulationStatus {
     pub start_time: Option<u64>,
     pub elapsed_time: u64, // 秒
     pub calculation_count: u64,
-    pub average_delay: f64, // 毫秒
+    /// 每步平均耗时（毫秒）：一次仿真步（get_status + get_errors + perform_calculation + 结果处理）的耗时均值，用于判断是否跟得上计算间隔
+    pub average_delay: f64,
     pub errors: Vec<SimulationError>,
 }
 

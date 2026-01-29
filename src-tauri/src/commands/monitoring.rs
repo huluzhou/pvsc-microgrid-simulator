@@ -2,7 +2,9 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::services::database::Database;
+use crate::services::simulation_engine::SimulationEngine;
 use crate::domain::metadata::DeviceMetadataStore;
+use crate::domain::simulation::SimulationState;
 use crate::commands::topology::device_type_to_string;
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -19,11 +21,17 @@ pub struct DeviceDataPoint {
 pub struct DeviceStatus {
     pub device_id: String,
     pub name: String,
-    pub device_type: String,  // 添加设备类型字段
+    pub device_type: String,
     pub is_online: bool,
     pub last_update: Option<f64>,
-    pub current_p_active: Option<f64>,    // 当前有功功率 (kW)
-    pub current_p_reactive: Option<f64>,  // 当前无功功率 (kVar)
+    #[serde(rename = "active_power")]
+    pub current_p_active: Option<f64>,
+    #[serde(rename = "reactive_power")]
+    pub current_p_reactive: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voltage: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,15 +82,22 @@ pub async fn query_device_data(
 pub async fn get_all_devices_status(
     metadata_store: State<'_, StdMutex<DeviceMetadataStore>>,
     db: State<'_, Arc<StdMutex<Database>>>,
+    engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<Vec<DeviceStatus>, String> {
     let devices = {
         let metadata_store = metadata_store.lock().unwrap();
         metadata_store.get_all_devices()
     };
     
+    let sim_status = engine.get_status().await;
+    let device_active = engine.get_device_active_status().await;
+    let is_online_from_engine = |device_id: &str| -> bool {
+        matches!(sim_status.state, SimulationState::Running)
+            && device_active.get(device_id).copied().unwrap_or(false)
+    };
+    
     let mut statuses = Vec::new();
     for device in devices {
-        // 查询最新数据
         let recent_data = {
             let db = db.lock().unwrap();
             db.query_device_data(&device.id, None, None)
@@ -99,11 +114,13 @@ pub async fn get_all_devices_status(
         statuses.push(DeviceStatus {
             device_id: device.id.clone(),
             name: device.name.clone(),
-            device_type: device_type_to_string(&device.device_type),  // 添加设备类型
-            is_online: recent_data.is_some(),
+            device_type: device_type_to_string(&device.device_type),
+            is_online: is_online_from_engine(&device.id),
             last_update,
             current_p_active: p_active,
             current_p_reactive: p_reactive,
+            voltage: None,
+            current: None,
         });
     }
     
@@ -115,31 +132,38 @@ pub async fn get_device_status(
     device_id: String,
     metadata_store: State<'_, StdMutex<DeviceMetadataStore>>,
     db: State<'_, Arc<StdMutex<Database>>>,
+    engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<DeviceStatus, String> {
-    let metadata_store = metadata_store.lock().unwrap();
-    let device = metadata_store.get_device(&device_id)
-        .ok_or_else(|| format!("Device {} not found", device_id))?;
-    
+    let (name, device_type_str) = {
+        let store = metadata_store.lock().unwrap();
+        let device = store.get_device(&device_id)
+            .ok_or_else(|| format!("Device {} not found", device_id))?;
+        (device.name.clone(), device_type_to_string(&device.device_type))
+    };
     let recent_data = {
         let db = db.lock().unwrap();
         db.query_device_data(&device_id, None, None)
             .ok()
             .and_then(|data| data.last().cloned())
     };
-    
     let (p_active, p_reactive, last_update) = if let Some((t, p_a, p_r)) = recent_data {
         (p_a, p_r, Some(t))
     } else {
         (None, None, None)
     };
-    
+    let sim_status = engine.get_status().await;
+    let device_active = engine.get_device_active_status().await;
+    let is_online = matches!(sim_status.state, SimulationState::Running)
+        && device_active.get(&device_id).copied().unwrap_or(false);
     Ok(DeviceStatus {
-        device_id: device.id.clone(),
-        name: device.name.clone(),
-        device_type: device_type_to_string(&device.device_type),  // 添加设备类型
-        is_online: recent_data.is_some(),
+        device_id,
+        name,
+        device_type: device_type_str,
+        is_online,
         last_update,
         current_p_active: p_active,
         current_p_reactive: p_reactive,
+        voltage: None,
+        current: None,
     })
 }

@@ -4,6 +4,7 @@ use crate::domain::topology::Topology;
 use crate::services::python_bridge::PythonBridge;
 use crate::services::database::Database;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter};
@@ -17,6 +18,10 @@ pub struct SimulationEngine {
     python_bridge: Arc<Mutex<PythonBridge>>,
     topology: Arc<tokio::sync::Mutex<Option<Topology>>>,
     database: Arc<StdMutex<Database>>,
+    /// 是否允许远程控制；事件驱动：指令到达即写入仿真，不依赖轮询
+    remote_control_enabled: Arc<AtomicBool>,
+    /// 设备在本轮仿真中的实时在线状态：仅当仿真 Running 且该设备在本轮内成功收到过数据时为 true；停止/暂停后全部视为离线
+    device_active_status: Arc<tokio::sync::Mutex<HashMap<String, bool>>>,
 }
 
 impl SimulationEngine {
@@ -27,7 +32,17 @@ impl SimulationEngine {
             python_bridge,
             topology: Arc::new(tokio::sync::Mutex::new(None)),
             database,
+            remote_control_enabled: Arc::new(AtomicBool::new(true)),
+            device_active_status: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
+    }
+
+    pub fn set_remote_control_enabled(&self, enabled: bool) {
+        self.remote_control_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn remote_control_enabled(&self) -> bool {
+        self.remote_control_enabled.load(Ordering::Relaxed)
     }
 
     pub async fn start(&self, app_handle: Option<AppHandle>, calculation_interval_ms: u64) -> Result<(), String> {
@@ -67,6 +82,9 @@ impl SimulationEngine {
         
         // 将拓扑数据转换为标准格式并传递给Python内核
         let topology_data = self.convert_topology_to_standard_format(&topology.unwrap()).await?;
+        
+        // 新一轮仿真开始，清空设备在线状态，等首拍成功后再标记为在线
+        self.device_active_status.lock().await.clear();
         
         let mut bridge = self.python_bridge.lock().await;
         
@@ -171,6 +189,7 @@ impl SimulationEngine {
         let python_bridge = self.python_bridge.clone();
         let topology = self.topology.clone();
         let database = self.database.clone();
+        let device_active_status = self.device_active_status.clone();
         
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(calculation_interval_ms));
@@ -330,6 +349,11 @@ impl SimulationEngine {
                                 
                                 // 处理并存储计算结果
                                 Self::process_calculation_results_inline(&app, devices, &t.devices, &database, timestamp);
+                                // 本拍成功获取到数据，标记拓扑内设备在本轮仿真中为在线
+                                let mut active = device_active_status.lock().await;
+                                for id in t.devices.keys() {
+                                    active.insert(id.clone(), true);
+                                }
                             }
                             drop(topo);
                         }
@@ -341,7 +365,7 @@ impl SimulationEngine {
                 
                 drop(bridge);
                 
-                // 计算耗时并更新平均延迟
+                // 本步总耗时（含 RPC + 计算 + 处理），用于更新每步平均耗时
                 let elapsed_ms = start_time.elapsed().as_millis() as f64;
                 calculation_times.push(elapsed_ms);
                 if calculation_times.len() > 100 {
@@ -475,7 +499,6 @@ impl SimulationEngine {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Load 
                             && device.name == load_name {
-                            // 存储到数据库
                             let db = database.lock().unwrap();
                             let data_json = serde_json::to_string(load_data).ok();
                             let _ = db.insert_device_data(
@@ -485,12 +508,19 @@ impl SimulationEngine {
                                 p_reactive_kvar,
                                 data_json.as_deref(),
                             );
+                            let _ = app.emit("device-data-update", serde_json::json!({
+                                "device_id": device_id,
+                                "data": {
+                                    "active_power": p_active_kw,
+                                    "reactive_power": p_reactive_kvar,
+                                    "timestamp": timestamp
+                                }
+                            }));
                             break;
                         }
                     }
                 }
                 
-                // 发送负载功率更新事件
                 if let Some(p_kw) = p_active_kw {
                     let _ = app.emit("load-power-update", serde_json::json!({
                         "p_active_kw": p_kw,
@@ -516,7 +546,6 @@ impl SimulationEngine {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Pv 
                             && device.name == gen_name {
-                            // 存储到数据库
                             let db = database.lock().unwrap();
                             let data_json = serde_json::to_string(gen_data).ok();
                             let _ = db.insert_device_data(
@@ -526,12 +555,19 @@ impl SimulationEngine {
                                 p_reactive_kvar,
                                 data_json.as_deref(),
                             );
+                            let _ = app.emit("device-data-update", serde_json::json!({
+                                "device_id": device_id,
+                                "data": {
+                                    "active_power": p_active_kw,
+                                    "reactive_power": p_reactive_kvar,
+                                    "timestamp": timestamp
+                                }
+                            }));
                             break;
                         }
                     }
                 }
                 
-                // 发送发电机功率更新事件
                 if let Some(p_kw) = p_active_kw {
                     let _ = app.emit("generator-power-update", serde_json::json!({
                         "p_active_kw": p_kw,
@@ -557,7 +593,6 @@ impl SimulationEngine {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Storage 
                             && device.name == storage_name {
-                            // 存储到数据库
                             let db = database.lock().unwrap();
                             let data_json = serde_json::to_string(storage_data).ok();
                             let _ = db.insert_device_data(
@@ -567,12 +602,19 @@ impl SimulationEngine {
                                 p_reactive_kvar,
                                 data_json.as_deref(),
                             );
+                            let _ = app.emit("device-data-update", serde_json::json!({
+                                "device_id": device_id,
+                                "data": {
+                                    "active_power": p_active_kw,
+                                    "reactive_power": p_reactive_kvar,
+                                    "timestamp": timestamp
+                                }
+                            }));
                             break;
                         }
                     }
                 }
                 
-                // 发送储能数据更新事件
                 let _ = app.emit("storage-data-update", storage_data);
             }
         }
@@ -655,6 +697,9 @@ impl SimulationEngine {
     pub async fn stop(&self) -> Result<(), String> {
         let mut status = self.status.lock().await;
         status.stop();
+        drop(status);
+        // 仿真已停止，设备数据通道关闭，全部视为离线
+        self.device_active_status.lock().await.clear();
         
         // 通过 Python 桥接停止仿真
         let mut bridge = self.python_bridge.lock().await;
@@ -699,6 +744,11 @@ impl SimulationEngine {
         self.status.lock().await.clone()
     }
 
+    /// 返回当前仿真中“本轮内成功收到过数据”的设备 ID 集合，用于与引擎状态一起决定 is_online
+    pub async fn get_device_active_status(&self) -> HashMap<String, bool> {
+        self.device_active_status.lock().await.clone()
+    }
+
     pub async fn set_device_mode(&self, device_id: String, mode: String) -> Result<(), String> {
         // 验证模式
         let valid_modes = ["random_data", "manual", "remote", "historical_data"];
@@ -727,6 +777,40 @@ impl SimulationEngine {
 
     pub async fn set_topology(&self, topology: Topology) {
         *self.topology.lock().await = Some(topology);
+    }
+
+    /// 事件驱动远程控制：将设备属性增量立即写入仿真，下一拍计算即生效，避免轮询导致的初始指令缺失或初值不符。
+    pub async fn update_device_properties_for_simulation(
+        &self,
+        device_id: String,
+        properties: serde_json::Value,
+    ) -> Result<(), String> {
+        if !self.remote_control_enabled() {
+            return Ok(());
+        }
+        let props_map = properties
+            .as_object()
+            .ok_or_else(|| "properties 必须为对象".to_string())?;
+        {
+            let mut topo_guard = self.topology.lock().await;
+            if let Some(topo) = topo_guard.as_mut() {
+                if let Some(device) = topo.devices.get_mut(&device_id) {
+                    for (k, v) in props_map {
+                        device.properties.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+        let mut bridge = self.python_bridge.lock().await;
+        let params = serde_json::json!({
+            "device_id": device_id,
+            "properties": properties
+        });
+        bridge
+            .call("simulation.update_device_properties", params)
+            .await
+            .map_err(|e| format!("推送设备属性到仿真失败: {}", e))?;
+        Ok(())
     }
 
     pub async fn get_topology(&self) -> Option<Topology> {

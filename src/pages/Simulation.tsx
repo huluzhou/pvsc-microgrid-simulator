@@ -32,7 +32,7 @@ interface SimulationConfig {
 
 export default function Simulation() {
   const [status, setStatus] = useState<SimulationStatus>({ state: 'Stopped', elapsed_time: 0, calculation_count: 0, average_delay: 0, errors: [] });
-  const [config, setConfig] = useState<SimulationConfig>({ calculationInterval: 1000, remoteControlEnabled: false, autoStartModbus: false });
+  const [config, setConfig] = useState<SimulationConfig>({ calculationInterval: 1000, remoteControlEnabled: true, autoStartModbus: false });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
@@ -229,8 +229,8 @@ export default function Simulation() {
                 <div className="flex items-center gap-1 text-gray-500 mb-1"><Activity className="w-3 h-3" /><span className="text-xs">计算次数</span></div>
                 <div className="text-xl font-bold text-gray-800">{status.calculation_count.toLocaleString()}</div>
               </div>
-              <div className="p-3 bg-gray-50 rounded border border-gray-200">
-                <div className="flex items-center gap-1 text-gray-500 mb-1"><Zap className="w-3 h-3" /><span className="text-xs">平均延迟</span></div>
+              <div className="p-3 bg-gray-50 rounded border border-gray-200" title="完成一次仿真计算（请求 Python 潮流计算并回传、写库、发事件）的平均耗时。若大于计算间隔，说明步长跟不上设定周期。">
+                <div className="flex items-center gap-1 text-gray-500 mb-1"><Zap className="w-3 h-3" /><span className="text-xs">每步平均耗时</span></div>
                 <div className="text-xl font-bold text-gray-800">{status.average_delay.toFixed(1)} <span className="text-xs text-gray-500">ms</span></div>
               </div>
               <div className="p-3 bg-gray-50 rounded border border-gray-200">
@@ -255,7 +255,7 @@ export default function Simulation() {
                     <Radio className="w-4 h-4 text-blue-500" />
                     <div>
                       <div className="text-xs font-medium text-gray-700">允许远程控制</div>
-                      <div className="text-xs text-gray-500">外部系统可通过Modbus控制设备</div>
+                      <div className="text-xs text-gray-500">事件驱动：指令到达即写入仿真，下一拍生效，避免轮询导致初值不符</div>
                     </div>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">

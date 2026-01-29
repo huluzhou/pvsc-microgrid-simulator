@@ -132,6 +132,25 @@ class SimulationEngine:
         注意：设备功率值现在直接从拓扑数据的 properties 中读取
         """
         pass  # 不再需要模式管理，功率值从拓扑数据中获取
+
+    def update_device_properties(self, device_id: str, properties: Dict[str, Any]) -> None:
+        """
+        事件驱动远程控制：将设备属性增量立即写入当前拓扑数据，下一拍 _update_network_power_values 即生效。
+        避免轮询导致的初始时刻指令缺失或初值与预期不符。
+        """
+        if not self.topology_data:
+            return
+        devices = self.topology_data.get("devices", {})
+        if isinstance(devices, list):
+            for d in devices:
+                if d.get("id") == device_id:
+                    props = d.setdefault("properties", {})
+                    props.update(properties)
+                    return
+        else:
+            if device_id in devices:
+                props = devices[device_id].setdefault("properties", {})
+                props.update(properties)
     
     def get_device_data(self, device_id: str) -> Dict[str, Any]:
         """

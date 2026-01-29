@@ -42,6 +42,8 @@ pub async fn start_simulation(
     } else {
         return Err("未找到拓扑数据，请先加载拓扑".to_string());
     }
+
+    engine.set_remote_control_enabled(config.remote_control_enabled);
     
     // 启动仿真
     engine.start(Some(app), config.calculation_interval_ms).await
@@ -98,4 +100,24 @@ pub async fn get_simulation_errors(
 ) -> Result<Vec<SimulationError>, String> {
     let status = engine.get_status().await;
     Ok(status.errors)
+}
+
+#[tauri::command]
+pub async fn set_remote_control_enabled(
+    enabled: bool,
+    engine: State<'_, Arc<SimulationEngine>>,
+) -> Result<(), String> {
+    engine.set_remote_control_enabled(enabled);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_device_properties_for_simulation(
+    device_id: String,
+    properties: serde_json::Value,
+    engine: State<'_, Arc<SimulationEngine>>,
+) -> Result<(), String> {
+    engine
+        .update_device_properties_for_simulation(device_id, properties)
+        .await
 }

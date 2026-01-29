@@ -95,17 +95,29 @@ class PandapowerKernel(PowerCalculationKernel):
             # 检查结果表中的错误标记
             self._check_result_errors(self.net, errors)
             
-            # 提取结果
+            # 提取结果（按行组织并带上 name，供 Rust 端按 name 匹配设备并写入监控 DB）
             results = {
                 "converged": converged,
                 "errors": errors,
                 "devices": {}
             }
-            
-            # 提取各设备的结果
+
+            def _res_to_row_dict(net, res_df, table_name: str) -> Dict[str, Dict[str, Any]]:
+                if res_df is None or res_df.empty:
+                    return {}
+                table = getattr(net, table_name, None)
+                name_series = table["name"] if table is not None and "name" in table.columns else None
+                out = {}
+                for idx in res_df.index:
+                    row = res_df.loc[idx].to_dict()
+                    if name_series is not None and idx in name_series.index:
+                        row["name"] = name_series[idx]
+                    out[str(idx)] = row
+                return out
+
             try:
                 if hasattr(self.net, 'res_bus') and self.net.res_bus is not None:
-                    results["devices"]["buses"] = self.net.res_bus.to_dict()
+                    results["devices"]["buses"] = _res_to_row_dict(self.net, self.net.res_bus, "bus")
             except Exception as e:
                 errors.append({
                     "type": "calculation",
@@ -113,10 +125,9 @@ class PandapowerKernel(PowerCalculationKernel):
                     "message": f"提取母线结果失败: {str(e)}",
                     "details": {}
                 })
-            
             try:
                 if hasattr(self.net, 'res_line') and self.net.res_line is not None:
-                    results["devices"]["lines"] = self.net.res_line.to_dict()
+                    results["devices"]["lines"] = _res_to_row_dict(self.net, self.net.res_line, "line")
             except Exception as e:
                 errors.append({
                     "type": "calculation",
@@ -124,10 +135,9 @@ class PandapowerKernel(PowerCalculationKernel):
                     "message": f"提取线路结果失败: {str(e)}",
                     "details": {}
                 })
-            
             try:
                 if hasattr(self.net, 'res_trafo') and self.net.res_trafo is not None:
-                    results["devices"]["transformers"] = self.net.res_trafo.to_dict()
+                    results["devices"]["transformers"] = _res_to_row_dict(self.net, self.net.res_trafo, "trafo")
             except Exception as e:
                 errors.append({
                     "type": "calculation",
@@ -135,10 +145,9 @@ class PandapowerKernel(PowerCalculationKernel):
                     "message": f"提取变压器结果失败: {str(e)}",
                     "details": {}
                 })
-            
             try:
                 if hasattr(self.net, 'res_gen') and self.net.res_gen is not None:
-                    results["devices"]["generators"] = self.net.res_gen.to_dict()
+                    results["devices"]["generators"] = _res_to_row_dict(self.net, self.net.res_gen, "gen")
             except Exception as e:
                 errors.append({
                     "type": "calculation",
@@ -146,10 +155,9 @@ class PandapowerKernel(PowerCalculationKernel):
                     "message": f"提取发电机结果失败: {str(e)}",
                     "details": {}
                 })
-            
             try:
                 if hasattr(self.net, 'res_load') and self.net.res_load is not None:
-                    results["devices"]["loads"] = self.net.res_load.to_dict()
+                    results["devices"]["loads"] = _res_to_row_dict(self.net, self.net.res_load, "load")
             except Exception as e:
                 errors.append({
                     "type": "calculation",
@@ -157,10 +165,9 @@ class PandapowerKernel(PowerCalculationKernel):
                     "message": f"提取负载结果失败: {str(e)}",
                     "details": {}
                 })
-            
             try:
                 if hasattr(self.net, 'res_storage') and self.net.res_storage is not None:
-                    results["devices"]["storages"] = self.net.res_storage.to_dict()
+                    results["devices"]["storages"] = _res_to_row_dict(self.net, self.net.res_storage, "storage")
             except Exception as e:
                 errors.append({
                     "type": "calculation",

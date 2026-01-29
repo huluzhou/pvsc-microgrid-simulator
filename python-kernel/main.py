@@ -100,6 +100,14 @@ class PythonKernel:
                 return {"status": "ok"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
+        elif method == "simulation.update_device_properties":
+            device_id = params.get("device_id")
+            properties = params.get("properties") or {}
+            try:
+                self.simulation_engine.update_device_properties(device_id, properties)
+                return {"status": "ok"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
         elif method == "simulation.get_device_data":
             device_id = params.get("device_id")
             try:
