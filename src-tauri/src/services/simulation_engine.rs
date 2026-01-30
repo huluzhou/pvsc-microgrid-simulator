@@ -92,8 +92,17 @@ impl SimulationEngine {
         let set_topology_params = serde_json::json!({
             "topology_data": topology_data
         });
-        bridge.call("simulation.set_topology", set_topology_params).await
+        let set_topology_result = bridge.call("simulation.set_topology", set_topology_params).await
             .map_err(|e| format!("Failed to set topology: {}", e))?;
+        // Python 端 set_topology 异常时返回 result: { status: "error", message: "..." }，需检查并提前返回
+        if let Some(status) = set_topology_result.get("status").and_then(|v| v.as_str()) {
+            if status == "error" {
+                let msg = set_topology_result.get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("设置拓扑失败");
+                return Err(format!("拓扑设置失败: {}", msg));
+            }
+        }
         
         // 启动仿真
         let mut status = self.status.lock().await;
@@ -258,14 +267,10 @@ impl SimulationEngine {
                         let current_errors = status_guard.errors.clone();
                         drop(status_guard);
 
-                        eprintln!("获取到错误: Python返回 {} 个，当前状态 {} 个", new_errors.len(), current_errors.len());
-
                         // 如果 Python 返回空错误列表，而当前仍有错误，则保留最后一次错误信息，
                         // 避免在仿真暂停/停止后错误面板被立即清空，便于用户查看错误原因。
                         if new_errors.is_empty() && !current_errors.is_empty() {
                             // 保留当前错误，不更新状态，也不发送事件（避免清空）
-                            // 前端可以通过 get_simulation_status 查询到保留的错误
-                            eprintln!("保留当前错误，不发送事件");
                         } else if new_errors != current_errors {
                             // 只有在错误内容实际发生变化时才更新状态并发送事件，
                             // 避免同一条错误在高频刷新时造成前端“闪烁”体验。
@@ -273,14 +278,9 @@ impl SimulationEngine {
                             status_guard.errors = new_errors.clone();
                             drop(status_guard);
 
-                            // 发送错误更新事件，使用转换后的错误数组（确保时间戳格式正确）
-                            eprintln!("发送错误更新事件，错误数量: {}", new_errors.len());
                             let _ = app.emit("simulation-errors-update", serde_json::json!({
                                 "errors": new_errors
                             }));
-                        } else {
-                            // 错误内容未变，不做任何更新，减少无意义刷新
-                            eprintln!("错误内容未变，不发送事件");
                         }
                     }
                 }

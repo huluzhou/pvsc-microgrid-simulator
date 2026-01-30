@@ -94,7 +94,7 @@ export default function Monitoring() {
     setIsLoading(true);
     try {
       const statuses = await invoke<DeviceStatus[]>('get_all_devices_status');
-      setDevices(statuses);
+      setDevices(Array.isArray(statuses) ? statuses : []);
     } catch (error) {
       console.error('Failed to load devices:', error);
       setDevices([
@@ -110,38 +110,37 @@ export default function Monitoring() {
 
   const loadDeviceData = useCallback(async (deviceId: string) => {
     try {
-      const data = await invoke<Array<[number, number | null, number | null, number | null]>>(
+      const data = await invoke<Array<[number, number | null, number | null]>>(
         'query_device_data',
-        { deviceId, startTime: Date.now() / 1000 - 3600, endTime: Date.now() / 1000 }
+        {
+          device_id: deviceId,
+          start_time: Date.now() / 1000 - 3600,
+          end_time: Date.now() / 1000,
+        }
       );
-      const chartDataPoints = data
-        .filter(([_, power]) => power !== null)
-        .map(([timestamp, power]) => ({ timestamp, value: power || 0 }));
+      const chartDataPoints = (data || [])
+        .filter((row) => row[1] !== null && row[1] !== undefined)
+        .map(([timestamp, power]) => ({ timestamp, value: Number(power) || 0 }));
       setChartData(chartDataPoints);
-    } catch (error) {
-      const now = Date.now() / 1000;
-      setChartData(
-        Array.from({ length: 60 }, (_, i) => ({
-          timestamp: now - (59 - i) * 60,
-          value: 50 + Math.random() * 30,
-        }))
-      );
+    } catch (_error) {
+      setChartData([]);
     }
   }, []);
 
   const overview = useMemo<SystemOverview>(() => {
-    const onlineDevices = devices.filter((d) => d.is_online);
-    const generation = devices
-      .filter((d) => d.device_type === 'static_generator' && d.active_power && d.active_power > 0)
-      .reduce((sum, d) => sum + (d.active_power || 0), 0);
-    const consumption = devices
-      .filter((d) => ['load', 'charger'].includes(d.device_type) && d.active_power)
-      .reduce((sum, d) => sum + Math.abs(d.active_power || 0), 0);
-    const gridExchange = devices
+    const list = Array.isArray(devices) ? devices : [];
+    const onlineDevices = list.filter((d) => d.is_online);
+    const generation = list
+      .filter((d) => d.device_type === 'static_generator' && d.active_power != null && Number(d.active_power) > 0)
+      .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
+    const consumption = list
+      .filter((d) => ['load', 'charger'].includes(d.device_type) && d.active_power != null)
+      .reduce((sum, d) => sum + Math.abs(Number(d.active_power) || 0), 0);
+    const gridExchange = list
       .filter((d) => d.device_type === 'external_grid')
-      .reduce((sum, d) => sum + (d.active_power || 0), 0);
+      .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
     return {
-      totalDevices: devices.length,
+      totalDevices: list.length,
       onlineDevices: onlineDevices.length,
       totalGeneration: generation,
       totalConsumption: consumption,
@@ -209,22 +208,22 @@ export default function Monitoring() {
               <TrendingUp className="w-3 h-3 text-orange-500" />
               <span className="text-xs">总发电</span>
             </div>
-            <div className="text-lg font-bold text-orange-600">{overview.totalGeneration.toFixed(1)} kW</div>
+            <div className="text-lg font-bold text-orange-600">{(Number(overview.totalGeneration) || 0).toFixed(1)} kW</div>
           </div>
           <div className="p-2 bg-gray-50 rounded border border-gray-200">
             <div className="flex items-center gap-1 text-gray-500 mb-1">
               <TrendingDown className="w-3 h-3 text-purple-500" />
               <span className="text-xs">总消耗</span>
             </div>
-            <div className="text-lg font-bold text-purple-600">{overview.totalConsumption.toFixed(1)} kW</div>
+            <div className="text-lg font-bold text-purple-600">{(Number(overview.totalConsumption) || 0).toFixed(1)} kW</div>
           </div>
           <div className="p-2 bg-gray-50 rounded border border-gray-200">
             <div className="flex items-center gap-1 text-gray-500 mb-1">
               <Zap className="w-3 h-3 text-blue-500" />
               <span className="text-xs">电网交换</span>
             </div>
-            <div className={`text-lg font-bold ${overview.gridExchange >= 0 ? 'text-blue-600' : 'text-green-600'}`}>
-              {overview.gridExchange >= 0 ? '+' : ''}{overview.gridExchange.toFixed(1)} kW
+            <div className={`text-lg font-bold ${(Number(overview.gridExchange) || 0) >= 0 ? 'text-blue-600' : 'text-green-600'}`}>
+              {(Number(overview.gridExchange) || 0) >= 0 ? '+' : ''}{(Number(overview.gridExchange) || 0).toFixed(1)} kW
             </div>
           </div>
           <div className="p-2 bg-gray-50 rounded border border-gray-200">
@@ -266,9 +265,9 @@ export default function Monitoring() {
                           <XCircle className={`w-3 h-3 ${isSelected ? 'text-red-200' : 'text-red-500'}`} />
                         )}
                       </div>
-                      {device.active_power !== undefined && (
+                      {device.active_power != null && Number(device.active_power) !== 0 && (
                         <div className={`text-xs ${isSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                          P: {device.active_power.toFixed(1)} kW
+                          P: {(Number(device.active_power)).toFixed(1)} kW
                         </div>
                       )}
                     </div>
@@ -306,19 +305,19 @@ export default function Monitoring() {
                 <div className="grid grid-cols-4 gap-3">
                   <div className="p-3 bg-gray-50 rounded border border-gray-200">
                     <div className="text-xs text-gray-500 mb-1">有功功率</div>
-                    <div className="text-xl font-bold text-blue-600">{selectedDeviceInfo.active_power?.toFixed(1) ?? '-'} <span className="text-xs text-gray-400">kW</span></div>
+                    <div className="text-xl font-bold text-blue-600">{selectedDeviceInfo.active_power != null ? (Number(selectedDeviceInfo.active_power)).toFixed(1) : '-'} <span className="text-xs text-gray-400">kW</span></div>
                   </div>
                   <div className="p-3 bg-gray-50 rounded border border-gray-200">
                     <div className="text-xs text-gray-500 mb-1">无功功率</div>
-                    <div className="text-xl font-bold text-purple-600">{selectedDeviceInfo.reactive_power?.toFixed(1) ?? '-'} <span className="text-xs text-gray-400">kVar</span></div>
+                    <div className="text-xl font-bold text-purple-600">{selectedDeviceInfo.reactive_power != null ? (Number(selectedDeviceInfo.reactive_power)).toFixed(1) : '-'} <span className="text-xs text-gray-400">kVar</span></div>
                   </div>
                   <div className="p-3 bg-gray-50 rounded border border-gray-200">
                     <div className="text-xs text-gray-500 mb-1">电压</div>
-                    <div className="text-xl font-bold text-yellow-600">{selectedDeviceInfo.voltage?.toFixed(0) ?? '-'} <span className="text-xs text-gray-400">V</span></div>
+                    <div className="text-xl font-bold text-yellow-600">{selectedDeviceInfo.voltage != null ? (Number(selectedDeviceInfo.voltage)).toFixed(0) : '-'} <span className="text-xs text-gray-400">V</span></div>
                   </div>
                   <div className="p-3 bg-gray-50 rounded border border-gray-200">
                     <div className="text-xs text-gray-500 mb-1">电流</div>
-                    <div className="text-xl font-bold text-green-600">{selectedDeviceInfo.current?.toFixed(1) ?? '-'} <span className="text-xs text-gray-400">A</span></div>
+                    <div className="text-xl font-bold text-green-600">{selectedDeviceInfo.current != null ? (Number(selectedDeviceInfo.current)).toFixed(1) : '-'} <span className="text-xs text-gray-400">A</span></div>
                   </div>
                 </div>
               </div>

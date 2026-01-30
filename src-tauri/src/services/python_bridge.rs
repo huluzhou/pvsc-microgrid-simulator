@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 use anyhow::{Result, Context};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{Mutex, oneshot};
 use tokio::process::{Command, ChildStdin};
@@ -192,19 +193,60 @@ impl PythonBridge {
     }
 
     async fn find_python() -> Result<String> {
-        // 尝试查找 Python 3
-        let candidates = ["python3", "python"];
-        for cmd in candidates {
-            let output = Command::new(cmd)
-                .arg("--version")
-                .output()
-                .await;
-            
-            if output.is_ok() {
-                return Ok(cmd.to_string());
+        // 1. 若已设置 VIRTUAL_ENV，优先使用该虚拟环境中的 Python
+        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+            let venv_path = Path::new(&venv);
+            let python = if cfg!(target_os = "windows") {
+                venv_path.join("Scripts").join("python.exe")
+            } else {
+                venv_path.join("bin").join("python")
+            };
+            if python.exists() {
+                if let Ok(out) = Command::new(&python).arg("--version").output().await {
+                    if out.status.success() {
+                        eprintln!("使用虚拟环境 Python: {}", python.display());
+                        return Ok(python.to_string_lossy().to_string());
+                    }
+                }
             }
         }
-        Err(anyhow::anyhow!("Python not found"))
+        // 2. 在项目根下查找虚拟环境（venv-dev / .venv / venv），与 setup_venv.py / activate-dev 一致
+        let project_roots: Vec<PathBuf> = {
+            let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let mut roots = vec![current_dir.clone()];
+            if let Some(parent) = current_dir.parent() {
+                roots.push(parent.to_path_buf());
+            }
+            roots
+        };
+        let venv_names = ["venv-dev", ".venv", "venv"];
+        for root in &project_roots {
+            for name in venv_names {
+                let python = if cfg!(target_os = "windows") {
+                    root.join(name).join("Scripts").join("python.exe")
+                } else {
+                    root.join(name).join("bin").join("python")
+                };
+                if python.exists() {
+                    if let Ok(out) = Command::new(&python).arg("--version").output().await {
+                        if out.status.success() {
+                            eprintln!("使用项目虚拟环境 Python: {}", python.display());
+                            return Ok(python.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+        // 3. 回退到 PATH 中的 python3 / python
+        let candidates = ["python3", "python"];
+        for cmd in candidates {
+            if let Ok(out) = Command::new(cmd).arg("--version").output().await {
+                if out.status.success() {
+                    return Ok(cmd.to_string());
+                }
+            }
+        }
+        Err(anyhow::anyhow!("Python not found. 建议在项目根执行 python setup_venv.py 创建 venv-dev 并安装依赖"))
     }
 
     fn get_python_script_path() -> Result<String> {

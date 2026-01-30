@@ -64,16 +64,31 @@ class SimulationEngine:
         self.topology_data = topology_data
         
         # 使用工厂同时创建计算内核和适配器（如果可用）
-        kernel_and_adapter = PowerKernelFactory.create_with_adapter(kernel_type)
+        try:
+            kernel_and_adapter = PowerKernelFactory.create_with_adapter(kernel_type)
+        except Exception:
+            kernel_and_adapter = None
         if kernel_and_adapter:
             self.power_calculator, self.topology_adapter = kernel_and_adapter
             if self.topology_adapter is None:
                 # 如果没有对应的适配器，使用默认的pandapower适配器（向后兼容）
-                self.topology_adapter = PandapowerTopologyAdapter()
+                try:
+                    self.topology_adapter = PandapowerTopologyAdapter()
+                except Exception as e:
+                    raise RuntimeError(
+                        f"无法创建拓扑适配器: {e}. "
+                        "请在本机 Python 环境中执行: pip install -r python-kernel/requirements.txt"
+                    ) from e
         else:
             # 回退到单独创建
             if self.topology_adapter is None:
-                self.topology_adapter = PandapowerTopologyAdapter()
+                try:
+                    self.topology_adapter = PandapowerTopologyAdapter()
+                except Exception as e:
+                    raise RuntimeError(
+                        f"无法创建拓扑适配器: {e}. "
+                        "请在本机 Python 环境中执行: pip install -r python-kernel/requirements.txt"
+                    ) from e
             if self.power_calculator is None:
                 self.power_calculator = PowerKernelFactory.create(kernel_type)
                 if not self.power_calculator:

@@ -18,7 +18,8 @@ interface DeviceInfo {
   deviceType: DeviceType;
 }
 
-const POWER_DEVICE_TYPES: DeviceType[] = ['static_generator', 'storage', 'load', 'charger', 'external_grid'];
+// 设备控制不包含外部电网（外部电网不需用户控制）
+const POWER_DEVICE_TYPES: DeviceType[] = ['static_generator', 'storage', 'load', 'charger'];
 
 export default function DeviceControl() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
