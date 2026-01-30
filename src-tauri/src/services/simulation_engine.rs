@@ -18,8 +18,10 @@ pub struct SimulationEngine {
     python_bridge: Arc<Mutex<PythonBridge>>,
     topology: Arc<tokio::sync::Mutex<Option<Topology>>>,
     database: Arc<StdMutex<Database>>,
-    /// 是否允许远程控制；事件驱动：指令到达即写入仿真，不依赖轮询
+    /// 全局是否允许远程控制（总闸）
     remote_control_enabled: Arc<AtomicBool>,
+    /// 按设备是否允许远程控制；未配置时以全局开关为默认
+    device_remote_control_allowed: Arc<tokio::sync::Mutex<HashMap<String, bool>>>,
     /// 设备在本轮仿真中的实时在线状态：仅当仿真 Running 且该设备在本轮内成功收到过数据时为 true；停止/暂停后全部视为离线
     device_active_status: Arc<tokio::sync::Mutex<HashMap<String, bool>>>,
 }
@@ -33,6 +35,7 @@ impl SimulationEngine {
             topology: Arc::new(tokio::sync::Mutex::new(None)),
             database,
             remote_control_enabled: Arc::new(AtomicBool::new(true)),
+            device_remote_control_allowed: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             device_active_status: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
@@ -43,6 +46,21 @@ impl SimulationEngine {
 
     pub fn remote_control_enabled(&self) -> bool {
         self.remote_control_enabled.load(Ordering::Relaxed)
+    }
+
+    /// 设置单个设备是否允许远程控制；未配置时以全局开关为默认
+    pub async fn set_device_remote_control_enabled(&self, device_id: String, enabled: bool) {
+        let mut m = self.device_remote_control_allowed.lock().await;
+        m.insert(device_id, enabled);
+    }
+
+    /// 该设备是否允许远程控制（未配置时用全局开关）
+    pub async fn device_remote_control_allowed(&self, device_id: &str) -> bool {
+        if !self.remote_control_enabled() {
+            return false;
+        }
+        let m = self.device_remote_control_allowed.lock().await;
+        m.get(device_id).copied().unwrap_or(true)
     }
 
     pub async fn start(&self, app_handle: Option<AppHandle>, calculation_interval_ms: u64) -> Result<(), String> {
@@ -347,8 +365,8 @@ impl SimulationEngine {
                                     .unwrap()
                                     .as_secs_f64();
                                 
-                                // 处理并存储计算结果
-                                Self::process_calculation_results_inline(&app, devices, &t.devices, &database, timestamp);
+                                // 处理并存储计算结果（传入完整拓扑以便电表落库与连接解析）
+                                Self::process_calculation_results_inline(&app, devices, t, &database, timestamp);
                                 // 本拍成功获取到数据，标记拓扑内设备在本轮仿真中为在线
                                 let mut active = device_active_status.lock().await;
                                 for id in t.devices.keys() {
@@ -389,14 +407,36 @@ impl SimulationEngine {
         });
     }
     
+    /// 从拓扑构建 目标设备 id -> 指向该设备的电表 id 列表（用于落库时把目标数据也写入电表）
+    fn build_target_to_meters(topology: &Topology) -> HashMap<String, Vec<String>> {
+        use crate::domain::topology::DeviceType;
+        let mut target_to_meters: HashMap<String, Vec<String>> = HashMap::new();
+        for conn in topology.connections.values() {
+            let from_id = &conn.from_device_id;
+            let to_id = &conn.to_device_id;
+            let from_is_meter = topology.devices.get(from_id).map(|d| d.device_type == DeviceType::Meter).unwrap_or(false);
+            let to_is_meter = topology.devices.get(to_id).map(|d| d.device_type == DeviceType::Meter).unwrap_or(false);
+            if from_is_meter {
+                target_to_meters.entry(to_id.clone()).or_default().push(from_id.clone());
+            }
+            if to_is_meter {
+                target_to_meters.entry(from_id.clone()).or_default().push(to_id.clone());
+            }
+        }
+        target_to_meters
+    }
+
     fn process_calculation_results_inline(
         app: &AppHandle,
         results: &serde_json::Value,
-        devices: &HashMap<String, crate::domain::topology::Device>,
+        topology: &Topology,
         database: &Arc<StdMutex<Database>>,
         timestamp: f64,
     ) {
-        // 处理计算结果并存储到数据库
+        let devices = &topology.devices;
+        let target_to_meters = Self::build_target_to_meters(topology);
+
+        // 处理计算结果并存储到数据库（仅功率设备与电表；母线、线路、变压器不落库）
         // 同时发送事件通知前端
         
         // 建立设备ID到设备类型的映射，用于查找设备（保留以备将来使用）
@@ -449,37 +489,9 @@ impl SimulationEngine {
             }
         }
         
-        // 处理线路结果（电流、功率数据）
+        // 处理线路结果：仅发事件，不落库（数据库只记录功率设备与电表）
         if let Some(lines) = results.get("lines").and_then(|v| v.as_object()) {
             for (_line_idx_str, line_data) in lines {
-                // 提取有功功率和无功功率
-                let p_active_mw = line_data.get("p_from_mw").and_then(|v| v.as_f64());
-                let p_active_kw = p_active_mw.map(|p| p * 1000.0); // 转换为kW
-                
-                let p_reactive_mvar = line_data.get("q_from_mvar").and_then(|v| v.as_f64());
-                let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0); // 转换为kVar
-                
-                // 尝试找到对应的Line设备（通过名称匹配）
-                if let Some(line_name) = line_data.get("name").and_then(|v| v.as_str()) {
-                    for (device_id, device) in devices {
-                        if device.device_type == crate::domain::topology::DeviceType::Line 
-                            && device.name == line_name {
-                            // 存储到数据库
-                            let db = database.lock().unwrap();
-                            let data_json = serde_json::to_string(line_data).ok();
-                            let _ = db.insert_device_data(
-                                device_id,
-                                timestamp,
-                                p_active_kw,
-                                p_reactive_kvar,
-                                data_json.as_deref(),
-                            );
-                            break;
-                        }
-                    }
-                }
-                
-                // 发送线路数据更新事件
                 let _ = app.emit("line-data-update", line_data);
             }
         }
@@ -494,7 +506,7 @@ impl SimulationEngine {
                 let p_reactive_mvar = load_data.get("q_mvar").and_then(|v| v.as_f64());
                 let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0); // 转换为kVar
                 
-                // 尝试找到对应的Load设备
+                // 尝试找到对应的Load设备（仅功率设备落库；电表落库其指向节点的数据）
                 if let Some(load_name) = load_data.get("name").and_then(|v| v.as_str()) {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Load 
@@ -508,6 +520,15 @@ impl SimulationEngine {
                                 p_reactive_kvar,
                                 data_json.as_deref(),
                             );
+                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                let _ = db.insert_device_data(
+                                    meter_id,
+                                    timestamp,
+                                    p_active_kw,
+                                    p_reactive_kvar,
+                                    data_json.as_deref(),
+                                );
+                            }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
                                 "data": {
@@ -541,7 +562,7 @@ impl SimulationEngine {
                 let p_reactive_mvar = gen_data.get("q_mvar").and_then(|v| v.as_f64());
                 let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0); // 转换为kVar
                 
-                // 尝试找到对应的Pv设备
+                // 尝试找到对应的Pv设备（功率设备落库；电表落库其指向节点的数据）
                 if let Some(gen_name) = gen_data.get("name").and_then(|v| v.as_str()) {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Pv 
@@ -555,6 +576,15 @@ impl SimulationEngine {
                                 p_reactive_kvar,
                                 data_json.as_deref(),
                             );
+                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                let _ = db.insert_device_data(
+                                    meter_id,
+                                    timestamp,
+                                    p_active_kw,
+                                    p_reactive_kvar,
+                                    data_json.as_deref(),
+                                );
+                            }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
                                 "data": {
@@ -588,7 +618,7 @@ impl SimulationEngine {
                 let p_reactive_mvar = storage_data.get("q_mvar").and_then(|v| v.as_f64());
                 let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0); // 转换为kVar
                 
-                // 尝试找到对应的Storage设备
+                // 尝试找到对应的Storage设备（功率设备落库；电表落库其指向节点的数据）
                 if let Some(storage_name) = storage_data.get("name").and_then(|v| v.as_str()) {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Storage 
@@ -602,6 +632,15 @@ impl SimulationEngine {
                                 p_reactive_kvar,
                                 data_json.as_deref(),
                             );
+                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                let _ = db.insert_device_data(
+                                    meter_id,
+                                    timestamp,
+                                    p_active_kw,
+                                    p_reactive_kvar,
+                                    data_json.as_deref(),
+                                );
+                            }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
                                 "data": {
@@ -779,13 +818,13 @@ impl SimulationEngine {
         *self.topology.lock().await = Some(topology);
     }
 
-    /// 事件驱动远程控制：将设备属性增量立即写入仿真，下一拍计算即生效，避免轮询导致的初始指令缺失或初值不符。
+    /// 事件驱动远程控制：将设备属性增量立即写入仿真，下一拍计算即生效。先检查全局与按设备是否允许远程控制。
     pub async fn update_device_properties_for_simulation(
         &self,
         device_id: String,
         properties: serde_json::Value,
     ) -> Result<(), String> {
-        if !self.remote_control_enabled() {
+        if !self.device_remote_control_allowed(&device_id).await {
             return Ok(());
         }
         let props_map = properties

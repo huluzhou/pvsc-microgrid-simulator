@@ -26,9 +26,14 @@ interface DeviceStatus {
   last_update?: number;
   active_power?: number;
   reactive_power?: number;
-  voltage?: number;
-  current?: number;
-  data_source?: string;
+}
+
+interface DeviceDataPoint {
+  device_id: string;
+  timestamp: number;
+  p_active: number | null;
+  p_reactive: number | null;
+  data_json: Record<string, unknown> | null;
 }
 
 interface SystemOverview {
@@ -37,6 +42,12 @@ interface SystemOverview {
   totalGeneration: number;
   totalConsumption: number;
   gridExchange: number;
+}
+
+/** 安全格式化功率显示，避免 NaN / undefined 导致 "-.kw" 或闪烁 */
+function formatPowerKw(value: number | null | undefined): string {
+  if (value == null || typeof value !== 'number' || Number.isNaN(value)) return '-';
+  return Number(value).toFixed(1);
 }
 
 // 设备图标
@@ -86,44 +97,95 @@ function DeviceIcon({ type, size = 24 }: { type: DeviceType; size?: number }) {
 export default function Monitoring() {
   const [devices, setDevices] = useState<DeviceStatus[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
-  const [chartData, setChartData] = useState<Array<{ timestamp: number; value: number }>>([]);
+  const [chartDataPoints, setChartDataPoints] = useState<DeviceDataPoint[]>([]);
+  const [selectedChartSeries, setSelectedChartSeries] = useState<string>('active_power');
+  const [chartSeriesOptions, setChartSeriesOptions] = useState<Array<{ key: string; label: string }>>([{ key: 'active_power', label: '有功功率 (kW)' }]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSimulationRunning] = useState(false);
+  const [simulationStartTime, setSimulationStartTime] = useState<number | null>(null);
+  const [simulationState, setSimulationState] = useState<'Stopped' | 'Running' | 'Paused'>('Stopped');
 
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
     try {
       const statuses = await invoke<DeviceStatus[]>('get_all_devices_status');
-      setDevices(Array.isArray(statuses) ? statuses : []);
+      const next = Array.isArray(statuses) ? statuses : [];
+      setDevices((prev) => {
+        if (prev.length === 0) return next;
+        const prevById = new Map(prev.map((d) => [d.device_id, d]));
+        return next.map((d) => {
+          const p = prevById.get(d.device_id);
+          const hasNew = d.active_power != null || d.reactive_power != null;
+          const hadRecent = p && (p.last_update ?? 0) > (Date.now() / 1000 - 5);
+          if (!hasNew && hadRecent && (p?.active_power != null || p?.reactive_power != null)) {
+            return { ...d, active_power: p!.active_power, reactive_power: p!.reactive_power, last_update: p!.last_update };
+          }
+          return d;
+        });
+      });
     } catch (error) {
       console.error('Failed to load devices:', error);
-      setDevices([
-        { device_id: 'device-1', name: '光伏-1', device_type: 'static_generator', is_online: true, active_power: 85.5, reactive_power: 12.3, voltage: 380, current: 145 },
-        { device_id: 'device-2', name: '储能-2', device_type: 'storage', is_online: true, active_power: -25.0, reactive_power: 5.0, voltage: 380, current: 42 },
-        { device_id: 'device-3', name: '负载-3', device_type: 'load', is_online: true, active_power: 45.0, reactive_power: 15.0, voltage: 378, current: 76 },
-        { device_id: 'device-4', name: '充电桩-4', device_type: 'charger', is_online: false, active_power: 0, reactive_power: 0 },
-      ]);
+      setDevices([]);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const loadDeviceData = useCallback(async (deviceId: string) => {
+  const loadDeviceData = useCallback(async (deviceId: string, startTime?: number | null) => {
+    const start = startTime ?? Date.now() / 1000 - 3600;
     try {
-      const data = await invoke<Array<[number, number | null, number | null]>>(
+      const data = await invoke<DeviceDataPoint[]>(
         'query_device_data',
         {
-          device_id: deviceId,
-          start_time: Date.now() / 1000 - 3600,
-          end_time: Date.now() / 1000,
+          deviceId: deviceId,
+          startTime: start,
+          endTime: Date.now() / 1000,
         }
       );
-      const chartDataPoints = (data || [])
-        .filter((row) => row[1] !== null && row[1] !== undefined)
-        .map(([timestamp, power]) => ({ timestamp, value: Number(power) || 0 }));
-      setChartData(chartDataPoints);
+      const points: DeviceDataPoint[] = (data || []).map((p) => ({
+        device_id: p.device_id,
+        timestamp: p.timestamp,
+        p_active: p.p_active ?? null,
+        p_reactive: p.p_reactive ?? null,
+        data_json: p.data_json && typeof p.data_json === 'object' ? (p.data_json as Record<string, unknown>) : null,
+      }));
+      setChartDataPoints(points);
+      if (points.length > 0 && points[0].data_json) {
+        const keys = Object.keys(points[0].data_json).filter((k) => typeof (points[0].data_json as Record<string, unknown>)[k] === 'number');
+        const labels: Record<string, string> = {
+          active_power: '有功功率 (kW)',
+          reactive_power: '无功功率 (kVar)',
+          p_from_mw: 'P_from (MW)',
+          q_from_mvar: 'Q_from (MVar)',
+          p_to_mw: 'P_to (MW)',
+          q_to_mvar: 'Q_to (MVar)',
+          pl_mw: 'Pl (MW)',
+          ql_mvar: 'Ql (MVar)',
+          p_hv_mw: 'P_HV (MW)',
+          q_hv_mvar: 'Q_HV (MVar)',
+          p_lv_mw: 'P_LV (MW)',
+          q_lv_mvar: 'Q_LV (MVar)',
+          vm_pu: '电压 (pu)',
+          voltage: '电压 (V)',
+        };
+        const options = [{ key: 'active_power', label: labels.active_power || '有功' }, { key: 'reactive_power', label: labels.reactive_power || '无功' }, ...keys.filter((k) => !['active_power', 'reactive_power'].includes(k)).map((k) => ({ key: k, label: labels[k] || k }))];
+        setChartSeriesOptions(options);
+      } else {
+        setChartSeriesOptions([{ key: 'active_power', label: '有功功率 (kW)' }, { key: 'reactive_power', label: '无功功率 (kVar)' }]);
+      }
     } catch (_error) {
-      setChartData([]);
+      setChartDataPoints([]);
+    }
+  }, [selectedChartSeries]);
+
+  const refreshSimulationStatus = useCallback(async () => {
+    try {
+      const status = await invoke<{ state: string; start_time: number | null }>('get_simulation_status');
+      setSimulationState((status?.state as 'Stopped' | 'Running' | 'Paused') ?? 'Stopped');
+      if (status?.start_time != null) setSimulationStartTime(status.start_time);
+      else setSimulationStartTime(null);
+    } catch {
+      setSimulationStartTime(null);
+      setSimulationState('Stopped');
     }
   }, []);
 
@@ -133,9 +195,14 @@ export default function Monitoring() {
     const generation = list
       .filter((d) => d.device_type === 'static_generator' && d.active_power != null && Number(d.active_power) > 0)
       .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
-    const consumption = list
+    // 总消耗 = 负载 + 充电桩 + 储能（正=充电=消耗）；流入为正流出为负
+    const loadCharger = list
       .filter((d) => ['load', 'charger'].includes(d.device_type) && d.active_power != null)
       .reduce((sum, d) => sum + Math.abs(Number(d.active_power) || 0), 0);
+    const storageConsumption = list
+      .filter((d) => d.device_type === 'storage' && d.active_power != null)
+      .reduce((sum, d) => sum + Math.max(0, Number(d.active_power) || 0), 0);
+    const consumption = loadCharger + storageConsumption;
     const gridExchange = list
       .filter((d) => d.device_type === 'external_grid')
       .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
@@ -149,6 +216,12 @@ export default function Monitoring() {
   }, [devices]);
 
   useEffect(() => {
+    refreshSimulationStatus();
+    const statusInterval = setInterval(refreshSimulationStatus, 2000);
+    return () => clearInterval(statusInterval);
+  }, [refreshSimulationStatus]);
+
+  useEffect(() => {
     loadDevices();
     const interval = setInterval(loadDevices, 2000);
     const unsubscribePromise = listen('device-data-update', (event: any) => {
@@ -156,15 +229,18 @@ export default function Monitoring() {
       setDevices((prevDevices) =>
         prevDevices.map((device) =>
           device.device_id === device_id
-            ? { ...device, active_power: data.active_power, reactive_power: data.reactive_power, voltage: data.voltage, current: data.current, last_update: data.timestamp || Date.now() / 1000, is_online: true }
+            ? { ...device, active_power: data.active_power, reactive_power: data.reactive_power, last_update: data.timestamp || Date.now() / 1000, is_online: true }
             : device
         )
       );
       if (selectedDevice === device_id) {
-        setChartData((prev) => [
-          ...prev.slice(-59),
-          { timestamp: data.timestamp || Date.now() / 1000, value: data.active_power || 0 },
-        ]);
+        const ts = data.timestamp || Date.now() / 1000;
+        const point: DeviceDataPoint = { device_id, timestamp: ts, p_active: data.active_power ?? null, p_reactive: data.reactive_power ?? null, data_json: null };
+        setChartDataPoints((prev) => {
+          const next = [...prev, point];
+          const maxPoints = 7200;
+          return next.length <= maxPoints ? next : next.slice(-maxPoints);
+        });
       }
     });
     return () => {
@@ -174,8 +250,8 @@ export default function Monitoring() {
   }, [loadDevices, selectedDevice]);
 
   useEffect(() => {
-    if (selectedDevice) loadDeviceData(selectedDevice);
-  }, [selectedDevice, loadDeviceData]);
+    if (selectedDevice) loadDeviceData(selectedDevice, simulationStartTime);
+  }, [selectedDevice, simulationStartTime, loadDeviceData]);
 
   const selectedDeviceInfo = devices.find((d) => d.device_id === selectedDevice);
 
@@ -185,8 +261,8 @@ export default function Monitoring() {
       <div className="px-4 py-2 bg-white border-b border-gray-200 flex items-center gap-4">
         <h1 className="text-base font-semibold text-gray-800">实时监控</h1>
         <div className="flex-1" />
-        <span className={`text-xs ${isSimulationRunning ? 'text-green-600' : 'text-gray-400'}`}>
-          {isSimulationRunning ? '仿真运行中' : '仿真未启动'}
+        <span className={`text-xs ${simulationState === 'Running' ? 'text-green-600' : simulationState === 'Paused' ? 'text-amber-600' : 'text-gray-400'}`}>
+          {simulationState === 'Running' ? '仿真运行中' : simulationState === 'Paused' ? '仿真已暂停' : '仿真未启动'}
         </span>
         <button onClick={loadDevices} disabled={isLoading} className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors">
           <RefreshCw className={`w-4 h-4 text-gray-600 ${isLoading ? 'animate-spin' : ''}`} />
@@ -265,11 +341,9 @@ export default function Monitoring() {
                           <XCircle className={`w-3 h-3 ${isSelected ? 'text-red-200' : 'text-red-500'}`} />
                         )}
                       </div>
-                      {device.active_power != null && Number(device.active_power) !== 0 && (
-                        <div className={`text-xs ${isSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                          P: {(Number(device.active_power)).toFixed(1)} kW
-                        </div>
-                      )}
+                      <div className={`text-xs ${isSelected ? 'text-blue-100' : 'text-gray-500'}`}>
+                        {DEVICE_TYPES[device.device_type]?.name ?? device.device_type}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -302,29 +376,60 @@ export default function Monitoring() {
                     </span>
                   </div>
                 </div>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div className="p-3 bg-gray-50 rounded border border-gray-200">
                     <div className="text-xs text-gray-500 mb-1">有功功率</div>
-                    <div className="text-xl font-bold text-blue-600">{selectedDeviceInfo.active_power != null ? (Number(selectedDeviceInfo.active_power)).toFixed(1) : '-'} <span className="text-xs text-gray-400">kW</span></div>
+                    <div className="text-xl font-bold text-blue-600">{formatPowerKw(selectedDeviceInfo.active_power)} <span className="text-xs text-gray-400">kW</span></div>
                   </div>
                   <div className="p-3 bg-gray-50 rounded border border-gray-200">
                     <div className="text-xs text-gray-500 mb-1">无功功率</div>
-                    <div className="text-xl font-bold text-purple-600">{selectedDeviceInfo.reactive_power != null ? (Number(selectedDeviceInfo.reactive_power)).toFixed(1) : '-'} <span className="text-xs text-gray-400">kVar</span></div>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded border border-gray-200">
-                    <div className="text-xs text-gray-500 mb-1">电压</div>
-                    <div className="text-xl font-bold text-yellow-600">{selectedDeviceInfo.voltage != null ? (Number(selectedDeviceInfo.voltage)).toFixed(0) : '-'} <span className="text-xs text-gray-400">V</span></div>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded border border-gray-200">
-                    <div className="text-xs text-gray-500 mb-1">电流</div>
-                    <div className="text-xl font-bold text-green-600">{selectedDeviceInfo.current != null ? (Number(selectedDeviceInfo.current)).toFixed(1) : '-'} <span className="text-xs text-gray-400">A</span></div>
+                    <div className="text-xl font-bold text-purple-600">{formatPowerKw(selectedDeviceInfo.reactive_power)} <span className="text-xs text-gray-400">kVar</span></div>
                   </div>
                 </div>
+                {chartDataPoints.length > 0 && chartDataPoints[chartDataPoints.length - 1].data_json && (() => {
+                  const dj = chartDataPoints[chartDataPoints.length - 1].data_json!;
+                  const numKeys = Object.entries(dj).filter(([, v]) => typeof v === 'number') as [string, number][];
+                  if (numKeys.length === 0) return null;
+                  return (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="text-xs text-gray-500 mb-2">最新数据项</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {numKeys.slice(0, 8).map(([k, v]) => (
+                          <div key={k} className="p-2 bg-gray-50 rounded border border-gray-100">
+                            <div className="text-xs text-gray-500 truncate">{k}</div>
+                            <div className="text-sm font-medium text-gray-800">{(Number(v)).toFixed(3)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
               <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">功率趋势</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700">数据趋势</h3>
+                  <select
+                    value={selectedChartSeries}
+                    onChange={(e) => setSelectedChartSeries(e.target.value)}
+                    className="text-xs border border-gray-300 rounded px-2 py-1 bg-white text-gray-700"
+                  >
+                    {chartSeriesOptions.map((opt) => (
+                      <option key={opt.key} value={opt.key}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="h-64">
-                  <DataChart title="" data={chartData} unit="kW" color="#3b82f6" />
+                  <DataChart
+                    title=""
+                    data={chartDataPoints}
+                    seriesKey={selectedChartSeries}
+                    unit={selectedChartSeries.includes('q') || selectedChartSeries === 'reactive_power' ? 'kVar' : 'kW'}
+                    color="#3b82f6"
+                    enableDataZoom={true}
+                  />
+                  {simulationState === 'Paused' && (
+                    <p className="text-xs text-amber-600 mt-1">已暂停：可拖拽时间轴或鼠标滚轮缩放查看</p>
+                  )}
                 </div>
               </div>
             </div>

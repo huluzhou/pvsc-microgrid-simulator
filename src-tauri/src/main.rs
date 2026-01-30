@@ -119,6 +119,7 @@ fn main() {
             commands::simulation::get_simulation_status,
             commands::simulation::get_simulation_errors,
             commands::simulation::set_remote_control_enabled,
+            commands::simulation::set_device_remote_control_enabled,
             commands::simulation::update_device_properties_for_simulation,
             commands::simulation::set_device_mode,
             commands::simulation::get_device_data,

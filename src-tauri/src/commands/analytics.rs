@@ -48,8 +48,9 @@ pub async fn analyze_performance(
     let mut all_data = Vec::new();
     for device_id in &request.device_ids {
         let db = db.lock().unwrap();
-        let data = db.query_device_data(device_id, Some(request.start_time), Some(request.end_time))
+        let rows = db.query_device_data(device_id, Some(request.start_time), Some(request.end_time))
             .map_err(|e| format!("Failed to query device data: {}", e))?;
+        let data: Vec<(f64, Option<f64>, Option<f64>)> = rows.into_iter().map(|(t, a, r, _)| (t, a, r)).collect();
         all_data.push((device_id.clone(), data));
     }
     
@@ -79,8 +80,9 @@ pub async fn generate_report(
     let mut all_data = Vec::new();
     for device_id in &request.device_ids {
         let db = db.lock().unwrap();
-        let data = db.query_device_data(device_id, Some(request.start_time), Some(request.end_time))
+        let rows = db.query_device_data(device_id, Some(request.start_time), Some(request.end_time))
             .map_err(|e| format!("Failed to query device data: {}", e))?;
+        let data: Vec<(f64, Option<f64>, Option<f64>)> = rows.into_iter().map(|(t, a, r, _)| (t, a, r)).collect();
         all_data.push((device_id.clone(), data));
     }
     

@@ -1,23 +1,58 @@
 import ReactECharts from "echarts-for-react";
 
-interface DataPoint {
+export interface DataPointLegacy {
   timestamp: number;
   value: number;
 }
 
+export interface DataPointWithJson {
+  timestamp: number;
+  value?: number;
+  p_active?: number | null;
+  p_reactive?: number | null;
+  data_json?: Record<string, unknown> | null;
+}
+
+type DataPoint = DataPointLegacy | DataPointWithJson;
+
 interface DataChartProps {
   title: string;
   data: DataPoint[];
+  seriesKey?: string;
   unit?: string;
   color?: string;
+  /** 启用鼠标滚轮缩放与拖拽平移，便于精细查看 */
+  enableDataZoom?: boolean;
+}
+
+function getValueFromPoint(point: DataPoint, seriesKey: string): number | null {
+  if ("value" in point && seriesKey === "active_power" && point.value !== undefined) return point.value;
+  if ("p_active" in point && seriesKey === "active_power") return point.p_active ?? null;
+  if ("p_reactive" in point && seriesKey === "reactive_power") return point.p_reactive ?? null;
+  if ("data_json" in point && point.data_json && seriesKey in point.data_json) {
+    const v = point.data_json[seriesKey];
+    return typeof v === "number" ? v : null;
+  }
+  return null;
 }
 
 export default function DataChart({
   title,
   data,
+  seriesKey = "active_power",
   unit = "",
   color = "#3b82f6",
+  enableDataZoom = true,
 }: DataChartProps) {
+  const chartData = seriesKey
+    ? (data as DataPointWithJson[])
+        .map((point) => {
+          const v = getValueFromPoint(point, seriesKey);
+          return v !== null ? [point.timestamp * 1000, v] as [number, number] : null;
+        })
+        .filter((x): x is [number, number] => x !== null)
+    : (data as DataPointLegacy[]).map((point) => [point.timestamp * 1000, point.value]);
+
   const option = {
     title: {
       text: title,
@@ -37,9 +72,15 @@ export default function DataChart({
     grid: {
       left: "3%",
       right: "4%",
-      bottom: "3%",
+      bottom: enableDataZoom ? "15%" : "3%",
       containLabel: true,
     },
+    ...(enableDataZoom && {
+      dataZoom: [
+        { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
+        { type: "slider", xAxisIndex: 0, start: 0, end: 100, bottom: "2%", height: 20 },
+      ],
+    }),
     xAxis: {
       type: "time",
       boundaryGap: false,
@@ -61,15 +102,18 @@ export default function DataChart({
       },
       axisLabel: {
         color: "#999",
-        formatter: `{value} ${unit}`,
+        formatter: (value: unknown) => {
+          const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
+          return `${Number(n).toFixed(1)} ${unit}`;
+        },
       },
     },
     series: [
       {
-        name: title,
+        name: title || seriesKey,
         type: "line",
         smooth: true,
-        data: data.map((point) => [point.timestamp * 1000, point.value]),
+        data: chartData,
         lineStyle: {
           color: color,
         },

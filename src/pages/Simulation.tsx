@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { useDeviceControlStore } from '../stores/deviceControl';
 import { Play, Pause, Square, RefreshCw, Settings, Radio, Clock, Activity, Zap, AlertTriangle, ChevronDown, ChevronRight, Info, AlertCircle } from 'lucide-react';
 
 interface SimulationStatus {
@@ -81,10 +82,31 @@ export default function Simulation() {
     };
   }, [loadStatus]);
 
+  const { deviceConfigs } = useDeviceControlStore();
+
   const handleStart = async () => {
     setIsLoading(true);
     try {
+      // 先启动仿真（设置拓扑并启动 Python），再同步手动设定，这样 Python 已有拓扑后再应用功率
       await invoke('start_simulation', { config: { calculation_interval_ms: config.calculationInterval, remote_control_enabled: config.remoteControlEnabled } });
+      // 启动后将设备控制中的手动设定同步到仿真，确保负载/储能等功率在下一拍计算生效
+      for (const [deviceId, cfg] of Object.entries(deviceConfigs)) {
+        if (cfg?.dataSourceType === 'manual' && cfg.manualSetpoint) {
+          try {
+            await invoke('set_device_mode', { deviceId: deviceId, mode: 'manual' });
+            await invoke('update_device_properties_for_simulation', {
+              deviceId: deviceId,
+              properties: {
+                rated_power: cfg.manualSetpoint.activePower,
+                p_kw: cfg.manualSetpoint.activePower,
+                q_kvar: cfg.manualSetpoint.reactivePower ?? 0,
+              },
+            });
+          } catch (e) {
+            console.warn('同步设备手动设定失败:', deviceId, e);
+          }
+        }
+      }
       await loadStatus();
     } catch (err) {
       alert('启动失败：' + err);
@@ -254,8 +276,8 @@ export default function Simulation() {
                   <div className="flex items-center gap-2">
                     <Radio className="w-4 h-4 text-blue-500" />
                     <div>
-                      <div className="text-xs font-medium text-gray-700">允许远程控制</div>
-                      <div className="text-xs text-gray-500">事件驱动：指令到达即写入仿真，下一拍生效，避免轮询导致初值不符</div>
+                      <div className="text-xs font-medium text-gray-700">允许远程控制（全局总闸）</div>
+                      <div className="text-xs text-gray-500">关则全部设备不接受远程控制；开时各设备是否允许在 Modbus 页按设备设置</div>
                     </div>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">

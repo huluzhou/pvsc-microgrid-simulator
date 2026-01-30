@@ -112,11 +112,24 @@ pub async fn set_remote_control_enabled(
 }
 
 #[tauri::command]
+pub async fn set_device_remote_control_enabled(
+    device_id: String,
+    enabled: bool,
+    engine: State<'_, Arc<SimulationEngine>>,
+) -> Result<(), String> {
+    engine.set_device_remote_control_enabled(device_id, enabled).await;
+    Ok(())
+}
+
+/// 推送到计算内核前经 Modbus 指令过滤：可根据设备寄存器映射校验/合并；当前为透传。
+#[tauri::command]
 pub async fn update_device_properties_for_simulation(
     device_id: String,
     properties: serde_json::Value,
     engine: State<'_, Arc<SimulationEngine>>,
+    modbus_service: State<'_, crate::services::modbus::ModbusService>,
 ) -> Result<(), String> {
+    let _mapping = modbus_service.get_device_mapping(&device_id);
     engine
         .update_device_properties_for_simulation(device_id, properties)
         .await

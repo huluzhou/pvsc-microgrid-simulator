@@ -62,13 +62,14 @@ impl Database {
         Ok(())
     }
 
+    /// 单行结果：timestamp, p_active, p_reactive, data_json
     pub fn query_device_data(
         &self,
         device_id: &str,
         start_time: Option<f64>,
         end_time: Option<f64>,
-    ) -> SqlResult<Vec<(f64, Option<f64>, Option<f64>)>> {
-        let mut query = "SELECT timestamp, p_active, p_reactive FROM device_data WHERE device_id = ?1".to_string();
+    ) -> SqlResult<Vec<(f64, Option<f64>, Option<f64>, Option<String>)>> {
+        let mut query = "SELECT timestamp, p_active, p_reactive, data_json FROM device_data WHERE device_id = ?1".to_string();
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(device_id)];
 
         if let Some(start) = start_time {
@@ -90,6 +91,7 @@ impl Database {
                     row.get(0)?,
                     row.get(1)?,
                     row.get(2)?,
+                    row.get(3)?,
                 ))
             },
         )?;
@@ -99,5 +101,27 @@ impl Database {
             results.push(row?);
         }
         Ok(results)
+    }
+
+    /// 返回该设备最新一行（含 data_json），用于状态展示，避免全表扫描
+    pub fn query_device_data_latest(
+        &self,
+        device_id: &str,
+    ) -> SqlResult<Option<(f64, Option<f64>, Option<f64>, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT timestamp, p_active, p_reactive, data_json FROM device_data WHERE device_id = ?1 ORDER BY timestamp DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query(rusqlite::params![device_id])?;
+        if let Some(row) = rows.next()? {
+            let r = (
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+            );
+            Ok(Some(r))
+        } else {
+            Ok(None)
+        }
     }
 }

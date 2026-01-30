@@ -9,6 +9,7 @@ import { DeviceType, DEVICE_TYPES } from '../constants/deviceTypes';
 interface DeviceModbusConfig {
   deviceId: string;
   enabled: boolean;
+  remoteControlAllowed?: boolean;
   ipAddress: string;
   port: number;
   slaveId: number;
@@ -107,6 +108,7 @@ export default function Modbus() {
         defaultConfigs[device.id] = {
           deviceId: device.id,
           enabled: false,
+          remoteControlAllowed: true,
           ipAddress: '127.0.0.1',
           port: 5020 + index,
           slaveId: index + 1,
@@ -129,6 +131,7 @@ export default function Modbus() {
           defaultConfigs[device.id] = {
             deviceId: device.id,
             enabled: false,
+            remoteControlAllowed: true,
             ipAddress: '127.0.0.1',
             port: 5020 + index,
             slaveId: index + 1,
@@ -297,12 +300,32 @@ export default function Modbus() {
                     </div>
                   </div>
                 </div>
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">远程控制</h3>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedConfig.remoteControlAllowed !== false}
+                      onChange={async (e) => {
+                        const checked = e.target.checked;
+                        updateConfig(selectedDevice!, { remoteControlAllowed: checked });
+                        try {
+                          await invoke('set_device_remote_control_enabled', { deviceId: selectedDevice!, enabled: checked });
+                        } catch (err) {
+                          console.error('设置设备远程控制失败:', err);
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600"
+                    />
+                    <span className="text-sm text-gray-700">允许该设备远程控制（Modbus 写入生效）</span>
+                  </label>
+                </div>
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <h3 className="text-sm font-semibold text-blue-700 mb-2 flex items-center gap-2"><Info className="w-4 h-4" />使用说明</h3>
                   <div className="text-xs text-blue-600 space-y-1">
                     <p>• 每个设备独立运行一个Modbus TCP服务器</p>
                     <p>• 外部系统可通过写入功率寄存器控制设备</p>
-                    <p>• 启用"允许远程控制"后，Modbus指令将生效</p>
+                    <p>• 上方可针对单个设备开关“允许远程控制”；仿真页为全局总开关</p>
                   </div>
                 </div>
               </div>

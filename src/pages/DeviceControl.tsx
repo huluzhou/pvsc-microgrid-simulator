@@ -69,8 +69,24 @@ export default function DeviceControl() {
     setConfigMode(null);
   }, []);
 
-  const handleSaveManual = useCallback((setpoint: ManualSetpoint) => {
-    if (selectedDevice) { setManualSetpoint(selectedDevice.id, setpoint); handleCloseConfig(); }
+  const handleSaveManual = useCallback(async (setpoint: ManualSetpoint) => {
+    if (!selectedDevice) return;
+    setManualSetpoint(selectedDevice.id, setpoint);
+    try {
+      await invoke('set_device_mode', { deviceId: selectedDevice.id, mode: 'manual' });
+      await invoke('update_device_properties_for_simulation', {
+        deviceId: selectedDevice.id,
+        properties: {
+          rated_power: setpoint.activePower,
+          p_kw: setpoint.activePower,
+          q_kvar: setpoint.reactivePower ?? 0,
+        },
+      });
+    } catch (e) {
+      console.error('同步手动设定到仿真失败:', e);
+      alert('保存成功，但同步到仿真失败: ' + e);
+    }
+    handleCloseConfig();
   }, [selectedDevice, setManualSetpoint, handleCloseConfig]);
 
   const handleSaveRandom = useCallback((config: any) => {

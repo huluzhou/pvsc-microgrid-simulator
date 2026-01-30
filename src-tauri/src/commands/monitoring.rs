@@ -5,8 +5,10 @@ use crate::services::database::Database;
 use crate::services::simulation_engine::SimulationEngine;
 use crate::domain::metadata::DeviceMetadataStore;
 use crate::domain::simulation::SimulationState;
+use crate::domain::topology::DeviceType;
 use crate::commands::topology::device_type_to_string;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeviceDataPoint {
@@ -28,10 +30,6 @@ pub struct DeviceStatus {
     pub current_p_active: Option<f64>,
     #[serde(rename = "reactive_power")]
     pub current_p_reactive: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub voltage: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub current: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -72,10 +70,46 @@ pub async fn query_device_data(
     start_time: Option<f64>,
     end_time: Option<f64>,
     db: State<'_, Arc<StdMutex<Database>>>,
-    ) -> Result<Vec<(f64, Option<f64>, Option<f64>)>, String> {
+) -> Result<Vec<DeviceDataPoint>, String> {
     let db = db.lock().unwrap();
-    db.query_device_data(&device_id, start_time, end_time)
-        .map_err(|e| format!("Failed to query device data: {}", e))
+    let rows = db.query_device_data(&device_id, start_time, end_time)
+        .map_err(|e| format!("Failed to query device data: {}", e))?;
+    let points: Vec<DeviceDataPoint> = rows
+        .into_iter()
+        .map(|(ts, p_a, p_r, json_str)| {
+            let data_json = json_str
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok());
+            DeviceDataPoint {
+                device_id: device_id.clone(),
+                timestamp: ts,
+                p_active: p_a,
+                p_reactive: p_r,
+                data_json,
+            }
+        })
+        .collect();
+    Ok(points)
+}
+
+/// 从拓扑构建电表 -> 连接设备 id（电表仅一条连接）
+fn build_meter_connections(
+    topology: &crate::domain::topology::Topology,
+) -> HashMap<String, String> {
+    let mut meter_connections: HashMap<String, String> = HashMap::new();
+    for conn in topology.connections.values() {
+        let from_id = &conn.from_device_id;
+        let to_id = &conn.to_device_id;
+        let from_is_meter = topology.devices.get(from_id).map(|d| d.device_type == DeviceType::Meter).unwrap_or(false);
+        let to_is_meter = topology.devices.get(to_id).map(|d| d.device_type == DeviceType::Meter).unwrap_or(false);
+        if from_is_meter {
+            meter_connections.insert(from_id.clone(), to_id.clone());
+        }
+        if to_is_meter {
+            meter_connections.insert(to_id.clone(), from_id.clone());
+        }
+    }
+    meter_connections
 }
 
 #[tauri::command]
@@ -88,29 +122,48 @@ pub async fn get_all_devices_status(
         let metadata_store = metadata_store.lock().unwrap();
         metadata_store.get_all_devices()
     };
-    
+
+    let topology = {
+        let metadata_store = metadata_store.lock().unwrap();
+        metadata_store.get_topology()
+    };
+    let meter_connections = topology.as_ref().map(build_meter_connections).unwrap_or_default();
+
     let sim_status = engine.get_status().await;
     let device_active = engine.get_device_active_status().await;
     let is_online_from_engine = |device_id: &str| -> bool {
         matches!(sim_status.state, SimulationState::Running)
             && device_active.get(device_id).copied().unwrap_or(false)
     };
-    
+
     let mut statuses = Vec::new();
     for device in devices {
-        let recent_data = {
-            let db = db.lock().unwrap();
-            db.query_device_data(&device.id, None, None)
-                .ok()
-                .and_then(|data| data.last().cloned())
-        };
-        
-        let (p_active, p_reactive, last_update) = if let Some((t, p_a, p_r)) = recent_data {
-            (p_a, p_r, Some(t))
+        let (p_active, p_reactive, last_update) = if device.device_type == DeviceType::Meter {
+            if let Some(target_id) = meter_connections.get(&device.id) {
+                let recent = {
+                    let db = db.lock().unwrap();
+                    db.query_device_data_latest(target_id).ok().flatten()
+                };
+                if let Some((t, p_a, p_r, _)) = recent {
+                    (p_a, p_r, Some(t))
+                } else {
+                    (None, None, None)
+                }
+            } else {
+                (None, None, None)
+            }
         } else {
-            (None, None, None)
+            let recent = {
+                let db = db.lock().unwrap();
+                db.query_device_data_latest(&device.id).ok().flatten()
+            };
+            if let Some((t, p_a, p_r, _)) = recent {
+                (p_a, p_r, Some(t))
+            } else {
+                (None, None, None)
+            }
         };
-        
+
         statuses.push(DeviceStatus {
             device_id: device.id.clone(),
             name: device.name.clone(),
@@ -119,11 +172,9 @@ pub async fn get_all_devices_status(
             last_update,
             current_p_active: p_active,
             current_p_reactive: p_reactive,
-            voltage: None,
-            current: None,
         });
     }
-    
+
     Ok(statuses)
 }
 
@@ -134,23 +185,45 @@ pub async fn get_device_status(
     db: State<'_, Arc<StdMutex<Database>>>,
     engine: State<'_, Arc<SimulationEngine>>,
 ) -> Result<DeviceStatus, String> {
-    let (name, device_type_str) = {
+    let (name, device_type_str, device_type) = {
         let store = metadata_store.lock().unwrap();
         let device = store.get_device(&device_id)
             .ok_or_else(|| format!("Device {} not found", device_id))?;
-        (device.name.clone(), device_type_to_string(&device.device_type))
+        (device.name.clone(), device_type_to_string(&device.device_type), device.device_type.clone())
     };
-    let recent_data = {
-        let db = db.lock().unwrap();
-        db.query_device_data(&device_id, None, None)
-            .ok()
-            .and_then(|data| data.last().cloned())
-    };
-    let (p_active, p_reactive, last_update) = if let Some((t, p_a, p_r)) = recent_data {
-        (p_a, p_r, Some(t))
+
+    let (p_active, p_reactive, last_update) = if device_type == DeviceType::Meter {
+        let topology = {
+            let store = metadata_store.lock().unwrap();
+            store.get_topology()
+        };
+        let target_id = topology.as_ref()
+            .and_then(|t| build_meter_connections(t).get(&device_id).cloned());
+        if let Some(tid) = target_id {
+            let recent = {
+                let db = db.lock().unwrap();
+                db.query_device_data_latest(&tid).ok().flatten()
+            };
+            if let Some((t, p_a, p_r, _)) = recent {
+                (p_a, p_r, Some(t))
+            } else {
+                (None, None, None)
+            }
+        } else {
+            (None, None, None)
+        }
     } else {
-        (None, None, None)
+        let recent = {
+            let db = db.lock().unwrap();
+            db.query_device_data_latest(&device_id).ok().flatten()
+        };
+        if let Some((t, p_a, p_r, _)) = recent {
+            (p_a, p_r, Some(t))
+        } else {
+            (None, None, None)
+        }
     };
+
     let sim_status = engine.get_status().await;
     let device_active = engine.get_device_active_status().await;
     let is_online = matches!(sim_status.state, SimulationState::Running)
@@ -163,7 +236,5 @@ pub async fn get_device_status(
         last_update,
         current_p_active: p_active,
         current_p_reactive: p_reactive,
-        voltage: None,
-        current: None,
     })
 }
