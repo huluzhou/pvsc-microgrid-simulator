@@ -1,3 +1,4 @@
+import { useRef, useCallback } from "react";
 import ReactECharts from "echarts-for-react";
 
 export interface DataPointLegacy {
@@ -23,6 +24,8 @@ interface DataChartProps {
   color?: string;
   /** 启用鼠标滚轮缩放与拖拽平移，便于精细查看 */
   enableDataZoom?: boolean;
+  /** 缩放/拖拽后可见时间范围变化时回调 (startSec, endSec)，用于按可见范围重新请求数据 */
+  onVisibleRangeChange?: (startSec: number, endSec: number) => void;
 }
 
 function getValueFromPoint(point: DataPoint, seriesKey: string): number | null {
@@ -36,6 +39,8 @@ function getValueFromPoint(point: DataPoint, seriesKey: string): number | null {
   return null;
 }
 
+const DEBOUNCE_MS = 300;
+
 export default function DataChart({
   title,
   data,
@@ -43,7 +48,55 @@ export default function DataChart({
   unit = "",
   color = "#3b82f6",
   enableDataZoom = true,
+  onVisibleRangeChange,
 }: DataChartProps) {
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chartRef = useRef<ReactECharts | null>(null);
+
+  const handleDataZoom = useCallback(
+    (params?: { batch?: Array<{ startValue?: number; endValue?: number; start?: number; end?: number }> }) => {
+      if (!onVisibleRangeChange) return;
+      const clear = () => {
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
+      };
+      clear();
+      debounceRef.current = setTimeout(() => {
+        debounceRef.current = null;
+        const ref = chartRef.current;
+        if (!ref) return;
+        try {
+          const instance = ref.getEchartsInstance();
+          const batch = params?.batch?.[0];
+          let loSec: number;
+          let hiSec: number;
+          if (
+            batch != null &&
+            typeof batch.startValue === "number" &&
+            typeof batch.endValue === "number"
+          ) {
+            loSec = batch.startValue / 1000;
+            hiSec = batch.endValue / 1000;
+          } else {
+            const opt = instance.getOption();
+            const xAxis = Array.isArray(opt.xAxis) ? opt.xAxis[0] : opt.xAxis;
+            const min = (xAxis as { min?: number })?.min;
+            const max = (xAxis as { max?: number })?.max;
+            if (typeof min !== "number" || typeof max !== "number") return;
+            loSec = min / 1000;
+            hiSec = max / 1000;
+          }
+          if (hiSec > loSec) onVisibleRangeChange(loSec, hiSec);
+        } catch {
+          // ignore
+        }
+      }, DEBOUNCE_MS);
+    },
+    [onVisibleRangeChange]
+  );
+
   const chartData = seriesKey
     ? (data as DataPointWithJson[])
         .map((point) => {
@@ -144,9 +197,11 @@ export default function DataChart({
   return (
     <div className="w-full h-full">
       <ReactECharts
+        ref={(r) => { chartRef.current = r; }}
         option={option}
         style={{ height: "100%", width: "100%" }}
         opts={{ renderer: "svg" }}
+        onEvents={onVisibleRangeChange ? { datazoom: handleDataZoom } : undefined}
       />
     </div>
   );

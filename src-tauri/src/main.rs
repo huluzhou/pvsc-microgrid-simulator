@@ -124,6 +124,7 @@ fn main() {
             commands::simulation::set_device_mode,
             commands::simulation::get_device_data,
             commands::monitoring::record_device_data,
+            commands::monitoring::get_latest_simulation_start_time,
             commands::monitoring::query_device_data,
             commands::monitoring::get_all_devices_status,
             commands::monitoring::get_device_status,

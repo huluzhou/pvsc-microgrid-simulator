@@ -65,14 +65,23 @@ pub async fn record_device_data(
 }
 
 #[tauri::command]
+pub async fn get_latest_simulation_start_time(
+    db: State<'_, Arc<StdMutex<Database>>>,
+) -> Result<Option<f64>, String> {
+    let db = db.lock().unwrap();
+    db.get_latest_simulation_start().map_err(|e| format!("Failed to get latest simulation start: {}", e))
+}
+
+#[tauri::command]
 pub async fn query_device_data(
     device_id: String,
     start_time: Option<f64>,
     end_time: Option<f64>,
+    max_points: Option<usize>,
     db: State<'_, Arc<StdMutex<Database>>>,
 ) -> Result<Vec<DeviceDataPoint>, String> {
     let db = db.lock().unwrap();
-    let rows = db.query_device_data(&device_id, start_time, end_time)
+    let rows = db.query_device_data(&device_id, start_time, end_time, max_points)
         .map_err(|e| format!("Failed to query device data: {}", e))?;
     let points: Vec<DeviceDataPoint> = rows
         .into_iter()
@@ -138,7 +147,9 @@ pub async fn get_all_devices_status(
 
     let mut statuses = Vec::new();
     for device in devices {
-        let (p_active, p_reactive, last_update) = if device.device_type == DeviceType::Meter {
+        let (p_active, p_reactive, last_update) = if let Some((t, p_a, p_r)) = engine.get_last_device_power(&device.id) {
+            (p_a, p_r, Some(t))
+        } else if device.device_type == DeviceType::Meter {
             if let Some(target_id) = meter_connections.get(&device.id) {
                 let recent = {
                     let db = db.lock().unwrap();
@@ -192,7 +203,9 @@ pub async fn get_device_status(
         (device.name.clone(), device_type_to_string(&device.device_type), device.device_type.clone())
     };
 
-    let (p_active, p_reactive, last_update) = if device_type == DeviceType::Meter {
+    let (p_active, p_reactive, last_update) = if let Some((t, p_a, p_r)) = engine.get_last_device_power(&device_id) {
+        (p_a, p_r, Some(t))
+    } else if device_type == DeviceType::Meter {
         let topology = {
             let store = metadata_store.lock().unwrap();
             store.get_topology()

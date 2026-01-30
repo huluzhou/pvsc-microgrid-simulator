@@ -101,27 +101,14 @@ export default function Monitoring() {
   const [selectedChartSeries, setSelectedChartSeries] = useState<string>('active_power');
   const [chartSeriesOptions, setChartSeriesOptions] = useState<Array<{ key: string; label: string }>>([{ key: 'active_power', label: '有功功率 (kW)' }]);
   const [isLoading, setIsLoading] = useState(false);
-  const [simulationStartTime, setSimulationStartTime] = useState<number | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [simulationState, setSimulationState] = useState<'Stopped' | 'Running' | 'Paused'>('Stopped');
 
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
     try {
       const statuses = await invoke<DeviceStatus[]>('get_all_devices_status');
-      const next = Array.isArray(statuses) ? statuses : [];
-      setDevices((prev) => {
-        if (prev.length === 0) return next;
-        const prevById = new Map(prev.map((d) => [d.device_id, d]));
-        return next.map((d) => {
-          const p = prevById.get(d.device_id);
-          const hasNew = d.active_power != null || d.reactive_power != null;
-          const hadRecent = p && (p.last_update ?? 0) > (Date.now() / 1000 - 5);
-          if (!hasNew && hadRecent && (p?.active_power != null || p?.reactive_power != null)) {
-            return { ...d, active_power: p!.active_power, reactive_power: p!.reactive_power, last_update: p!.last_update };
-          }
-          return d;
-        });
-      });
+      setDevices(Array.isArray(statuses) ? statuses : []);
     } catch (error) {
       console.error('Failed to load devices:', error);
       setDevices([]);
@@ -130,15 +117,17 @@ export default function Monitoring() {
     }
   }, []);
 
-  const loadDeviceData = useCallback(async (deviceId: string, startTime?: number | null) => {
-    const start = startTime ?? Date.now() / 1000 - 3600;
+  const loadDeviceData = useCallback(async (deviceId: string) => {
     try {
+      const chartStart = await invoke<number | null>('get_latest_simulation_start_time');
+      const start = chartStart ?? Date.now() / 1000 - 3600;
       const data = await invoke<DeviceDataPoint[]>(
         'query_device_data',
         {
           deviceId: deviceId,
           startTime: start,
           endTime: Date.now() / 1000,
+          maxPoints: 2000,
         }
       );
       const points: DeviceDataPoint[] = (data || []).map((p) => ({
@@ -179,12 +168,9 @@ export default function Monitoring() {
 
   const refreshSimulationStatus = useCallback(async () => {
     try {
-      const status = await invoke<{ state: string; start_time: number | null }>('get_simulation_status');
+      const status = await invoke<{ state: string }>('get_simulation_status');
       setSimulationState((status?.state as 'Stopped' | 'Running' | 'Paused') ?? 'Stopped');
-      if (status?.start_time != null) setSimulationStartTime(status.start_time);
-      else setSimulationStartTime(null);
     } catch {
-      setSimulationStartTime(null);
       setSimulationState('Stopped');
     }
   }, []);
@@ -216,6 +202,11 @@ export default function Monitoring() {
   }, [devices]);
 
   useEffect(() => {
+    const t = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
     refreshSimulationStatus();
     const statusInterval = setInterval(refreshSimulationStatus, 2000);
     return () => clearInterval(statusInterval);
@@ -233,15 +224,22 @@ export default function Monitoring() {
             : device
         )
       );
-      if (selectedDevice === device_id) {
-        const ts = data.timestamp || Date.now() / 1000;
-        const point: DeviceDataPoint = { device_id, timestamp: ts, p_active: data.active_power ?? null, p_reactive: data.reactive_power ?? null, data_json: null };
-        setChartDataPoints((prev) => {
-          const next = [...prev, point];
-          const maxPoints = 7200;
-          return next.length <= maxPoints ? next : next.slice(-maxPoints);
-        });
-      }
+      // 趋势图：仅对当前选中设备从仿真引擎追加新点，避免周期性全量查询
+      if (device_id !== selectedDevice || !data) return;
+      const ts = typeof data.timestamp === 'number' ? data.timestamp : Date.now() / 1000;
+      const newPoint: DeviceDataPoint = {
+        device_id,
+        timestamp: ts,
+        p_active: data.active_power != null ? Number(data.active_power) : null,
+        p_reactive: data.reactive_power != null ? Number(data.reactive_power) : null,
+        data_json: null, // 事件未携带详细 data_json，仅用于有功/无功曲线
+      };
+      setChartDataPoints((prev) => {
+        const lastTs = prev.length > 0 ? prev[prev.length - 1].timestamp : -Infinity;
+        if (ts < lastTs) return prev;
+        const next = ts === lastTs ? [...prev.slice(0, -1), newPoint] : [...prev, newPoint];
+        return next.length > 3000 ? next.slice(-3000) : next;
+      });
     });
     return () => {
       clearInterval(interval);
@@ -250,8 +248,8 @@ export default function Monitoring() {
   }, [loadDevices, selectedDevice]);
 
   useEffect(() => {
-    if (selectedDevice) loadDeviceData(selectedDevice, simulationStartTime);
-  }, [selectedDevice, simulationStartTime, loadDeviceData]);
+    if (selectedDevice) loadDeviceData(selectedDevice);
+  }, [selectedDevice, loadDeviceData]);
 
   const selectedDeviceInfo = devices.find((d) => d.device_id === selectedDevice);
 
@@ -307,7 +305,7 @@ export default function Monitoring() {
               <Clock className="w-3 h-3" />
               <span className="text-xs">更新时间</span>
             </div>
-            <div className="text-sm font-bold text-gray-800">{new Date().toLocaleTimeString()}</div>
+            <div className="text-sm font-bold text-gray-800">{new Date(currentTime).toLocaleTimeString('zh-CN', { hour12: false })}</div>
           </div>
         </div>
       </div>

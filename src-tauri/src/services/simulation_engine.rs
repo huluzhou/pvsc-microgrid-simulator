@@ -24,6 +24,8 @@ pub struct SimulationEngine {
     device_remote_control_allowed: Arc<tokio::sync::Mutex<HashMap<String, bool>>>,
     /// 设备在本轮仿真中的实时在线状态：仅当仿真 Running 且该设备在本轮内成功收到过数据时为 true；停止/暂停后全部视为离线
     device_active_status: Arc<tokio::sync::Mutex<HashMap<String, bool>>>,
+    /// 当前功率单一数据源：device_id -> (timestamp, p_active_kw, p_reactive_kvar)，与 device-data-update 同源，供轮询使用
+    last_device_power: Arc<StdMutex<HashMap<String, (f64, Option<f64>, Option<f64>)>>>,
 }
 
 impl SimulationEngine {
@@ -37,6 +39,7 @@ impl SimulationEngine {
             remote_control_enabled: Arc::new(AtomicBool::new(true)),
             device_remote_control_allowed: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             device_active_status: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            last_device_power: Arc::new(StdMutex::new(HashMap::new())),
         }
     }
 
@@ -101,8 +104,9 @@ impl SimulationEngine {
         // 将拓扑数据转换为标准格式并传递给Python内核
         let topology_data = self.convert_topology_to_standard_format(&topology.unwrap()).await?;
         
-        // 新一轮仿真开始，清空设备在线状态，等首拍成功后再标记为在线
+        // 新一轮仿真开始，清空设备在线状态与功率缓存，等首拍成功后再标记为在线
         self.device_active_status.lock().await.clear();
+        self.last_device_power.lock().unwrap().clear();
         
         let mut bridge = self.python_bridge.lock().await;
         
@@ -125,7 +129,11 @@ impl SimulationEngine {
         // 启动仿真
         let mut status = self.status.lock().await;
         status.start();
+        let start_ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64();
         drop(status);
+        if let Ok(db) = self.database.lock() {
+            let _ = db.set_latest_simulation_start(start_ts);
+        }
         
         let start_params = serde_json::json!({
             "calculation_interval_ms": calculation_interval_ms
@@ -217,6 +225,7 @@ impl SimulationEngine {
         let topology = self.topology.clone();
         let database = self.database.clone();
         let device_active_status = self.device_active_status.clone();
+        let last_device_power = self.last_device_power.clone();
         
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(calculation_interval_ms));
@@ -365,8 +374,8 @@ impl SimulationEngine {
                                     .unwrap()
                                     .as_secs_f64();
                                 
-                                // 处理并存储计算结果（传入完整拓扑以便电表落库与连接解析）
-                                Self::process_calculation_results_inline(&app, devices, t, &database, timestamp);
+                                // 处理并存储计算结果（传入完整拓扑以便电表落库与连接解析；同时更新功率缓存供轮询使用）
+                                Self::process_calculation_results_inline(&app, devices, t, &database, &last_device_power, timestamp);
                                 // 本拍成功获取到数据，标记拓扑内设备在本轮仿真中为在线
                                 let mut active = device_active_status.lock().await;
                                 for id in t.devices.keys() {
@@ -431,6 +440,7 @@ impl SimulationEngine {
         results: &serde_json::Value,
         topology: &Topology,
         database: &Arc<StdMutex<Database>>,
+        last_device_power: &Arc<StdMutex<HashMap<String, (f64, Option<f64>, Option<f64>)>>>,
         timestamp: f64,
     ) {
         let devices = &topology.devices;
@@ -537,6 +547,12 @@ impl SimulationEngine {
                                     "timestamp": timestamp
                                 }
                             }));
+                            if let Ok(mut cache) = last_device_power.lock() {
+                                cache.insert(device_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    cache.insert(meter_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                }
+                            }
                             break;
                         }
                     }
@@ -593,6 +609,12 @@ impl SimulationEngine {
                                     "timestamp": timestamp
                                 }
                             }));
+                            if let Ok(mut cache) = last_device_power.lock() {
+                                cache.insert(device_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    cache.insert(meter_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                }
+                            }
                             break;
                         }
                     }
@@ -649,6 +671,12 @@ impl SimulationEngine {
                                     "timestamp": timestamp
                                 }
                             }));
+                            if let Ok(mut cache) = last_device_power.lock() {
+                                cache.insert(device_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    cache.insert(meter_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                }
+                            }
                             break;
                         }
                     }
@@ -737,8 +765,9 @@ impl SimulationEngine {
         let mut status = self.status.lock().await;
         status.stop();
         drop(status);
-        // 仿真已停止，设备数据通道关闭，全部视为离线
+        // 仿真已停止，设备数据通道关闭，全部视为离线；清空功率缓存
         self.device_active_status.lock().await.clear();
+        self.last_device_power.lock().unwrap().clear();
         
         // 通过 Python 桥接停止仿真
         let mut bridge = self.python_bridge.lock().await;
@@ -786,6 +815,12 @@ impl SimulationEngine {
     /// 返回当前仿真中“本轮内成功收到过数据”的设备 ID 集合，用于与引擎状态一起决定 is_online
     pub async fn get_device_active_status(&self) -> HashMap<String, bool> {
         self.device_active_status.lock().await.clone()
+    }
+
+    /// 当前功率单一数据源：返回设备最新 (timestamp, p_active_kw, p_reactive_kvar)，与 device-data-update 同源
+    pub fn get_last_device_power(&self, device_id: &str) -> Option<(f64, Option<f64>, Option<f64>)> {
+        let m = self.last_device_power.lock().unwrap();
+        m.get(device_id).copied()
     }
 
     pub async fn set_device_mode(&self, device_id: String, mode: String) -> Result<(), String> {
