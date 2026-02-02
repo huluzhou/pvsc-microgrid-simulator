@@ -68,6 +68,8 @@ impl SimulationStatus {
                 .unwrap()
                 .as_secs(),
         );
+        self.elapsed_time = 0;
+        self.calculation_count = 0;
     }
 
     pub fn stop(&mut self) {

@@ -580,16 +580,16 @@ class SimulationEngine:
         Rust端会主动调用 perform_calculation 来触发计算
         这样可以避免时序问题，确保Rust端获取的是最新计算结果
         """
+        # 每次 start 调用都重置计数与暂停状态，支持「暂停后再点启动」从 0 重新计时
+        self.calculation_count = 0
+        self.is_paused = False
         if self.is_running:
             return
-        
         if not self.topology_data:
             raise ValueError("请先设置拓扑数据")
         
         self.is_running = True
-        self.is_paused = False
         self.calculation_interval_ms = calculation_interval_ms
-        self.calculation_count = 0
         self.calculation_errors = []
         
         # 不再启动独立的计算线程，由Rust端控制计算节奏

@@ -228,9 +228,6 @@ export default function Monitoring() {
       );
       // 趋势图：仅对当前选中设备从仿真引擎追加新点，避免周期性全量查询
       if (device_id !== selectedDevice || !data) return;
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/b8e265ce-e1a5-4ce6-9816-ec26ce5c4c56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Monitoring.tsx:260',message:'device-data-update for selected device',data:{deviceId:device_id,timestamp:data.timestamp},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ZOOM'})}).catch(()=>{});
-      // #endregion
       const ts = typeof data.timestamp === 'number' ? data.timestamp : Date.now() / 1000;
       const newPoint: DeviceDataPoint = {
         device_id,
@@ -243,7 +240,6 @@ export default function Monitoring() {
         const lastTs = prev.length > 0 ? prev[prev.length - 1].timestamp : -Infinity;
         if (ts < lastTs) return prev;
         const next = ts === lastTs ? [...prev.slice(0, -1), newPoint] : [...prev, newPoint];
-        // #region agent log
         fetch('http://127.0.0.1:7244/ingest/b8e265ce-e1a5-4ce6-9816-ec26ce5c4c56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Monitoring.tsx:274',message:'setChartDataPoints from event',data:{prevLength:prev.length,nextLength:next.length,wasReplaced:ts===lastTs},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ZOOM'})}).catch(()=>{});
         // #endregion
         return next.length > 3000 ? next.slice(-3000) : next;
