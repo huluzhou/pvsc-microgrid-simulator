@@ -120,13 +120,14 @@ export default function Monitoring() {
   const loadDeviceData = useCallback(async (deviceId: string) => {
     try {
       const chartStart = await invoke<number | null>('get_latest_simulation_start_time');
-      const start = chartStart ?? Date.now() / 1000 - 3600;
+      const now = Date.now() / 1000;
+      const start = chartStart ?? (now - 3600);
       const data = await invoke<DeviceDataPoint[]>(
         'query_device_data',
         {
           deviceId: deviceId,
           startTime: start,
-          endTime: Date.now() / 1000,
+          endTime: now,
           maxPoints: 2000,
         }
       );
@@ -162,6 +163,7 @@ export default function Monitoring() {
         setChartSeriesOptions([{ key: 'active_power', label: '有功功率 (kW)' }, { key: 'reactive_power', label: '无功功率 (kVar)' }]);
       }
     } catch (_error) {
+      console.error('[loadDeviceData] Error:', _error);
       setChartDataPoints([]);
     }
   }, [selectedChartSeries]);
@@ -226,6 +228,9 @@ export default function Monitoring() {
       );
       // 趋势图：仅对当前选中设备从仿真引擎追加新点，避免周期性全量查询
       if (device_id !== selectedDevice || !data) return;
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/b8e265ce-e1a5-4ce6-9816-ec26ce5c4c56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Monitoring.tsx:260',message:'device-data-update for selected device',data:{deviceId:device_id,timestamp:data.timestamp},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ZOOM'})}).catch(()=>{});
+      // #endregion
       const ts = typeof data.timestamp === 'number' ? data.timestamp : Date.now() / 1000;
       const newPoint: DeviceDataPoint = {
         device_id,
@@ -238,6 +243,9 @@ export default function Monitoring() {
         const lastTs = prev.length > 0 ? prev[prev.length - 1].timestamp : -Infinity;
         if (ts < lastTs) return prev;
         const next = ts === lastTs ? [...prev.slice(0, -1), newPoint] : [...prev, newPoint];
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/b8e265ce-e1a5-4ce6-9816-ec26ce5c4c56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Monitoring.tsx:274',message:'setChartDataPoints from event',data:{prevLength:prev.length,nextLength:next.length,wasReplaced:ts===lastTs},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ZOOM'})}).catch(()=>{});
+        // #endregion
         return next.length > 3000 ? next.slice(-3000) : next;
       });
     });
@@ -323,7 +331,13 @@ export default function Monitoring() {
               return (
                 <div
                   key={device.device_id}
-                  onClick={() => setSelectedDevice(device.device_id)}
+                  onClick={() => {
+                    // 即使是同一设备，也强制从 DB 重新加载完整数据（解决切换标签后数据不全的问题）
+                    if (selectedDevice === device.device_id) {
+                      loadDeviceData(device.device_id);
+                    }
+                    setSelectedDevice(device.device_id);
+                  }}
                   className={`p-2 rounded cursor-pointer transition-colors ${isSelected ? 'bg-blue-500 text-white' : 'bg-gray-50 hover:bg-gray-100'}`}
                 >
                   <div className="flex items-center gap-2">
@@ -418,15 +432,22 @@ export default function Monitoring() {
                 </div>
                 <div className="h-64">
                   <DataChart
+                    key={selectedDevice}
                     title=""
                     data={chartDataPoints}
                     seriesKey={selectedChartSeries}
                     unit={selectedChartSeries.includes('q') || selectedChartSeries === 'reactive_power' ? 'kVar' : 'kW'}
                     color="#3b82f6"
-                    enableDataZoom={true}
+                    enableDataZoom={simulationState !== 'Running'}
                   />
+                  {simulationState === 'Running' && (
+                    <p className="text-xs text-blue-600 mt-1">仿真运行中，缩放已禁用（停止或暂停后可缩放查看）</p>
+                  )}
                   {simulationState === 'Paused' && (
                     <p className="text-xs text-amber-600 mt-1">已暂停：可拖拽时间轴或鼠标滚轮缩放查看</p>
+                  )}
+                  {simulationState === 'Stopped' && chartDataPoints.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">可拖拽时间轴或鼠标滚轮缩放查看</p>
                   )}
                 </div>
               </div>

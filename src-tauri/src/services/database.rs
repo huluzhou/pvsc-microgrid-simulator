@@ -23,8 +23,43 @@ impl Database {
     }
 
     fn init_schema(&self) -> SqlResult<()> {
-        // 创建设备数据表
-        // 当前只关注有功功率和无功功率，其他字段后续再加
+        // 检查是否存在旧版本的 device_data 表（使用 voltage, current, power 列）
+        let old_table_exists = self.conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='device_data'",
+            [],
+            |row| row.get::<_, i32>(0)
+        )? > 0;
+
+        if old_table_exists {
+            // 检查是否有旧列名（voltage, current, power）
+            let has_old_columns = self.conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('device_data') WHERE name IN ('voltage', 'current', 'power')",
+                [],
+                |row| row.get::<_, i32>(0)
+            ).unwrap_or(0) > 0;
+
+            if has_old_columns {
+                // 检测到旧表结构，输出警告并删除重建
+                eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                eprintln!("⚠️  DATABASE SCHEMA MISMATCH DETECTED");
+                eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                eprintln!("   Old table structure detected with columns:");
+                eprintln!("   - voltage, current, power (old schema)");
+                eprintln!("");
+                eprintln!("   Expected columns:");
+                eprintln!("   - p_active, p_reactive (new schema)");
+                eprintln!("");
+                eprintln!("   Action: Dropping old table and recreating with new schema.");
+                eprintln!("   Note: All existing data will be lost (test data).");
+                eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                
+                // 删除旧表
+                self.conn.execute("DROP TABLE device_data", [])?;
+                eprintln!("✓ Old table dropped successfully");
+            }
+        }
+
+        // 创建设备数据表（新结构）
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS device_data (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
