@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter};
 use tokio::time::{interval, Duration};
+use tokio::sync::mpsc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Mutex as StdMutex;
 
@@ -26,6 +27,10 @@ pub struct SimulationEngine {
     device_active_status: Arc<tokio::sync::Mutex<HashMap<String, bool>>>,
     /// 当前功率单一数据源：device_id -> (timestamp, p_active_kw, p_reactive_kvar)，与 device-data-update 同源，供轮询使用
     last_device_power: Arc<StdMutex<HashMap<String, (f64, Option<f64>, Option<f64>)>>>,
+    /// 计算循环是否已启动过（只 spawn 一次，避免暂停后再点「启动」产生多个循环导致计算次数暴增）
+    calculation_loop_started: Arc<AtomicBool>,
+    /// 停止时发送一次，让计算循环退出（停止时真正结束循环，避免空转）
+    cancel_tx: Arc<tokio::sync::Mutex<Option<mpsc::Sender<()>>>>,
 }
 
 impl SimulationEngine {
@@ -40,6 +45,8 @@ impl SimulationEngine {
             device_remote_control_allowed: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             device_active_status: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_device_power: Arc::new(StdMutex::new(HashMap::new())),
+            calculation_loop_started: Arc::new(AtomicBool::new(false)),
+            cancel_tx: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
@@ -142,9 +149,12 @@ impl SimulationEngine {
             .map_err(|e| format!("Failed to start simulation: {}", e))?;
         drop(bridge);
         
-        // 启动周期性计算循环
-        if let Some(app) = app_handle {
-            self.start_calculation_loop(app, calculation_interval_ms).await;
+        // 只 spawn 一次计算循环，避免「暂停后再点启动」产生多个循环导致计算次数暴增（如 1000ms 间隔却 3s 内 18 次）
+        let should_spawn = !self.calculation_loop_started.swap(true, Ordering::SeqCst);
+        if should_spawn {
+            if let Some(app) = app_handle {
+                self.start_calculation_loop(app, calculation_interval_ms).await;
+            }
         }
         
         Ok(())
@@ -220,19 +230,31 @@ impl SimulationEngine {
     }
     
     async fn start_calculation_loop(&self, app: AppHandle, calculation_interval_ms: u64) {
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut guard = self.cancel_tx.lock().await;
+            *guard = Some(tx);
+        }
         let status = self.status.clone();
         let python_bridge = self.python_bridge.clone();
         let topology = self.topology.clone();
         let database = self.database.clone();
         let device_active_status = self.device_active_status.clone();
         let last_device_power = self.last_device_power.clone();
+        let calculation_loop_started = self.calculation_loop_started.clone();
         
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(calculation_interval_ms));
             let mut calculation_times: Vec<f64> = Vec::new();
             
             loop {
-                interval.tick().await;
+                tokio::select! {
+                    _ = interval.tick() => {}
+                    _ = rx.recv() => {
+                        calculation_loop_started.store(false, Ordering::SeqCst);
+                        break;
+                    }
+                }
                 
                 // 检查仿真是否运行中
                 let status_guard = status.lock().await;
@@ -403,13 +425,15 @@ impl SimulationEngine {
                 let mut status_guard = status.lock().await;
                 status_guard.average_delay = avg_delay;
                 
-                // 更新运行时间
+                // 更新运行时间（仅统计运行中时间，减去累计暂停时长，与 calculation_count 同步）
                 if let Some(start_time) = status_guard.start_time {
                     let now = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-                    status_guard.elapsed_time = now.saturating_sub(start_time);
+                    status_guard.elapsed_time = now
+                        .saturating_sub(start_time)
+                        .saturating_sub(status_guard.total_paused_secs);
                 }
                 drop(status_guard);
             }
@@ -765,6 +789,10 @@ impl SimulationEngine {
         let mut status = self.status.lock().await;
         status.stop();
         drop(status);
+        // 通知计算循环退出（停止时真正结束循环）
+        if let Some(tx) = self.cancel_tx.lock().await.take() {
+            let _ = tx.send(()).await;
+        }
         // 仿真已停止，设备数据通道关闭，全部视为离线；清空功率缓存
         self.device_active_status.lock().await.clear();
         self.last_device_power.lock().unwrap().clear();

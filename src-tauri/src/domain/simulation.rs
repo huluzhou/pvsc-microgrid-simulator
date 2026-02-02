@@ -41,11 +41,17 @@ impl Eq for SimulationError {}
 pub struct SimulationStatus {
     pub state: SimulationState,
     pub start_time: Option<u64>,
-    pub elapsed_time: u64, // 秒
+    pub elapsed_time: u64, // 秒（仅统计运行中时间，不含暂停时长，与 calculation_count 同步）
     pub calculation_count: u64,
     /// 每步平均耗时（毫秒）：一次仿真步（get_status + get_errors + perform_calculation + 结果处理）的耗时均值，用于判断是否跟得上计算间隔
     pub average_delay: f64,
     pub errors: Vec<SimulationError>,
+    /// 暂停开始时刻（Unix 秒），用于累计暂停时长
+    #[serde(skip)]
+    pub pause_started_at: Option<u64>,
+    /// 累计暂停时长（秒），elapsed_time = (now - start_time) - total_paused_secs
+    #[serde(skip)]
+    pub total_paused_secs: u64,
 }
 
 impl SimulationStatus {
@@ -57,6 +63,8 @@ impl SimulationStatus {
             calculation_count: 0,
             average_delay: 0.0,
             errors: Vec::new(),
+            pause_started_at: None,
+            total_paused_secs: 0,
         }
     }
 
@@ -70,19 +78,36 @@ impl SimulationStatus {
         );
         self.elapsed_time = 0;
         self.calculation_count = 0;
+        self.pause_started_at = None;
+        self.total_paused_secs = 0;
     }
 
     pub fn stop(&mut self) {
         self.state = SimulationState::Stopped;
         self.start_time = None;
+        self.pause_started_at = None;
+        self.total_paused_secs = 0;
     }
 
     pub fn pause(&mut self) {
         self.state = SimulationState::Paused;
+        self.pause_started_at = Some(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        );
     }
 
     pub fn resume(&mut self) {
         self.state = SimulationState::Running;
+        if let Some(ps) = self.pause_started_at.take() {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            self.total_paused_secs = self.total_paused_secs.saturating_add(now.saturating_sub(ps));
+        }
     }
 }
 
