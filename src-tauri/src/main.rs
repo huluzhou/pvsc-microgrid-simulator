@@ -11,6 +11,7 @@ use services::python_bridge::PythonBridge;
 use services::database::Database;
 use services::simulation_engine::SimulationEngine;
 use services::modbus::ModbusService;
+use services::ssh::SshClient;
 use domain::metadata::DeviceMetadataStore;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;
@@ -31,18 +32,27 @@ fn main() {
             let python_bridge = PythonBridge::new();
             let python_bridge_arc = Arc::new(TokioMutex::new(python_bridge));
 
-            // 初始化数据库
-            let db = Database::new(None).unwrap_or_else(|e| {
+            // 初始化数据库（默认 data.db；每次启动仿真时会切换到新文件 data_<timestamp>.db）
+            let mut default_db_path = std::env::current_dir().unwrap();
+            default_db_path.push("data.db");
+            let default_db_path_str = default_db_path.to_string_lossy().to_string();
+            let db = Database::new(Some(default_db_path.as_path())).unwrap_or_else(|e| {
                 eprintln!("Failed to initialize database: {}", e);
                 panic!("Database initialization failed");
             });
+
+            let current_db_path = Arc::new(StdMutex::new(default_db_path_str));
 
             // 初始化设备元数据仓库
             let metadata_store = DeviceMetadataStore::new();
 
             // 初始化仿真引擎
             let db_arc = Arc::new(StdMutex::new(db));
-            let simulation_engine = Arc::new(SimulationEngine::new(python_bridge_arc.clone(), db_arc.clone()));
+            let simulation_engine = Arc::new(SimulationEngine::new(
+                python_bridge_arc.clone(),
+                db_arc.clone(),
+                current_db_path.clone(),
+            ));
             
             // 在应用启动时立即启动 Python bridge 并等待就绪
             let python_bridge_clone = python_bridge_arc.clone();
@@ -96,13 +106,17 @@ fn main() {
 
             // 初始化 Modbus 服务
             let modbus_service = ModbusService::new();
+            // SSH 客户端（数据看板远程数据源）
+            let ssh_client = Arc::new(TokioMutex::new(SshClient::new()));
 
             // 将服务存储到应用状态
             app.manage(python_bridge_arc);
             app.manage(db_arc);
+            app.manage(current_db_path);
             app.manage(StdMutex::new(metadata_store));
             app.manage(simulation_engine);
             app.manage(modbus_service);
+            app.manage(ssh_client);
 
             Ok(())
         })
@@ -128,10 +142,13 @@ fn main() {
             commands::simulation::get_device_data,
             commands::monitoring::record_device_data,
             commands::monitoring::get_latest_simulation_start_time,
+            commands::monitoring::get_app_database_path,
+            commands::monitoring::get_dashboard_device_ids,
             commands::monitoring::query_device_data,
             commands::monitoring::get_all_devices_status,
             commands::monitoring::get_device_status,
             commands::device::get_all_devices,
+            commands::device::get_modbus_devices,
             commands::device::get_device,
             commands::device::update_device_config,
             commands::device::batch_set_device_mode,
@@ -140,6 +157,13 @@ fn main() {
             commands::ai::get_ai_recommendations,
             commands::analytics::analyze_performance,
             commands::analytics::generate_report,
+            commands::ssh::ssh_connect,
+            commands::ssh::ssh_disconnect,
+            commands::ssh::ssh_is_connected,
+            commands::ssh::ssh_query_remote_device_data,
+            commands::dashboard::dashboard_parse_csv,
+            commands::dashboard::dashboard_list_devices_from_path,
+            commands::dashboard::query_device_data_from_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -25,6 +25,16 @@ pub struct DeviceInfo {
     pub properties: HashMap<String, serde_json::Value>,
 }
 
+/// Modbus 设备信息：仅包含拓扑中配置了 ip 和 port 的设备（旧版/新版拓扑均从 properties 读取）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ModbusDeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub device_type: String,
+    pub ip: String,
+    pub port: u16,
+}
+
 #[tauri::command]
 pub async fn get_all_devices(
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
@@ -38,6 +48,37 @@ pub async fn get_all_devices(
             properties: d.properties.clone(),
         }
     }).collect())
+}
+
+/// 返回拓扑中定义了 ip 和 port 的设备列表（供 Modbus 通信面板使用；兼容旧版拓扑 Measurement/Storage 的 ip/port 与新版 properties）
+#[tauri::command]
+pub async fn get_modbus_devices(
+    metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
+) -> Result<Vec<ModbusDeviceInfo>, String> {
+    let metadata_store = metadata_store.lock().unwrap();
+    let mut out = Vec::new();
+    for d in metadata_store.get_all_devices().iter() {
+        let ip = d.properties.get("ip")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let port = d.properties.get("port")
+            .and_then(|v| {
+                v.as_u64().map(|n| n as u16)
+                    .or_else(|| v.as_str().and_then(|s| s.parse::<u16>().ok()))
+            });
+        if let (Some(ip), Some(port)) = (ip, port) {
+            if !ip.is_empty() {
+                out.push(ModbusDeviceInfo {
+                    id: d.id.clone(),
+                    name: d.name.clone(),
+                    device_type: device_type_to_string(&d.device_type),
+                    ip,
+                    port,
+                });
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[tauri::command]

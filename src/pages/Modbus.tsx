@@ -96,54 +96,32 @@ export default function Modbus() {
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
     try {
-      // 从后端元数据存储获取设备（与拓扑设计页面同步）
-      const devicesMetadata = await invoke<Array<{ id: string; name: string; device_type: string }>>('get_all_devices');
-      const powerDevices = devicesMetadata
-        .filter((d) => POWER_DEVICE_TYPES.includes(d.device_type as DeviceType))
-        .map((d) => ({ id: d.id, name: d.name, deviceType: d.device_type as DeviceType }));
-      setDevices(powerDevices);
+      // 仅显示拓扑中配置了 ip 和 port 的设备（兼容旧版 chuzhou 与新版拓扑）
+      const modbusDevices = await invoke<Array<{ id: string; name: string; device_type: string; ip: string; port: number }>>('get_modbus_devices');
+      const list = modbusDevices.map((d) => ({
+        id: d.id,
+        name: d.name,
+        deviceType: d.device_type as DeviceType,
+      }));
+      setDevices(list);
 
       const defaultConfigs: Record<string, DeviceModbusConfig> = {};
-      powerDevices.forEach((device, index) => {
+      modbusDevices.forEach((device, index) => {
         defaultConfigs[device.id] = {
           deviceId: device.id,
           enabled: false,
           remoteControlAllowed: true,
-          ipAddress: '127.0.0.1',
-          port: 5020 + index,
+          ipAddress: device.ip,
+          port: device.port,
           slaveId: index + 1,
           registerMapping: { ...DEFAULT_REGISTER_MAPPING },
         };
       });
       setConfigs(defaultConfigs);
     } catch (error) {
-      console.error('Failed to load devices from metadata:', error);
-      // 如果后端元数据为空，尝试从默认拓扑文件加载
-      try {
-        const topologyData = await invoke<{ devices: Array<{ id: string; name: string; device_type: string }> }>('load_topology', { path: 'topology.json' });
-        const powerDevices = topologyData.devices
-          .filter((d) => POWER_DEVICE_TYPES.includes(d.device_type as DeviceType))
-          .map((d) => ({ id: d.id, name: d.name, deviceType: d.device_type as DeviceType }));
-        setDevices(powerDevices);
-
-        const defaultConfigs: Record<string, DeviceModbusConfig> = {};
-        powerDevices.forEach((device, index) => {
-          defaultConfigs[device.id] = {
-            deviceId: device.id,
-            enabled: false,
-            remoteControlAllowed: true,
-            ipAddress: '127.0.0.1',
-            port: 5020 + index,
-            slaveId: index + 1,
-            registerMapping: { ...DEFAULT_REGISTER_MAPPING },
-          };
-        });
-        setConfigs(defaultConfigs);
-      } catch (fallbackError) {
-        console.error('Failed to load from topology file:', fallbackError);
-        setDevices([]);
-        setConfigs({});
-      }
+      console.error('Failed to load Modbus devices from topology:', error);
+      setDevices([]);
+      setConfigs({});
     } finally {
       setIsLoading(false);
     }
