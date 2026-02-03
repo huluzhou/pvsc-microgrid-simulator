@@ -2,6 +2,7 @@
 仿真引擎核心
 """
 
+import random
 import threading
 import time
 import hashlib
@@ -41,6 +42,15 @@ class SimulationEngine:
         
         # 计算结果缓存
         self.last_calculation_result: Optional[Dict[str, Any]] = None
+
+        # 随机模式设备配置：device_id -> {"min_power": float, "max_power": float}（单位 kW）
+        self.device_random_config: Dict[str, Dict[str, float]] = {}
+        # 设备模式（manual / random_data / historical_data），用于统一后端更新时按模式写 properties
+        self.device_modes: Dict[str, str] = {}
+        # 手动模式当前设定：device_id -> {"p_kw": float, "q_kvar": float}（单位 kW/kVar）
+        self.device_manual_setpoint: Dict[str, Dict[str, float]] = {}
+        # 历史模式配置占位：device_id -> config dict，具体字段与回放逻辑后期给定
+        self.device_historical_config: Dict[str, Dict[str, Any]] = {}
     
     def set_topology(self, topology_data: Dict[str, Any], kernel_type: str = "pandapower"):
         """
@@ -62,7 +72,11 @@ class SimulationEngine:
             self.cached_device_map = {}
         
         self.topology_data = topology_data
-        
+        self.device_random_config.clear()
+        self.device_modes.clear()
+        self.device_manual_setpoint.clear()
+        self.device_historical_config.clear()
+
         # 使用工厂同时创建计算内核和适配器（如果可用）
         try:
             kernel_and_adapter = PowerKernelFactory.create_with_adapter(kernel_type)
@@ -140,32 +154,63 @@ class SimulationEngine:
         structure_str = json.dumps(topology_structure, sort_keys=True, ensure_ascii=False)
         return hashlib.md5(structure_str.encode('utf-8')).hexdigest()
     
-    def set_device_mode(self, device_id: str, mode: str):
+    def set_device_mode(self, device_id: str, mode: str) -> None:
         """
-        设置设备工作模式（已弃用，保留用于兼容性）
-        
-        注意：设备功率值现在直接从拓扑数据的 properties 中读取
+        设置设备工作模式。与 set_device_*_config 配合，供统一后端每步写 properties 时按模式取值。
         """
-        pass  # 不再需要模式管理，功率值从拓扑数据中获取
+        self.device_modes[device_id] = mode
+
+    def set_device_manual_setpoint(self, device_id: str, active_power: float, reactive_power: float) -> None:
+        """
+        设置手动模式设备的当前功率设定（kW / kVar）。
+        每步计算前会将该设定写入设备 properties。
+        """
+        self.device_manual_setpoint[device_id] = {
+            "p_kw": float(active_power),
+            "q_kvar": float(reactive_power),
+        }
+
+    def set_device_historical_config(self, device_id: str, config: Dict[str, Any]) -> None:
+        """
+        设置历史模式设备配置（占位）。具体字段与回放逻辑后期给定，当前仅存储。
+        """
+        self.device_historical_config[device_id] = dict(config) if config else {}
+
+    def set_device_random_config(self, device_id: str, min_power: float, max_power: float) -> None:
+        """
+        设置随机模式设备的功率范围（单位 kW）。
+        每步计算前会在此范围内生成新的有功功率并写入设备 properties。
+        """
+        self.device_random_config[device_id] = {
+            "min_power": float(min_power),
+            "max_power": float(max_power),
+        }
 
     def update_device_properties(self, device_id: str, properties: Dict[str, Any]) -> None:
         """
         事件驱动远程控制：将设备属性增量立即写入当前拓扑数据，下一拍 _update_network_power_values 即生效。
-        避免轮询导致的初始时刻指令缺失或初值与预期不符。
+        若该设备为 manual 模式，同时更新 device_manual_setpoint，以便统一后端每步写 properties 时使用。
         """
         if not self.topology_data:
             return
         devices = self.topology_data.get("devices", {})
         if isinstance(devices, list):
-            for d in devices:
-                if d.get("id") == device_id:
-                    props = d.setdefault("properties", {})
-                    props.update(properties)
-                    return
+            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
         else:
-            if device_id in devices:
-                props = devices[device_id].setdefault("properties", {})
-                props.update(properties)
+            devices_dict = devices
+        if device_id not in devices_dict:
+            return
+        props = devices_dict[device_id].setdefault("properties", {})
+        props.update(properties)
+        if self.device_modes.get(device_id) == "manual":
+            p_kw = None
+            if "rated_power" in properties:
+                p_kw = float(properties["rated_power"])
+            elif "p_kw" in properties:
+                p_kw = float(properties["p_kw"])
+            q_kvar = float(properties.get("q_kvar", 0))
+            if p_kw is not None:
+                self.device_manual_setpoint[device_id] = {"p_kw": p_kw, "q_kvar": q_kvar}
     
     def get_device_data(self, device_id: str) -> Dict[str, Any]:
         """
@@ -410,7 +455,9 @@ class SimulationEngine:
             if hasattr(self.topology_adapter, 'get_device_map'):
                 self.cached_device_map = self.topology_adapter.get_device_map()
         
-        # 更新网络中的功率值（从设备模式获取当前功率值）
+        # 统一后端更新：按模式（手动/随机/历史）每步写 properties，再读入潮流
+        self._apply_device_power_sources()
+        # 更新网络中的功率值（从拓扑 properties 读入）
         self._update_network_power_values()
         
         # 执行潮流计算（使用缓存的网络对象）
@@ -496,6 +543,68 @@ class SimulationEngine:
                 "auto_paused": True  # 标记已自动暂停
             }
     
+    def _apply_device_power_sources(self) -> None:
+        """
+        统一入口：按设备模式在每步计算前将功率写入 topology_data 的 properties。
+        顺序：手动 -> 随机 -> 历史（后写覆盖先写，同设备只应配置一种模式）。
+        """
+        self._apply_manual_power_values()
+        self._apply_random_power_values()
+        self._apply_historical_power_values()
+
+    def _apply_manual_power_values(self) -> None:
+        """
+        对手动模式设备，将当前设定写入 topology_data 的 properties。
+        """
+        if not self.topology_data or not self.device_manual_setpoint:
+            return
+        devices = self.topology_data.get("devices", {})
+        if isinstance(devices, list):
+            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
+        else:
+            devices_dict = devices
+        for device_id, cfg in self.device_manual_setpoint.items():
+            device = devices_dict.get(device_id)
+            if not device:
+                continue
+            p_kw = cfg.get("p_kw", 0.0)
+            q_kvar = cfg.get("q_kvar", 0.0)
+            props = device.setdefault("properties", {})
+            props["rated_power"] = p_kw
+            props["p_kw"] = p_kw
+            props["q_kvar"] = q_kvar
+
+    def _apply_random_power_values(self) -> None:
+        """
+        对配置为随机模式的设备，在 [min_power, max_power] 内生成新的有功功率（kW）
+        并写入 topology_data 的 properties，供本步 _update_network_power_values 使用。
+        """
+        if not self.topology_data or not self.device_random_config:
+            return
+        devices = self.topology_data.get("devices", {})
+        if isinstance(devices, list):
+            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
+        else:
+            devices_dict = devices
+        for device_id, cfg in self.device_random_config.items():
+            device = devices_dict.get(device_id)
+            if not device:
+                continue
+            min_p = cfg.get("min_power", 0.0)
+            max_p = cfg.get("max_power", 0.0)
+            p_kw = min_p + random.random() * (max_p - min_p) if max_p > min_p else min_p
+            props = device.setdefault("properties", {})
+            props["rated_power"] = p_kw
+            props["p_kw"] = p_kw
+            props["q_kvar"] = 0.0
+
+    def _apply_historical_power_values(self) -> None:
+        """
+        历史模式设备：按仿真时间从历史数据取功率并写 properties。实现细节后期给定，当前占位不写。
+        """
+        # 占位：后期根据 device_historical_config 与当前仿真时间/步数实现回放
+        pass
+
     def _update_network_power_values(self):
         """
         更新网络中的功率值（从拓扑数据的 properties 中读取）
@@ -599,7 +708,11 @@ class SimulationEngine:
         """停止仿真"""
         self.is_running = False
         self.is_paused = False
-        
+        self.device_random_config.clear()
+        self.device_modes.clear()
+        self.device_manual_setpoint.clear()
+        self.device_historical_config.clear()
+
         # 等待计算线程结束
         if self.calculation_thread and self.calculation_thread.is_alive():
             self.calculation_thread.join(timeout=2.0)

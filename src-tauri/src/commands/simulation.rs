@@ -87,6 +87,37 @@ pub async fn set_device_mode(
 }
 
 #[tauri::command]
+pub async fn set_device_random_config(
+    device_id: String,
+    min_power: f64,
+    max_power: f64,
+    engine: State<'_, Arc<SimulationEngine>>,
+) -> Result<(), String> {
+    engine.set_device_random_config(device_id, min_power, max_power).await
+}
+
+#[tauri::command]
+pub async fn set_device_manual_setpoint(
+    device_id: String,
+    active_power: f64,
+    reactive_power: f64,
+    engine: State<'_, Arc<SimulationEngine>>,
+) -> Result<(), String> {
+    engine
+        .set_device_manual_setpoint(device_id, active_power, reactive_power)
+        .await
+}
+
+#[tauri::command]
+pub async fn set_device_historical_config(
+    device_id: String,
+    config: serde_json::Value,
+    engine: State<'_, Arc<SimulationEngine>>,
+) -> Result<(), String> {
+    engine.set_device_historical_config(device_id, config).await
+}
+
+#[tauri::command]
 pub async fn get_device_data(
     device_id: String,
     engine: State<'_, Arc<SimulationEngine>>,

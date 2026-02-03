@@ -100,6 +100,32 @@ class PythonKernel:
                 return {"status": "ok"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
+        elif method == "simulation.set_device_random_config":
+            device_id = params.get("device_id")
+            min_power = params.get("min_power")
+            max_power = params.get("max_power")
+            try:
+                self.simulation_engine.set_device_random_config(device_id, min_power, max_power)
+                return {"status": "ok"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+        elif method == "simulation.set_device_manual_setpoint":
+            device_id = params.get("device_id")
+            active_power = params.get("active_power")
+            reactive_power = params.get("reactive_power", 0)
+            try:
+                self.simulation_engine.set_device_manual_setpoint(device_id, active_power, reactive_power)
+                return {"status": "ok"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+        elif method == "simulation.set_device_historical_config":
+            device_id = params.get("device_id")
+            config = params.get("config") or {}
+            try:
+                self.simulation_engine.set_device_historical_config(device_id, config)
+                return {"status": "ok"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
         elif method == "simulation.update_device_properties":
             device_id = params.get("device_id")
             properties = params.get("properties") or {}

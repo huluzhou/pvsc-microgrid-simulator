@@ -873,6 +873,61 @@ impl SimulationEngine {
         Ok(())
     }
 
+    pub async fn set_device_random_config(
+        &self,
+        device_id: String,
+        min_power: f64,
+        max_power: f64,
+    ) -> Result<(), String> {
+        let mut bridge = self.python_bridge.lock().await;
+        let params = serde_json::json!({
+            "device_id": device_id,
+            "min_power": min_power,
+            "max_power": max_power
+        });
+        bridge
+            .call("simulation.set_device_random_config", params)
+            .await
+            .map_err(|e| format!("设置设备随机配置失败: {}", e))?;
+        Ok(())
+    }
+
+    pub async fn set_device_manual_setpoint(
+        &self,
+        device_id: String,
+        active_power: f64,
+        reactive_power: f64,
+    ) -> Result<(), String> {
+        let mut bridge = self.python_bridge.lock().await;
+        let params = serde_json::json!({
+            "device_id": device_id,
+            "active_power": active_power,
+            "reactive_power": reactive_power
+        });
+        bridge
+            .call("simulation.set_device_manual_setpoint", params)
+            .await
+            .map_err(|e| format!("设置设备手动设定失败: {}", e))?;
+        Ok(())
+    }
+
+    pub async fn set_device_historical_config(
+        &self,
+        device_id: String,
+        config: serde_json::Value,
+    ) -> Result<(), String> {
+        let mut bridge = self.python_bridge.lock().await;
+        let params = serde_json::json!({
+            "device_id": device_id,
+            "config": config
+        });
+        bridge
+            .call("simulation.set_device_historical_config", params)
+            .await
+            .map_err(|e| format!("设置设备历史配置失败: {}", e))?;
+        Ok(())
+    }
+
     pub async fn get_device_modes(&self) -> DeviceWorkModes {
         self.device_modes.lock().await.clone()
     }

@@ -39,6 +39,8 @@ export default function Simulation() {
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
   const [errorFilter, setErrorFilter] = useState<'all' | 'error' | 'warning' | 'info'>('all');
 
+  const { deviceConfigs } = useDeviceControlStore();
+
   const loadStatus = useCallback(async () => {
     try {
       const currentStatus = await invoke<SimulationStatus>('get_simulation_status');
@@ -82,28 +84,45 @@ export default function Simulation() {
     };
   }, [loadStatus]);
 
-  const { deviceConfigs } = useDeviceControlStore();
-
   const handleStart = async () => {
     setIsLoading(true);
     try {
       // 先启动仿真（设置拓扑并启动 Python），再同步手动设定，这样 Python 已有拓扑后再应用功率
       await invoke('start_simulation', { config: { calculation_interval_ms: config.calculationInterval, remote_control_enabled: config.remoteControlEnabled } });
-      // 启动后将设备控制中的手动设定同步到仿真，确保负载/储能等功率在下一拍计算生效
+      // 启动后将设备控制中的设定同步到仿真，确保下一拍计算生效
       for (const [deviceId, cfg] of Object.entries(deviceConfigs)) {
         if (cfg?.dataSourceType === 'manual' && cfg.manualSetpoint) {
           try {
-            await invoke('set_device_mode', { deviceId: deviceId, mode: 'manual' });
-            await invoke('update_device_properties_for_simulation', {
-              deviceId: deviceId,
-              properties: {
-                rated_power: cfg.manualSetpoint.activePower,
-                p_kw: cfg.manualSetpoint.activePower,
-                q_kvar: cfg.manualSetpoint.reactivePower ?? 0,
-              },
+            await invoke('set_device_mode', { deviceId, mode: 'manual' });
+            await invoke('set_device_manual_setpoint', {
+              deviceId,
+              activePower: cfg.manualSetpoint.activePower,
+              reactivePower: cfg.manualSetpoint.reactivePower ?? 0,
             });
           } catch (e) {
             console.warn('同步设备手动设定失败:', deviceId, e);
+          }
+        } else if (cfg?.dataSourceType === 'random' && cfg.randomConfig) {
+          const { minPower, maxPower } = cfg.randomConfig;
+          try {
+            await invoke('set_device_mode', { deviceId, mode: 'random_data' });
+            await invoke('set_device_random_config', {
+              deviceId,
+              minPower,
+              maxPower,
+            });
+          } catch (e) {
+            console.warn('同步设备随机设定失败:', deviceId, e);
+          }
+        } else if (cfg?.dataSourceType === 'historical' && cfg.historicalConfig) {
+          try {
+            await invoke('set_device_mode', { deviceId, mode: 'historical_data' });
+            await invoke('set_device_historical_config', {
+              deviceId,
+              config: cfg.historicalConfig,
+            });
+          } catch (e) {
+            console.warn('同步设备历史配置失败:', deviceId, e);
           }
         }
       }
