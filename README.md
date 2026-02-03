@@ -93,6 +93,15 @@ python src/main.py
 └── requirements.txt             # Python依赖
 ```
 
+## 数据看板（Tauri 应用）
+
+在 Tauri 桌面应用中，「数据看板」支持三种数据源：
+
+- **当前应用数据库**：从本应用默认 `data.db` 读取 `device_data` 表中的设备列表与时间序列。
+- **选择本地数据库**：选择本地 SQLite 文件（与 `device_data` 表结构一致），按设备查询时间序列。
+- **CSV 文件**：导入长表 CSV。支持列名：`device_id`（必填）、`timestamp` 或 `local_timestamp`（必填）、`p_active` 或 `p_mw`、`p_reactive` 或 `q_mvar`、可选 `data_json`。时间戳可为 Unix 秒、毫秒或 ISO/RFC3339 字符串。与 remote-tool 导出的长表格式兼容。
+- **远程 SSH**：通过 SSH 连接远端主机，在远端执行对 `device_data` 表的查询（需远端表结构与本地一致）。
+
 ## 开发
 
 ### 运行测试

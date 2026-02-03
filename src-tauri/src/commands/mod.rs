@@ -7,3 +7,5 @@ pub mod monitoring;
 pub mod simulation;
 pub mod analytics;
 pub mod ai;
+pub mod ssh;
+pub mod dashboard;

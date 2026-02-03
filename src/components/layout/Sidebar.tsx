@@ -5,6 +5,7 @@ import {
   Play, 
   Radio, 
   Activity, 
+  LayoutDashboard,
   BarChart3, 
   Brain 
 } from "lucide-react";
@@ -16,6 +17,7 @@ const menuItems = [
   { path: "/simulation", icon: Play, label: "仿真运行" },
   { path: "/modbus", icon: Radio, label: "Modbus通信" },
   { path: "/monitoring", icon: Activity, label: "实时监控" },
+  { path: "/dashboard", icon: LayoutDashboard, label: "数据看板" },
   { path: "/analytics", icon: BarChart3, label: "数据分析" },
   { path: "/ai", icon: Brain, label: "AI 智能" },
 ];

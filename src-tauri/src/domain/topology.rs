@@ -16,6 +16,25 @@ pub enum DeviceType {
     ExternalGrid, // 功率设备：外部电网
 }
 
+impl DeviceType {
+    /// 与 commands::topology::device_type_to_string 一致，供仿真落库及看板展示
+    pub fn as_str(&self) -> &'static str {
+        use DeviceType::*;
+        match self {
+            Node => "bus",
+            Line => "line",
+            Transformer => "transformer",
+            Switch => "switch",
+            Pv => "static_generator",
+            Storage => "storage",
+            Load => "load",
+            Charger => "charger",
+            Meter => "meter",
+            ExternalGrid => "external_grid",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Position {
     pub x: f64,

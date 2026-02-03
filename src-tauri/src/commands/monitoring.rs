@@ -62,6 +62,7 @@ pub async fn record_device_data(
         data.p_active,
         data.p_reactive,
         json_str.as_deref(),
+        None,
     )
     .map_err(|e| format!("Failed to insert device data: {}", e))?;
     Ok(())
@@ -73,6 +74,46 @@ pub async fn get_latest_simulation_start_time(
 ) -> Result<Option<f64>, String> {
     let db = db.lock().unwrap();
     db.get_latest_simulation_start().map_err(|e| format!("Failed to get latest simulation start: {}", e))
+}
+
+/// 返回当前仿真使用的数据库文件路径（每次启动仿真会切换到新文件 data_<timestamp>.db），供数据看板「当前应用数据库」与对话框默认路径使用。
+#[tauri::command]
+pub fn get_app_database_path(
+    current_db_path: State<'_, Arc<StdMutex<String>>>,
+) -> Result<String, String> {
+    let path = current_db_path.lock().map_err(|_| "路径锁异常")?;
+    Ok(path.clone())
+}
+
+#[derive(serde::Serialize)]
+pub struct DashboardDeviceIdsResponse {
+    pub device_ids: Vec<String>,
+    #[serde(rename = "deviceTypes")]
+    pub device_types: std::collections::HashMap<String, String>,
+}
+
+/// 从当前应用默认数据库读取 device_data 中所有不重复的 device_id 及 device_type（供数据看板「当前应用数据库」设备列表与类型）
+#[tauri::command]
+pub async fn get_dashboard_device_ids(db: State<'_, Arc<StdMutex<Database>>>) -> Result<DashboardDeviceIdsResponse, String> {
+    let db = db.lock().unwrap();
+    let (device_ids, device_types) = match db.query_device_ids_with_types() {
+        Ok(rows) => {
+            let ids: Vec<String> = rows.iter().map(|(id, _)| id.clone()).collect();
+            let types: std::collections::HashMap<String, String> = rows
+                .into_iter()
+                .filter_map(|(id, t)| t.map(|typ| (id, typ)))
+                .collect();
+            (ids, types)
+        }
+        Err(_) => {
+            let ids = db.query_device_ids().map_err(|e| format!("查询失败: {}", e))?;
+            (ids, std::collections::HashMap::new())
+        }
+    };
+    Ok(DashboardDeviceIdsResponse {
+        device_ids,
+        device_types,
+    })
 }
 
 #[tauri::command]

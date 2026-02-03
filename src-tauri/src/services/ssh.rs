@@ -1,10 +1,12 @@
 // SSH 客户端（远程数据库访问）
+// 远程查询采用「先导出到远程临时文件，再通过 SFTP 下载到本地临时文件」避免 stdout 长度限制（参考 remote-tool）
 use async_ssh2_tokio::client::{Client, AuthMethod, ServerCheckMethod};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use anyhow::{Result, Context};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SshConfig {
     pub host: String,
     pub port: u16,
@@ -13,6 +15,7 @@ pub struct SshConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum AuthMethodConfig {
     Password(String),
     KeyFile { path: String, passphrase: Option<String> },
@@ -76,20 +79,49 @@ impl SshClient {
         Ok(result.stdout)
     }
 
+    /// 远程执行 SQL 查询，结果先写入远程临时文件再通过 SFTP 下载到本地临时文件并读入，
+    /// 避免 stdout 长度限制（参考 https://github.com/huluzhou/remote-tool）。
+    /// 远程与本地临时文件在成功后均会清理。
     pub async fn query_remote_database(
         &mut self,
         db_path: &str,
         query: &str,
     ) -> Result<String> {
-        // 通过 SSH 执行 SQLite 查询
-        // 使用 sqlite3 命令行工具执行查询并输出 CSV 格式
-        let command = format!(
-            "sqlite3 -csv {} \"{}\"",
+        let suffix: u64 = rand::random();
+        let remote_tmp = format!("/tmp/dashboard_query_{}.csv", suffix);
+        let local_tmp = std::env::temp_dir().join(format!("dashboard_query_{}.csv", suffix));
+
+        // 1. 远程：sqlite3 查询结果写入临时文件（避免 stdout 限制，服务器端增量写盘）
+        let write_cmd = format!(
+            "sqlite3 -csv {} \"{}\" > {}",
             db_path,
-            query.replace("\"", "\\\"")
+            query.replace("\"", "\\\""),
+            remote_tmp
         );
-        
-        self.execute_command(&command).await
+        self.execute_command(&write_cmd).await?;
+
+        // 2. SFTP 下载到本地临时文件（库内部整文件缓冲；超大结果集时可考虑流式读取的 SFTP 实现）
+        {
+            let client = self
+                .client
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("SSH client not connected"))?;
+            client
+                .download_file(remote_tmp.clone(), local_tmp.as_path())
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to download remote CSV via SFTP: {}", e))?;
+        }
+
+        // 3. 删除远程临时文件
+        let _ = self.execute_command(&format!("rm -f {}", remote_tmp)).await;
+
+        // 4. 读取本地文件并删除本地临时文件
+        let content = tokio::fs::read_to_string(&local_tmp)
+            .await
+            .context("Failed to read downloaded CSV")?;
+        let _ = std::fs::remove_file(&local_tmp);
+
+        Ok(content)
     }
 
     pub fn is_connected(&self) -> bool {

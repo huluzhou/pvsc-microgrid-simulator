@@ -19,6 +19,8 @@ pub struct SimulationEngine {
     python_bridge: Arc<Mutex<PythonBridge>>,
     topology: Arc<tokio::sync::Mutex<Option<Topology>>>,
     database: Arc<StdMutex<Database>>,
+    /// 当前仿真使用的数据库文件路径（每次启动仿真时切换为新文件，供数据看板「当前应用数据库」使用）
+    current_db_path: Arc<StdMutex<String>>,
     /// 全局是否允许远程控制（总闸）
     remote_control_enabled: Arc<AtomicBool>,
     /// 按设备是否允许远程控制；未配置时以全局开关为默认
@@ -34,13 +36,18 @@ pub struct SimulationEngine {
 }
 
 impl SimulationEngine {
-    pub fn new(python_bridge: Arc<Mutex<PythonBridge>>, database: Arc<StdMutex<Database>>) -> Self {
+    pub fn new(
+        python_bridge: Arc<Mutex<PythonBridge>>,
+        database: Arc<StdMutex<Database>>,
+        current_db_path: Arc<StdMutex<String>>,
+    ) -> Self {
         Self {
             status: Arc::new(tokio::sync::Mutex::new(SimulationStatus::new())),
             device_modes: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             python_bridge,
             topology: Arc::new(tokio::sync::Mutex::new(None)),
             database,
+            current_db_path,
             remote_control_enabled: Arc::new(AtomicBool::new(true)),
             device_remote_control_allowed: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             device_active_status: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
@@ -133,15 +140,28 @@ impl SimulationEngine {
             }
         }
         
-        // 启动仿真
+        // 启动仿真：每次使用新数据库文件 data_<unix_ts>.db，便于按仿真轮次保留历史
         let mut status = self.status.lock().await;
         status.start();
         let start_ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64();
+        let start_ts_secs = start_ts as u64;
         drop(status);
+
+        let mut dir = std::env::current_dir().map_err(|e| format!("获取工作目录失败: {}", e))?;
+        let new_name = format!("data_{}.db", start_ts_secs);
+        dir.push(&new_name);
+        let new_db = Database::new(Some(dir.as_path())).map_err(|e| format!("创建仿真数据库失败: {}", e))?;
+        {
+            let mut db_guard = self.database.lock().map_err(|_| "数据库锁异常")?;
+            *db_guard = new_db;
+        }
+        if let Ok(mut path_guard) = self.current_db_path.lock() {
+            *path_guard = dir.to_string_lossy().to_string();
+        }
         if let Ok(db) = self.database.lock() {
             let _ = db.set_latest_simulation_start(start_ts);
         }
-        
+
         let start_params = serde_json::json!({
             "calculation_interval_ms": calculation_interval_ms
         });
@@ -509,6 +529,7 @@ impl SimulationEngine {
                                 p_active_kw,
                                 p_reactive_kvar,
                                 data_json.as_deref(),
+                                Some(device.device_type.as_str()),
                             );
                             for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
                                 let _ = db.insert_device_data(
@@ -517,6 +538,7 @@ impl SimulationEngine {
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
+                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
                                 );
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
@@ -562,6 +584,7 @@ impl SimulationEngine {
                                 p_active_kw,
                                 p_reactive_kvar,
                                 data_json.as_deref(),
+                                Some(device.device_type.as_str()),
                             );
                             for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
                                 let _ = db.insert_device_data(
@@ -570,6 +593,7 @@ impl SimulationEngine {
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
+                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
                                 );
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
@@ -615,6 +639,7 @@ impl SimulationEngine {
                                 p_active_kw,
                                 p_reactive_kvar,
                                 data_json.as_deref(),
+                                Some(device.device_type.as_str()),
                             );
                             for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
                                 let _ = db.insert_device_data(
@@ -623,6 +648,7 @@ impl SimulationEngine {
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
+                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
                                 );
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
@@ -671,6 +697,7 @@ impl SimulationEngine {
                                 p_active_kw,
                                 p_reactive_kvar,
                                 data_json.as_deref(),
+                                Some(device.device_type.as_str()),
                             );
                             for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
                                 let _ = db.insert_device_data(
@@ -679,6 +706,7 @@ impl SimulationEngine {
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
+                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
                                 );
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
@@ -734,6 +762,7 @@ impl SimulationEngine {
                                 p_active_kw,
                                 p_reactive_kvar,
                                 data_json.as_deref(),
+                                Some(device.device_type.as_str()),
                             );
                             for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
                                 let _ = db.insert_device_data(
@@ -742,6 +771,7 @@ impl SimulationEngine {
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
+                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
                                 );
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
@@ -797,6 +827,7 @@ impl SimulationEngine {
                                 p_active_kw,
                                 p_reactive_kvar,
                                 data_json.as_deref(),
+                                Some(device.device_type.as_str()),
                             );
                             for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
                                 let _ = db.insert_device_data(
@@ -805,6 +836,7 @@ impl SimulationEngine {
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
+                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
                                 );
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
@@ -851,6 +883,7 @@ impl SimulationEngine {
                                 p_active_kw,
                                 p_reactive_kvar,
                                 data_json.as_deref(),
+                                Some(device.device_type.as_str()),
                             );
                             for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
                                 let _ = db.insert_device_data(
@@ -859,6 +892,7 @@ impl SimulationEngine {
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
+                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
                                 );
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
@@ -903,6 +937,7 @@ impl SimulationEngine {
                                 p_active_kw,
                                 p_reactive_kvar,
                                 data_json.as_deref(),
+                                Some(device.device_type.as_str()),
                             );
                             for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
                                 let _ = db.insert_device_data(
@@ -911,6 +946,7 @@ impl SimulationEngine {
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
+                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
                                 );
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({

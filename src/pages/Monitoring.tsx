@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { DEVICE_TYPES, DeviceType } from '../constants/deviceTypes';
 import DataChart from '../components/monitoring/DataChart';
+import { getDataItemsForDevice, formatPowerKw, computeOverview, type SystemOverview } from '../utils/deviceDataItems';
 
 interface DeviceStatus {
   device_id: string;
@@ -36,95 +37,6 @@ interface DeviceDataPoint {
   p_active: number | null;
   p_reactive: number | null;
   data_json: Record<string, unknown> | null;
-}
-
-interface SystemOverview {
-  totalDevices: number;
-  onlineDevices: number;
-  totalGeneration: number;
-  totalConsumption: number;
-  gridExchange: number;
-}
-
-/** 每类设备在监控页与趋势图下拉中显示的数据项（与 pandapower res_* 列名一致） */
-interface DataItemDef {
-  key: string;
-  label: string;
-  unit?: string;
-}
-const DEVICE_DATA_ITEMS: Record<string, DataItemDef[]> = {
-  bus: [
-    { key: 'vm_pu', label: '电压 (pu)', unit: 'pu' },
-    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
-    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
-  ],
-  line: [
-    { key: 'p_from_mw', label: '首端有功 (MW)', unit: 'MW' },
-    { key: 'q_from_mvar', label: '首端无功 (MVar)', unit: 'MVar' },
-    { key: 'p_to_mw', label: '末端有功 (MW)', unit: 'MW' },
-    { key: 'q_to_mvar', label: '末端无功 (MVar)', unit: 'MVar' },
-    { key: 'pl_mw', label: '有功损耗 (MW)', unit: 'MW' },
-    { key: 'ql_mvar', label: '无功损耗 (MVar)', unit: 'MVar' },
-    { key: 'loading_percent', label: '负载率 (%)', unit: '%' },
-  ],
-  switch: [
-    { key: 'p_from_mw', label: '首端有功 (MW)', unit: 'MW' },
-    { key: 'q_from_mvar', label: '首端无功 (MVar)', unit: 'MVar' },
-    { key: 'p_to_mw', label: '末端有功 (MW)', unit: 'MW' },
-    { key: 'q_to_mvar', label: '末端无功 (MVar)', unit: 'MVar' },
-    { key: 'i_ka', label: '电流 (kA)', unit: 'kA' },
-    { key: 'loading_percent', label: '负载率 (%)', unit: '%' },
-  ],
-  load: [
-    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
-    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
-  ],
-  charger: [
-    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
-    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
-  ],
-  static_generator: [
-    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
-    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
-  ],
-  external_grid: [
-    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
-    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
-  ],
-  transformer: [
-    { key: 'p_hv_mw', label: '高压侧有功 (MW)', unit: 'MW' },
-    { key: 'q_hv_mvar', label: '高压侧无功 (MVar)', unit: 'MVar' },
-    { key: 'p_lv_mw', label: '低压侧有功 (MW)', unit: 'MW' },
-    { key: 'q_lv_mvar', label: '低压侧无功 (MVar)', unit: 'MVar' },
-    { key: 'pl_mw', label: '损耗有功 (MW)', unit: 'MW' },
-    { key: 'ql_mvar', label: '损耗无功 (MVar)', unit: 'MVar' },
-    { key: 'i_hv_ka', label: '高压侧电流 (kA)', unit: 'kA' },
-    { key: 'i_lv_ka', label: '低压侧电流 (kA)', unit: 'kA' },
-    { key: 'loading_percent', label: '负载率 (%)', unit: '%' },
-  ],
-  storage: [
-    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
-    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
-  ],
-};
-
-/** 电表数据项完全依赖其指向的设备类型 */
-function getDataItemsForDevice(
-  deviceType: string,
-  targetDeviceId?: string | null,
-  devices?: DeviceStatus[]
-): DataItemDef[] {
-  const effectiveType =
-    deviceType === 'meter' && targetDeviceId && devices?.length
-      ? (devices.find((d) => d.device_id === targetDeviceId)?.device_type ?? 'load')
-      : deviceType;
-  return DEVICE_DATA_ITEMS[effectiveType] ?? DEVICE_DATA_ITEMS.load ?? [];
-}
-
-/** 安全格式化功率显示，避免 NaN / undefined 导致 "-.kw" 或闪烁 */
-function formatPowerKw(value: number | null | undefined): string {
-  if (value == null || typeof value !== 'number' || Number.isNaN(value)) return '-';
-  return Number(value).toFixed(1);
 }
 
 // 设备图标
@@ -240,41 +152,11 @@ export default function Monitoring() {
 
   const overview = useMemo<SystemOverview>(() => {
     const list = Array.isArray(devices) ? devices : [];
-    const onlineDevices = list.filter((d) => d.is_online);
-    // 正为流入：储能正值=充电，储能负值=放电
-    // 总发电 = 光伏正值 + 储能负值（放电部分，取绝对值）
-    const pvSum = list
-      .filter((d) => d.device_type === 'static_generator' && d.active_power != null)
-      .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
-    const storageDischargeSum = list
-      .filter((d) => d.device_type === 'storage' && d.active_power != null)
-      .reduce((sum, d) => {
-        const p = Number(d.active_power) || 0;
-        return sum + (p < 0 ? -p : 0); // 储能负值=放电，计入发电
-      }, 0);
-    const totalGeneration = pvSum + storageDischargeSum;
-    // 总消耗 = 负载 + 充电桩 + 储能正值（充电部分）
-    const loadChargerSum = list
-      .filter((d) => ['load', 'charger'].includes(d.device_type) && d.active_power != null)
-      .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
-    const storageChargingSum = list
-      .filter((d) => d.device_type === 'storage' && d.active_power != null)
-      .reduce((sum, d) => {
-        const p = Number(d.active_power) || 0;
-        return sum + (p > 0 ? p : 0); // 储能正值=充电，计入消耗
-      }, 0);
-    const totalConsumption = loadChargerSum + storageChargingSum;
-    // 电网交换 = 直接使用外部电网的功率值（正=从电网取电，负=向电网送电）
-    const gridExchange = list
-      .filter((d) => d.device_type === 'external_grid' && d.active_power != null)
-      .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
-    return {
-      totalDevices: list.length,
-      onlineDevices: onlineDevices.length,
-      totalGeneration,
-      totalConsumption,
-      gridExchange,
-    };
+    return computeOverview(list.map((d) => ({
+      device_type: d.device_type,
+      active_power: d.active_power,
+      is_online: d.is_online,
+    })));
   }, [devices]);
 
   useEffect(() => {

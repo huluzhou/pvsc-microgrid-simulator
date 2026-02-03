@@ -7,6 +7,7 @@ pub struct Database {
 }
 
 impl Database {
+    /// 默认数据库路径：使用 current_dir()/data.db。开发时 cwd 为 src-tauri，故为 src-tauri/data.db（仿真写入此处）。
     pub fn new(db_path: Option<&std::path::Path>) -> Result<Self> {
         let path = db_path.map(|p| p.to_path_buf()).unwrap_or_else(|| {
             let mut path = std::env::current_dir().unwrap();
@@ -67,10 +68,14 @@ impl Database {
                 timestamp REAL NOT NULL,
                 p_active REAL,
                 p_reactive REAL,
-                data_json TEXT
+                data_json TEXT,
+                device_type TEXT
             )",
             [],
         )?;
+
+        // 为已有表补充 device_type 列（忽略已存在）
+        let _ = self.conn.execute("ALTER TABLE device_data ADD COLUMN device_type TEXT", []);
 
         // 创建索引
         self.conn.execute(
@@ -111,6 +116,12 @@ impl Database {
         Ok(None)
     }
 
+    /// 仿真开始时清空设备数据表，避免拓扑变更后旧设备数据残留；每次启动仿真视为新一轮数据。
+    pub fn clear_device_data(&self) -> SqlResult<()> {
+        self.conn.execute("DELETE FROM device_data", [])?;
+        Ok(())
+    }
+
     pub fn insert_device_data(
         &self,
         device_id: &str,
@@ -118,11 +129,12 @@ impl Database {
         p_active: Option<f64>,
         p_reactive: Option<f64>,
         data_json: Option<&str>,
+        device_type: Option<&str>,
     ) -> SqlResult<()> {
         self.conn.execute(
-            "INSERT INTO device_data (device_id, timestamp, p_active, p_reactive, data_json)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![device_id, timestamp, p_active, p_reactive, data_json],
+            "INSERT INTO device_data (device_id, timestamp, p_active, p_reactive, data_json, device_type)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![device_id, timestamp, p_active, p_reactive, data_json, device_type],
         )?;
         Ok(())
     }
@@ -200,6 +212,30 @@ impl Database {
         }
 
         Ok(results)
+    }
+
+    /// 返回 device_data 表中所有不重复的 device_id（供数据看板「当前应用数据库」设备列表）
+    pub fn query_device_ids(&self) -> SqlResult<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT DISTINCT device_id FROM device_data ORDER BY device_id")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row?);
+        }
+        Ok(ids)
+    }
+
+    /// 返回 device_data 中不重复的 device_id 及其 device_type（同一设备取一条非空 device_type）
+    pub fn query_device_ids_with_types(&self) -> SqlResult<Vec<(String, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT d.device_id, (SELECT d2.device_type FROM device_data d2 WHERE d2.device_id = d.device_id AND d2.device_type IS NOT NULL LIMIT 1) FROM (SELECT DISTINCT device_id FROM device_data) d ORDER BY d.device_id",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
     }
 
     /// 返回该设备最新一行（含 data_json），用于状态展示，避免全表扫描
