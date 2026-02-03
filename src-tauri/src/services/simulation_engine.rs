@@ -470,7 +470,7 @@ impl SimulationEngine {
         let devices = &topology.devices;
         let target_to_meters = Self::build_target_to_meters(topology);
 
-        // 处理计算结果并存储到数据库（仅功率设备与电表；母线、线路、变压器不落库）
+        // 处理计算结果并存储到数据库：功率设备、母线、线路、变压器与电表落库，供监控界面分析所有设备运行状态
         // 同时发送事件通知前端
         
         // 建立设备ID到设备类型的映射，用于查找设备（保留以备将来使用）
@@ -489,32 +489,51 @@ impl SimulationEngine {
             }))
             .collect();
         
-        // 处理母线结果（电压数据）
-        // 注意：pandapower返回的buses是按索引组织的，需要根据拓扑中的Node设备来映射
+        // 处理母线结果：res_bus 含 vm_pu、va_degree、p_mw、q_mvar，落库并通知前端
         if let Some(buses) = results.get("buses").and_then(|v| v.as_object()) {
             for (_bus_idx_str, bus_data) in buses {
-                // 尝试从拓扑中找到对应的Node设备
-                // 由于pandapower索引和设备ID的映射关系复杂，这里使用设备名称匹配
+                let p_active_mw = bus_data.get("p_mw").and_then(|v| v.as_f64());
+                let p_active_kw = p_active_mw.map(|p| p * 1000.0);
+                let p_reactive_mvar = bus_data.get("q_mvar").and_then(|v| v.as_f64());
+                let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0);
                 if let Some(bus_name) = bus_data.get("name").and_then(|v| v.as_str()) {
-                    // 查找名称匹配的Node设备
-                    for (_device_id, device) in devices {
-                        if device.device_type == crate::domain::topology::DeviceType::Node 
-                            && device.name == bus_name {
-                            // 提取电压值（用于验证，但不存储）
-                            let _voltage = bus_data.get("vm_pu")
-                                .and_then(|v| v.as_f64())
-                                .map(|vm_pu| {
-                                    // 从设备属性中获取基准电压（vn_kv），转换为实际电压（V）
-                                    let vn_kv = device.properties.get("voltage_level")
-                                        .and_then(|v| v.as_f64())
-                                        .unwrap_or(0.4);
-                                    vm_pu * vn_kv * 1000.0 // 转换为V
-                                });
-                            
-                            // 母线（Node）不存储功率数据，只发送事件
-                            // 功率数据从连接的设备（Load、Generator等）获取
-                            
-                            // 发送电压数据更新事件
+                    for (device_id, device) in devices {
+                        if device.device_type == crate::domain::topology::DeviceType::Node
+                            && device.name == bus_name
+                        {
+                            let db = database.lock().unwrap();
+                            let data_json = serde_json::to_string(bus_data).ok();
+                            let _ = db.insert_device_data(
+                                device_id,
+                                timestamp,
+                                p_active_kw,
+                                p_reactive_kvar,
+                                data_json.as_deref(),
+                            );
+                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                let _ = db.insert_device_data(
+                                    meter_id,
+                                    timestamp,
+                                    p_active_kw,
+                                    p_reactive_kvar,
+                                    data_json.as_deref(),
+                                );
+                            }
+                            let _ = app.emit("device-data-update", serde_json::json!({
+                                "device_id": device_id,
+                                "data": {
+                                    "active_power": p_active_kw,
+                                    "reactive_power": p_reactive_kvar,
+                                    "timestamp": timestamp,
+                                    "data_json": bus_data
+                                }
+                            }));
+                            if let Ok(mut cache) = last_device_power.lock() {
+                                cache.insert(device_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    cache.insert(meter_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                }
+                            }
                             let _ = app.emit("bus-voltage-update", bus_data);
                             break;
                         }
@@ -523,13 +542,112 @@ impl SimulationEngine {
             }
         }
         
-        // 处理线路结果：仅发事件，不落库（数据库只记录功率设备与电表）
+        // 处理线路结果：落库并通知前端（res_line 含 p_from_mw/q_from_mvar、p_to_mw/q_to_mvar、pl_mw/ql_mvar 等）
         if let Some(lines) = results.get("lines").and_then(|v| v.as_object()) {
             for (_line_idx_str, line_data) in lines {
+                let p_from_mw = line_data.get("p_from_mw").and_then(|v| v.as_f64());
+                let p_active_kw = p_from_mw.map(|p| p * 1000.0);
+                let q_from_mvar = line_data.get("q_from_mvar").and_then(|v| v.as_f64());
+                let p_reactive_kvar = q_from_mvar.map(|q| q * 1000.0);
+                if let Some(line_name) = line_data.get("name").and_then(|v| v.as_str()) {
+                    for (device_id, device) in devices {
+                        if device.device_type == crate::domain::topology::DeviceType::Line
+                            && device.name == line_name
+                        {
+                            let db = database.lock().unwrap();
+                            let data_json = serde_json::to_string(line_data).ok();
+                            let _ = db.insert_device_data(
+                                device_id,
+                                timestamp,
+                                p_active_kw,
+                                p_reactive_kvar,
+                                data_json.as_deref(),
+                            );
+                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                let _ = db.insert_device_data(
+                                    meter_id,
+                                    timestamp,
+                                    p_active_kw,
+                                    p_reactive_kvar,
+                                    data_json.as_deref(),
+                                );
+                            }
+                            let _ = app.emit("device-data-update", serde_json::json!({
+                                "device_id": device_id,
+                                "data": {
+                                    "active_power": p_active_kw,
+                                    "reactive_power": p_reactive_kvar,
+                                    "timestamp": timestamp,
+                                    "data_json": line_data
+                                }
+                            }));
+                            if let Ok(mut cache) = last_device_power.lock() {
+                                cache.insert(device_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    cache.insert(meter_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
                 let _ = app.emit("line-data-update", line_data);
             }
         }
-        
+
+        // 处理开关结果：落库并通知前端（res_switch 含 p_from_mw/q_from_mvar、p_to_mw/q_to_mvar、i_ka、loading_percent）
+        if let Some(switches) = results.get("switches").and_then(|v| v.as_object()) {
+            for (_sw_idx_str, sw_data) in switches {
+                let p_from_mw = sw_data.get("p_from_mw").and_then(|v| v.as_f64());
+                let p_active_kw = p_from_mw.map(|p| p * 1000.0);
+                let q_from_mvar = sw_data.get("q_from_mvar").and_then(|v| v.as_f64());
+                let p_reactive_kvar = q_from_mvar.map(|q| q * 1000.0);
+                if let Some(sw_name) = sw_data.get("name").and_then(|v| v.as_str()) {
+                    for (device_id, device) in devices {
+                        if device.device_type == crate::domain::topology::DeviceType::Switch
+                            && device.name == sw_name
+                        {
+                            let db = database.lock().unwrap();
+                            let data_json = serde_json::to_string(sw_data).ok();
+                            let _ = db.insert_device_data(
+                                device_id,
+                                timestamp,
+                                p_active_kw,
+                                p_reactive_kvar,
+                                data_json.as_deref(),
+                            );
+                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                let _ = db.insert_device_data(
+                                    meter_id,
+                                    timestamp,
+                                    p_active_kw,
+                                    p_reactive_kvar,
+                                    data_json.as_deref(),
+                                );
+                            }
+                            let _ = app.emit("device-data-update", serde_json::json!({
+                                "device_id": device_id,
+                                "data": {
+                                    "active_power": p_active_kw,
+                                    "reactive_power": p_reactive_kvar,
+                                    "timestamp": timestamp,
+                                    "data_json": sw_data
+                                }
+                            }));
+                            if let Ok(mut cache) = last_device_power.lock() {
+                                cache.insert(device_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    cache.insert(meter_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                let _ = app.emit("switch-data-update", sw_data);
+            }
+        }
+
         // 处理负载结果
         if let Some(loads) = results.get("loads").and_then(|v| v.as_object()) {
             for (_load_idx_str, load_data) in loads {
@@ -568,7 +686,8 @@ impl SimulationEngine {
                                 "data": {
                                     "active_power": p_active_kw,
                                     "reactive_power": p_reactive_kvar,
-                                    "timestamp": timestamp
+                                    "timestamp": timestamp,
+                                    "data_json": load_data
                                 }
                             }));
                             if let Ok(mut cache) = last_device_power.lock() {
@@ -630,7 +749,8 @@ impl SimulationEngine {
                                 "data": {
                                     "active_power": p_active_kw,
                                     "reactive_power": p_reactive_kvar,
-                                    "timestamp": timestamp
+                                    "timestamp": timestamp,
+                                    "data_json": gen_data
                                 }
                             }));
                             if let Ok(mut cache) = last_device_power.lock() {
@@ -692,7 +812,8 @@ impl SimulationEngine {
                                 "data": {
                                     "active_power": p_active_kw,
                                     "reactive_power": p_reactive_kvar,
-                                    "timestamp": timestamp
+                                    "timestamp": timestamp,
+                                    "data_json": storage_data
                                 }
                             }));
                             if let Ok(mut cache) = last_device_power.lock() {
@@ -709,11 +830,108 @@ impl SimulationEngine {
                 let _ = app.emit("storage-data-update", storage_data);
             }
         }
+
+        // 处理外部电网结果（供监控界面与指向外部电网的电表显示功率）
+        if let Some(ext_grids) = results.get("ext_grids").and_then(|v| v.as_object()) {
+            for (_ext_idx_str, ext_data) in ext_grids {
+                let p_active_mw = ext_data.get("p_mw").and_then(|v| v.as_f64());
+                let p_active_kw = p_active_mw.map(|p| p * 1000.0);
+                let p_reactive_mvar = ext_data.get("q_mvar").and_then(|v| v.as_f64());
+                let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0);
+                if let Some(ext_name) = ext_data.get("name").and_then(|v| v.as_str()) {
+                    for (device_id, device) in devices {
+                        if device.device_type == crate::domain::topology::DeviceType::ExternalGrid
+                            && device.name == ext_name
+                        {
+                            let db = database.lock().unwrap();
+                            let data_json = serde_json::to_string(ext_data).ok();
+                            let _ = db.insert_device_data(
+                                device_id,
+                                timestamp,
+                                p_active_kw,
+                                p_reactive_kvar,
+                                data_json.as_deref(),
+                            );
+                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                let _ = db.insert_device_data(
+                                    meter_id,
+                                    timestamp,
+                                    p_active_kw,
+                                    p_reactive_kvar,
+                                    data_json.as_deref(),
+                                );
+                            }
+                            let _ = app.emit("device-data-update", serde_json::json!({
+                                "device_id": device_id,
+                                "data": {
+                                    "active_power": p_active_kw,
+                                    "reactive_power": p_reactive_kvar,
+                                    "timestamp": timestamp,
+                                    "data_json": ext_data
+                                }
+                            }));
+                            if let Ok(mut cache) = last_device_power.lock() {
+                                cache.insert(device_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    cache.insert(meter_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
         
-        // 处理变压器结果
+        // 处理变压器结果：落库并通知前端（res_trafo 含 p_hv_mw/q_hv_mvar、p_lv_mw/q_lv_mvar、pl_mw/ql_mvar 等）
         if let Some(transformers) = results.get("transformers").and_then(|v| v.as_object()) {
             for (_trafo_idx_str, trafo_data) in transformers {
-                // 发送变压器数据更新事件
+                let p_hv_mw = trafo_data.get("p_hv_mw").and_then(|v| v.as_f64());
+                let p_active_kw = p_hv_mw.map(|p| p * 1000.0);
+                let q_hv_mvar = trafo_data.get("q_hv_mvar").and_then(|v| v.as_f64());
+                let p_reactive_kvar = q_hv_mvar.map(|q| q * 1000.0);
+                if let Some(trafo_name) = trafo_data.get("name").and_then(|v| v.as_str()) {
+                    for (device_id, device) in devices {
+                        if device.device_type == crate::domain::topology::DeviceType::Transformer
+                            && device.name == trafo_name
+                        {
+                            let db = database.lock().unwrap();
+                            let data_json = serde_json::to_string(trafo_data).ok();
+                            let _ = db.insert_device_data(
+                                device_id,
+                                timestamp,
+                                p_active_kw,
+                                p_reactive_kvar,
+                                data_json.as_deref(),
+                            );
+                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                let _ = db.insert_device_data(
+                                    meter_id,
+                                    timestamp,
+                                    p_active_kw,
+                                    p_reactive_kvar,
+                                    data_json.as_deref(),
+                                );
+                            }
+                            let _ = app.emit("device-data-update", serde_json::json!({
+                                "device_id": device_id,
+                                "data": {
+                                    "active_power": p_active_kw,
+                                    "reactive_power": p_reactive_kvar,
+                                    "timestamp": timestamp,
+                                    "data_json": trafo_data
+                                }
+                            }));
+                            if let Ok(mut cache) = last_device_power.lock() {
+                                cache.insert(device_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    cache.insert(meter_id.clone(), (timestamp, p_active_kw, p_reactive_kvar));
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
                 let _ = app.emit("transformer-data-update", trafo_data);
             }
         }

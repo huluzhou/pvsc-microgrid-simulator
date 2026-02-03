@@ -30,6 +30,9 @@ pub struct DeviceStatus {
     pub current_p_active: Option<f64>,
     #[serde(rename = "reactive_power")]
     pub current_p_reactive: Option<f64>,
+    /// 仅电表有值：指向的设备 id，用于监控界面按目标设备类型展示数据项
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_device_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -175,6 +178,12 @@ pub async fn get_all_devices_status(
             }
         };
 
+        let target_device_id = if device.device_type == DeviceType::Meter {
+            meter_connections.get(&device.id).cloned()
+        } else {
+            None
+        };
+
         statuses.push(DeviceStatus {
             device_id: device.id.clone(),
             name: device.name.clone(),
@@ -183,6 +192,7 @@ pub async fn get_all_devices_status(
             last_update,
             current_p_active: p_active,
             current_p_reactive: p_reactive,
+            target_device_id,
         });
     }
 
@@ -241,6 +251,18 @@ pub async fn get_device_status(
     let device_active = engine.get_device_active_status().await;
     let is_online = matches!(sim_status.state, SimulationState::Running)
         && device_active.get(&device_id).copied().unwrap_or(false);
+
+    let target_device_id = if device_type == DeviceType::Meter {
+        let topo = {
+            let store = metadata_store.lock().unwrap();
+            store.get_topology()
+        };
+        topo.as_ref()
+            .and_then(|t| build_meter_connections(t).get(&device_id).cloned())
+    } else {
+        None
+    };
+
     Ok(DeviceStatus {
         device_id,
         name,
@@ -249,5 +271,6 @@ pub async fn get_device_status(
         last_update,
         current_p_active: p_active,
         current_p_reactive: p_reactive,
+        target_device_id,
     })
 }

@@ -26,6 +26,8 @@ interface DeviceStatus {
   last_update?: number;
   active_power?: number;
   reactive_power?: number;
+  /** 仅电表有值：指向的设备 id，数据项与目标设备类型一致 */
+  target_device_id?: string | null;
 }
 
 interface DeviceDataPoint {
@@ -42,6 +44,81 @@ interface SystemOverview {
   totalGeneration: number;
   totalConsumption: number;
   gridExchange: number;
+}
+
+/** 每类设备在监控页与趋势图下拉中显示的数据项（与 pandapower res_* 列名一致） */
+interface DataItemDef {
+  key: string;
+  label: string;
+  unit?: string;
+}
+const DEVICE_DATA_ITEMS: Record<string, DataItemDef[]> = {
+  bus: [
+    { key: 'vm_pu', label: '电压 (pu)', unit: 'pu' },
+    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
+    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
+  ],
+  line: [
+    { key: 'p_from_mw', label: '首端有功 (MW)', unit: 'MW' },
+    { key: 'q_from_mvar', label: '首端无功 (MVar)', unit: 'MVar' },
+    { key: 'p_to_mw', label: '末端有功 (MW)', unit: 'MW' },
+    { key: 'q_to_mvar', label: '末端无功 (MVar)', unit: 'MVar' },
+    { key: 'pl_mw', label: '有功损耗 (MW)', unit: 'MW' },
+    { key: 'ql_mvar', label: '无功损耗 (MVar)', unit: 'MVar' },
+    { key: 'loading_percent', label: '负载率 (%)', unit: '%' },
+  ],
+  switch: [
+    { key: 'p_from_mw', label: '首端有功 (MW)', unit: 'MW' },
+    { key: 'q_from_mvar', label: '首端无功 (MVar)', unit: 'MVar' },
+    { key: 'p_to_mw', label: '末端有功 (MW)', unit: 'MW' },
+    { key: 'q_to_mvar', label: '末端无功 (MVar)', unit: 'MVar' },
+    { key: 'i_ka', label: '电流 (kA)', unit: 'kA' },
+    { key: 'loading_percent', label: '负载率 (%)', unit: '%' },
+  ],
+  load: [
+    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
+    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
+  ],
+  charger: [
+    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
+    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
+  ],
+  static_generator: [
+    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
+    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
+  ],
+  external_grid: [
+    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
+    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
+  ],
+  transformer: [
+    { key: 'p_hv_mw', label: '高压侧有功 (MW)', unit: 'MW' },
+    { key: 'q_hv_mvar', label: '高压侧无功 (MVar)', unit: 'MVar' },
+    { key: 'p_lv_mw', label: '低压侧有功 (MW)', unit: 'MW' },
+    { key: 'q_lv_mvar', label: '低压侧无功 (MVar)', unit: 'MVar' },
+    { key: 'pl_mw', label: '损耗有功 (MW)', unit: 'MW' },
+    { key: 'ql_mvar', label: '损耗无功 (MVar)', unit: 'MVar' },
+    { key: 'i_hv_ka', label: '高压侧电流 (kA)', unit: 'kA' },
+    { key: 'i_lv_ka', label: '低压侧电流 (kA)', unit: 'kA' },
+    { key: 'loading_percent', label: '负载率 (%)', unit: '%' },
+  ],
+  storage: [
+    { key: 'p_mw', label: '有功功率 (MW)', unit: 'MW' },
+    { key: 'q_mvar', label: '无功功率 (MVar)', unit: 'MVar' },
+  ],
+};
+
+/** 电表数据项完全依赖其指向的设备类型 */
+function getDataItemsForDevice(
+  deviceType: string,
+  targetDeviceId?: string | null,
+  devices?: DeviceStatus[]
+): DataItemDef[] {
+  const effectiveType =
+    deviceType === 'meter' && targetDeviceId && devices?.length
+      ? (devices.find((d) => d.device_id === targetDeviceId)?.device_type ?? 'load')
+      : deviceType;
+  return DEVICE_DATA_ITEMS[effectiveType] ?? DEVICE_DATA_ITEMS.load ?? [];
 }
 
 /** 安全格式化功率显示，避免 NaN / undefined 导致 "-.kw" 或闪烁 */
@@ -139,34 +216,18 @@ export default function Monitoring() {
         data_json: p.data_json && typeof p.data_json === 'object' ? (p.data_json as Record<string, unknown>) : null,
       }));
       setChartDataPoints(points);
-      if (points.length > 0 && points[0].data_json) {
-        const keys = Object.keys(points[0].data_json).filter((k) => typeof (points[0].data_json as Record<string, unknown>)[k] === 'number');
-        const labels: Record<string, string> = {
-          active_power: '有功功率 (kW)',
-          reactive_power: '无功功率 (kVar)',
-          p_from_mw: 'P_from (MW)',
-          q_from_mvar: 'Q_from (MVar)',
-          p_to_mw: 'P_to (MW)',
-          q_to_mvar: 'Q_to (MVar)',
-          pl_mw: 'Pl (MW)',
-          ql_mvar: 'Ql (MVar)',
-          p_hv_mw: 'P_HV (MW)',
-          q_hv_mvar: 'Q_HV (MVar)',
-          p_lv_mw: 'P_LV (MW)',
-          q_lv_mvar: 'Q_LV (MVar)',
-          vm_pu: '电压 (pu)',
-          voltage: '电压 (V)',
-        };
-        const options = [{ key: 'active_power', label: labels.active_power || '有功' }, { key: 'reactive_power', label: labels.reactive_power || '无功' }, ...keys.filter((k) => !['active_power', 'reactive_power'].includes(k)).map((k) => ({ key: k, label: labels[k] || k }))];
-        setChartSeriesOptions(options);
-      } else {
-        setChartSeriesOptions([{ key: 'active_power', label: '有功功率 (kW)' }, { key: 'reactive_power', label: '无功功率 (kVar)' }]);
+      const device = devices.find((d) => d.device_id === deviceId);
+      const items = getDataItemsForDevice(device?.device_type ?? 'load', device?.target_device_id, devices);
+      const options = items.map(({ key, label }) => ({ key, label }));
+      setChartSeriesOptions(options);
+      if (options.length > 0 && !options.some((o) => o.key === selectedChartSeries)) {
+        setSelectedChartSeries(options[0].key);
       }
     } catch (_error) {
       console.error('[loadDeviceData] Error:', _error);
       setChartDataPoints([]);
     }
-  }, [selectedChartSeries]);
+  }, [selectedChartSeries, devices]);
 
   const refreshSimulationStatus = useCallback(async () => {
     try {
@@ -180,25 +241,38 @@ export default function Monitoring() {
   const overview = useMemo<SystemOverview>(() => {
     const list = Array.isArray(devices) ? devices : [];
     const onlineDevices = list.filter((d) => d.is_online);
-    const generation = list
-      .filter((d) => d.device_type === 'static_generator' && d.active_power != null && Number(d.active_power) > 0)
+    // 正为流入：储能正值=充电，储能负值=放电
+    // 总发电 = 光伏正值 + 储能负值（放电部分，取绝对值）
+    const pvSum = list
+      .filter((d) => d.device_type === 'static_generator' && d.active_power != null)
       .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
-    // 总消耗 = 负载 + 充电桩 + 储能（正=充电=消耗）；流入为正流出为负
-    const loadCharger = list
-      .filter((d) => ['load', 'charger'].includes(d.device_type) && d.active_power != null)
-      .reduce((sum, d) => sum + Math.abs(Number(d.active_power) || 0), 0);
-    const storageConsumption = list
+    const storageDischargeSum = list
       .filter((d) => d.device_type === 'storage' && d.active_power != null)
-      .reduce((sum, d) => sum + Math.max(0, Number(d.active_power) || 0), 0);
-    const consumption = loadCharger + storageConsumption;
+      .reduce((sum, d) => {
+        const p = Number(d.active_power) || 0;
+        return sum + (p < 0 ? -p : 0); // 储能负值=放电，计入发电
+      }, 0);
+    const totalGeneration = pvSum + storageDischargeSum;
+    // 总消耗 = 负载 + 充电桩 + 储能正值（充电部分）
+    const loadChargerSum = list
+      .filter((d) => ['load', 'charger'].includes(d.device_type) && d.active_power != null)
+      .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
+    const storageChargingSum = list
+      .filter((d) => d.device_type === 'storage' && d.active_power != null)
+      .reduce((sum, d) => {
+        const p = Number(d.active_power) || 0;
+        return sum + (p > 0 ? p : 0); // 储能正值=充电，计入消耗
+      }, 0);
+    const totalConsumption = loadChargerSum + storageChargingSum;
+    // 电网交换 = 直接使用外部电网的功率值（正=从电网取电，负=向电网送电）
     const gridExchange = list
-      .filter((d) => d.device_type === 'external_grid')
+      .filter((d) => d.device_type === 'external_grid' && d.active_power != null)
       .reduce((sum, d) => sum + (Number(d.active_power) || 0), 0);
     return {
       totalDevices: list.length,
       onlineDevices: onlineDevices.length,
-      totalGeneration: generation,
-      totalConsumption: consumption,
+      totalGeneration,
+      totalConsumption,
       gridExchange,
     };
   }, [devices]);
@@ -229,19 +303,18 @@ export default function Monitoring() {
       // 趋势图：仅对当前选中设备从仿真引擎追加新点，避免周期性全量查询
       if (device_id !== selectedDevice || !data) return;
       const ts = typeof data.timestamp === 'number' ? data.timestamp : Date.now() / 1000;
+      const dataJson = data.data_json && typeof data.data_json === 'object' ? (data.data_json as Record<string, unknown>) : null;
       const newPoint: DeviceDataPoint = {
         device_id,
         timestamp: ts,
         p_active: data.active_power != null ? Number(data.active_power) : null,
         p_reactive: data.reactive_power != null ? Number(data.reactive_power) : null,
-        data_json: null, // 事件未携带详细 data_json，仅用于有功/无功曲线
+        data_json: dataJson,
       };
       setChartDataPoints((prev) => {
         const lastTs = prev.length > 0 ? prev[prev.length - 1].timestamp : -Infinity;
         if (ts < lastTs) return prev;
         const next = ts === lastTs ? [...prev.slice(0, -1), newPoint] : [...prev, newPoint];
-        fetch('http://127.0.0.1:7244/ingest/b8e265ce-e1a5-4ce6-9816-ec26ce5c4c56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Monitoring.tsx:274',message:'setChartDataPoints from event',data:{prevLength:prev.length,nextLength:next.length,wasReplaced:ts===lastTs},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ZOOM'})}).catch(()=>{});
-        // #endregion
         return next.length > 3000 ? next.slice(-3000) : next;
       });
     });
@@ -394,24 +467,33 @@ export default function Monitoring() {
                     <div className="text-xl font-bold text-purple-600">{formatPowerKw(selectedDeviceInfo.reactive_power)} <span className="text-xs text-gray-400">kVar</span></div>
                   </div>
                 </div>
-                {chartDataPoints.length > 0 && chartDataPoints[chartDataPoints.length - 1].data_json && (() => {
-                  const dj = chartDataPoints[chartDataPoints.length - 1].data_json!;
-                  const numKeys = Object.entries(dj).filter(([, v]) => typeof v === 'number') as [string, number][];
-                  if (numKeys.length === 0) return null;
-                  return (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="text-xs text-gray-500 mb-2">最新数据项</div>
+                <div className="mt-3 pt-3 border-t border-gray-200 min-h-[4.5rem]">
+                  <div className="text-xs text-gray-500 mb-2">最新数据项</div>
+                  {(() => {
+                    const lastPoint = chartDataPoints.length > 0 ? chartDataPoints[chartDataPoints.length - 1] : null;
+                    const dj = lastPoint?.data_json;
+                    if (!dj || typeof dj !== 'object') {
+                      return <div className="text-sm text-gray-400 py-2">暂无明细数据</div>;
+                    }
+                    const items = getDataItemsForDevice(selectedDeviceInfo.device_type, selectedDeviceInfo.target_device_id, devices);
+                    const entries = items
+                      .filter((item) => item.key in dj && typeof dj[item.key] === 'number')
+                      .map((item) => ({ key: item.key, label: item.label, unit: item.unit, value: Number(dj[item.key]) }));
+                    if (entries.length === 0) {
+                      return <div className="text-sm text-gray-400 py-2">暂无明细数据</div>;
+                    }
+                    return (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {numKeys.slice(0, 8).map(([k, v]) => (
-                          <div key={k} className="p-2 bg-gray-50 rounded border border-gray-100">
-                            <div className="text-xs text-gray-500 truncate">{k}</div>
-                            <div className="text-sm font-medium text-gray-800">{(Number(v)).toFixed(3)}</div>
+                        {entries.map(({ key, label, value, unit }) => (
+                          <div key={key} className="p-2 bg-gray-50 rounded border border-gray-100">
+                            <div className="text-xs text-gray-500 truncate">{label}</div>
+                            <div className="text-sm font-medium text-gray-800">{(value).toFixed(3)}{unit ? ` ${unit}` : ''}</div>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
+                </div>
               </div>
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between mb-3">
@@ -432,7 +514,11 @@ export default function Monitoring() {
                     title=""
                     data={chartDataPoints}
                     seriesKey={selectedChartSeries}
-                    unit={selectedChartSeries.includes('q') || selectedChartSeries === 'reactive_power' ? 'kVar' : 'kW'}
+                    unit={(() => {
+                      const items = getDataItemsForDevice(selectedDeviceInfo.device_type, selectedDeviceInfo.target_device_id, devices);
+                      const item = items.find((i) => i.key === selectedChartSeries);
+                      return item?.unit ?? (selectedChartSeries.includes('q') || selectedChartSeries === 'reactive_power' ? 'MVar' : 'MW');
+                    })()}
                     color="#3b82f6"
                     enableDataZoom={simulationState !== 'Running'}
                   />

@@ -136,6 +136,16 @@ class PandapowerKernel(PowerCalculationKernel):
                     "details": {}
                 })
             try:
+                if hasattr(self.net, 'res_switch') and self.net.res_switch is not None:
+                    results["devices"]["switches"] = _res_to_row_dict(self.net, self.net.res_switch, "switch")
+            except Exception as e:
+                errors.append({
+                    "type": "calculation",
+                    "severity": "warning",
+                    "message": f"提取开关结果失败: {str(e)}",
+                    "details": {}
+                })
+            try:
                 if hasattr(self.net, 'res_trafo') and self.net.res_trafo is not None:
                     results["devices"]["transformers"] = _res_to_row_dict(self.net, self.net.res_trafo, "trafo")
             except Exception as e:
@@ -173,6 +183,16 @@ class PandapowerKernel(PowerCalculationKernel):
                     "type": "calculation",
                     "severity": "warning",
                     "message": f"提取储能结果失败: {str(e)}",
+                    "details": {}
+                })
+            try:
+                if hasattr(self.net, 'res_ext_grid') and self.net.res_ext_grid is not None:
+                    results["devices"]["ext_grids"] = _res_to_row_dict(self.net, self.net.res_ext_grid, "ext_grid")
+            except Exception as e:
+                errors.append({
+                    "type": "calculation",
+                    "severity": "warning",
+                    "message": f"提取外部电网结果失败: {str(e)}",
                     "details": {}
                 })
             
