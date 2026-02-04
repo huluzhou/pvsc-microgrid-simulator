@@ -10,7 +10,7 @@ import RandomConfigForm from '../components/device-control/RandomConfigForm';
 import HistoricalConfigForm from '../components/device-control/HistoricalConfigForm';
 import { useDeviceControlStore } from '../stores/deviceControl';
 import { DeviceType } from '../constants/deviceTypes';
-import { DataSourceType, ManualSetpoint } from '../types/dataSource';
+import { DataSourceType, ManualSetpoint, DeviceControlConfig, HistoricalConfig } from '../types/dataSource';
 
 interface DeviceInfo {
   id: string;
@@ -30,6 +30,57 @@ export default function DeviceControl() {
   const [isLoading, setIsLoading] = useState(false);
 
   const { deviceConfigs, selectedDeviceIds, setSelectedDevices, setDataSourceType, setManualSetpoint, setRandomConfig, setHistoricalConfig, batchSetDataSource } = useDeviceControlStore();
+
+  /** 将单设备数据源配置同步到仿真后端（仿真运行中热切换生效） */
+  const syncDeviceDataSourceToBackend = useCallback(async (deviceId: string, type: DataSourceType, config: DeviceControlConfig | undefined) => {
+    if (!type) return;
+    try {
+      const modeMap: Record<DataSourceType, string> = {
+        manual: 'manual',
+        random: 'random_data',
+        historical: 'historical_data',
+      };
+      await invoke('set_device_mode', { deviceId, mode: modeMap[type] });
+      if (type === 'manual' && config?.manualSetpoint) {
+        await invoke('set_device_manual_setpoint', {
+          deviceId,
+          activePower: config.manualSetpoint.activePower,
+          reactivePower: config.manualSetpoint.reactivePower ?? 0,
+        });
+        await invoke('update_device_properties_for_simulation', {
+          deviceId,
+          properties: {
+            rated_power: config.manualSetpoint.activePower,
+            p_kw: config.manualSetpoint.activePower,
+            q_kvar: config.manualSetpoint.reactivePower ?? 0,
+          },
+        });
+      } else if (type === 'random' && config?.randomConfig) {
+        await invoke('set_device_random_config', {
+          deviceId,
+          minPower: config.randomConfig.minPower,
+          maxPower: config.randomConfig.maxPower,
+        });
+      } else if (type === 'historical' && config?.historicalConfig) {
+        await invoke('set_device_historical_config', {
+          deviceId,
+          config: config.historicalConfig,
+        });
+      }
+    } catch (e) {
+      console.warn('同步数据源到仿真失败:', deviceId, type, e);
+    }
+  }, []);
+
+  /** 表格下拉切换数据源时：先更新 store，再同步到后端（热切换） */
+  const handleChangeDataSource = useCallback(
+    async (deviceId: string, type: DataSourceType) => {
+      setDataSourceType(deviceId, type);
+      const config = useDeviceControlStore.getState().deviceConfigs[deviceId];
+      await syncDeviceDataSourceToBackend(deviceId, type, config);
+    },
+    [setDataSourceType, syncDeviceDataSourceToBackend]
+  );
 
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
@@ -135,6 +186,11 @@ export default function DeviceControl() {
     setManualSetpoint(selectedDevice.id, setpoint);
     try {
       await invoke('set_device_mode', { deviceId: selectedDevice.id, mode: 'manual' });
+      await invoke('set_device_manual_setpoint', {
+        deviceId: selectedDevice.id,
+        activePower: setpoint.activePower,
+        reactivePower: setpoint.reactivePower ?? 0,
+      });
       await invoke('update_device_properties_for_simulation', {
         deviceId: selectedDevice.id,
         properties: {
@@ -150,18 +206,54 @@ export default function DeviceControl() {
     handleCloseConfig();
   }, [selectedDevice, setManualSetpoint, handleCloseConfig]);
 
-  const handleSaveRandom = useCallback((config: any) => {
-    if (selectedDevice) { setRandomConfig(selectedDevice.id, config); handleCloseConfig(); }
-  }, [selectedDevice, setRandomConfig, handleCloseConfig]);
+  const handleSaveRandom = useCallback(
+    async (config: { minPower: number; maxPower: number; updateInterval?: number; volatility?: number }) => {
+      if (!selectedDevice) return;
+      setRandomConfig(selectedDevice.id, config);
+      try {
+        await syncDeviceDataSourceToBackend(selectedDevice.id, 'random', {
+          deviceId: selectedDevice.id,
+          dataSourceType: 'random',
+          randomConfig: config,
+        });
+      } catch (e) {
+        console.warn('同步随机配置到仿真失败:', selectedDevice.id, e);
+      }
+      handleCloseConfig();
+    },
+    [selectedDevice, setRandomConfig, syncDeviceDataSourceToBackend, handleCloseConfig]
+  );
 
-  const handleSaveHistorical = useCallback((config: any) => {
-    if (selectedDevice) { setHistoricalConfig(selectedDevice.id, config); handleCloseConfig(); }
-  }, [selectedDevice, setHistoricalConfig, handleCloseConfig]);
+  const handleSaveHistorical = useCallback(
+    async (config: HistoricalConfig) => {
+      if (!selectedDevice) return;
+      setHistoricalConfig(selectedDevice.id, config);
+      try {
+        await syncDeviceDataSourceToBackend(selectedDevice.id, 'historical', {
+          deviceId: selectedDevice.id,
+          dataSourceType: 'historical',
+          historicalConfig: config,
+        });
+      } catch (e) {
+        console.warn('同步历史配置到仿真失败:', selectedDevice.id, e);
+      }
+      handleCloseConfig();
+    },
+    [selectedDevice, setHistoricalConfig, syncDeviceDataSourceToBackend, handleCloseConfig]
+  );
 
-  const handleBatchSetDataSource = useCallback((type: DataSourceType) => {
-    if (selectedDeviceIds.length === 0) return;
-    batchSetDataSource(type);
-  }, [selectedDeviceIds, batchSetDataSource]);
+  /** 批量设置数据源：先更新 store，再逐个同步到后端（热切换） */
+  const handleBatchSetDataSource = useCallback(
+    async (type: DataSourceType) => {
+      if (selectedDeviceIds.length === 0) return;
+      batchSetDataSource(type);
+      const configs = useDeviceControlStore.getState().deviceConfigs;
+      for (const deviceId of selectedDeviceIds) {
+        await syncDeviceDataSourceToBackend(deviceId, type, configs[deviceId]);
+      }
+    },
+    [selectedDeviceIds, batchSetDataSource, syncDeviceDataSourceToBackend]
+  );
 
   const stats = useMemo(() => {
     const configured = Object.values(deviceConfigs).filter((c) => c.dataSourceType);
@@ -235,7 +327,7 @@ export default function DeviceControl() {
             selectedIds={selectedDeviceIds}
             onSelect={setSelectedDevices}
             onConfigureDevice={handleConfigureDevice}
-            onChangeDataSource={setDataSourceType}
+            onChangeDataSource={handleChangeDataSource}
             modbusDeviceIds={modbusDevices.map((d) => d.id)}
             runningModbusIds={runningModbusIds}
             onToggleModbus={handleToggleModbus}
