@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 use std::collections::HashMap;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::{interval, Duration};
 use tokio::sync::mpsc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -418,6 +418,12 @@ impl SimulationEngine {
                                 
                                 // 处理并存储计算结果（传入完整拓扑以便电表落库与连接解析；同时更新功率缓存供轮询使用）
                                 Self::process_calculation_results_inline(&app, devices, t, &database, &last_device_power, timestamp);
+                                // 仿真结果同步到运行中的 Modbus 设备寄存器（v1.5.0 update_* 逻辑）
+                                if let Some(modbus) = app.try_state::<crate::services::modbus::ModbusService>() {
+                                    let power_snapshot: HashMap<String, (f64, Option<f64>, Option<f64>)> =
+                                        last_device_power.lock().unwrap().clone();
+                                    let _ = modbus.update_all_devices_from_simulation(&power_snapshot).await;
+                                }
                                 // 本拍成功获取到数据，标记拓扑内设备在本轮仿真中为在线
                                 let mut active = device_active_status.lock().await;
                                 for id in t.devices.keys() {

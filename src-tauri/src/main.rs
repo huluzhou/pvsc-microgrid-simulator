@@ -14,7 +14,7 @@ use services::modbus::ModbusService;
 use services::ssh::SshClient;
 use domain::metadata::DeviceMetadataStore;
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::{mpsc, Mutex as TokioMutex};
 
 fn main() {
     tauri::Builder::default()
@@ -104,8 +104,35 @@ fn main() {
                 }
             });
 
-            // 初始化 Modbus 服务
-            let modbus_service = ModbusService::new();
+            // 初始化 Modbus 服务：HR 写入通过 channel 发出事件；若设备开启远程控制则经 Modbus 过滤后推送到 Python 内核
+            let (modbus_hr_tx, mut modbus_hr_rx) = mpsc::channel::<services::modbus::HoldingRegisterWriteEvent>(64);
+            let modbus_service = ModbusService::new(modbus_hr_tx);
+            let app_handle_modbus = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while let Some((device_id, address, value)) = modbus_hr_rx.recv().await {
+                    // Modbus 过滤：四条指令独立（开关机/功率百分比限制/功率限制/功率设定），冲突只响应最新一条；若设备允许远程控制则推送到 Python
+                    if let (Some(engine), Some(modbus)) = (
+                        app_handle_modbus.try_state::<Arc<SimulationEngine>>(),
+                        app_handle_modbus.try_state::<ModbusService>(),
+                    ) {
+                        let engine = engine.inner().clone();
+                        let device_type: Option<String> = engine
+                            .get_topology()
+                            .await
+                            .and_then(|t| t.devices.get(&device_id).map(|d| d.device_type.as_str().to_string()));
+                        if let Some(ref dt) = device_type {
+                            if let Some(props) = modbus.apply_hr_write_and_effective_properties(&device_id, dt, address, value) {
+                                let _ = engine.update_device_properties_for_simulation(device_id.clone(), props).await;
+                            }
+                        }
+                    }
+                    let _ = app_handle_modbus.emit("modbus-holding-register-write", serde_json::json!({
+                        "device_id": device_id,
+                        "address": address,
+                        "value": value,
+                    }));
+                }
+            });
             // SSH 客户端（数据看板远程数据源）
             let ssh_client = Arc::new(TokioMutex::new(SshClient::new()));
 
@@ -149,7 +176,10 @@ fn main() {
             commands::monitoring::get_device_status,
             commands::device::get_all_devices,
             commands::device::get_modbus_devices,
+            commands::device::get_modbus_register_defaults,
             commands::device::get_device,
+            commands::modbus::start_device_modbus,
+            commands::modbus::stop_device_modbus,
             commands::device::update_device_config,
             commands::device::batch_set_device_mode,
             commands::ai::predict_device_data,

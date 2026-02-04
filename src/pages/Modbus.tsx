@@ -1,10 +1,19 @@
 /**
  * Modbus通信页面 - 浅色主题
+ * 四类寄存器：Coils / Discrete Inputs / Input Registers / Holding Registers
+ * 预定义寄存器按设备类型（v1.5.0），支持增删与就地编辑
  */
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Radio, Play, Square, Settings, RefreshCw, CheckCircle, Info } from 'lucide-react';
 import { DeviceType, DEVICE_TYPES } from '../constants/deviceTypes';
+import {
+  type RegisterEntry,
+  type ModbusRegisterType,
+  getPredefinedRegistersForDeviceType,
+  MODBUS_REGISTER_TYPE_LABELS,
+  getAllRegisterTypes,
+} from '../constants/modbusRegisters';
 
 interface DeviceModbusConfig {
   deviceId: string;
@@ -13,15 +22,7 @@ interface DeviceModbusConfig {
   ipAddress: string;
   port: number;
   slaveId: number;
-  registerMapping: RegisterMapping;
-}
-
-interface RegisterMapping {
-  activePower: number;
-  reactivePower: number;
-  voltage?: number;
-  current?: number;
-  status?: number;
+  registers: RegisterEntry[];
 }
 
 interface ModbusServerStatus {
@@ -31,16 +32,6 @@ interface ModbusServerStatus {
   lastCommandTime?: string;
   errorCount: number;
 }
-
-const POWER_DEVICE_TYPES: DeviceType[] = ['static_generator', 'storage', 'load', 'charger', 'external_grid'];
-
-const DEFAULT_REGISTER_MAPPING: RegisterMapping = {
-  activePower: 0,
-  reactivePower: 2,
-  voltage: 4,
-  current: 6,
-  status: 8,
-};
 
 // 设备图标
 function DeviceIcon({ type, size = 24 }: { type: DeviceType; size?: number }) {
@@ -106,7 +97,15 @@ export default function Modbus() {
       setDevices(list);
 
       const defaultConfigs: Record<string, DeviceModbusConfig> = {};
-      modbusDevices.forEach((device, index) => {
+      for (let index = 0; index < modbusDevices.length; index++) {
+        const device = modbusDevices[index];
+        let registers: RegisterEntry[];
+        try {
+          const fromBackend = await invoke<Array<{ address: number; value: number; type: string; name?: string }>>('get_modbus_register_defaults', { deviceType: device.device_type });
+          registers = fromBackend.map((r) => ({ address: r.address, value: r.value, type: r.type as ModbusRegisterType, name: r.name }));
+        } catch {
+          registers = getPredefinedRegistersForDeviceType(device.device_type).map((r) => ({ ...r }));
+        }
         defaultConfigs[device.id] = {
           deviceId: device.id,
           enabled: false,
@@ -114,9 +113,9 @@ export default function Modbus() {
           ipAddress: device.ip,
           port: device.port,
           slaveId: index + 1,
-          registerMapping: { ...DEFAULT_REGISTER_MAPPING },
+          registers,
         };
-      });
+      }
       setConfigs(defaultConfigs);
     } catch (error) {
       console.error('Failed to load Modbus devices from topology:', error);
@@ -136,18 +135,29 @@ export default function Modbus() {
   const toggleServer = useCallback(async (deviceId: string) => {
     const config = configs[deviceId];
     if (!config) return;
+    const device = devices.find((d) => d.id === deviceId);
+    const deviceType = device?.deviceType ?? 'meter';
     try {
       if (serverStatus[deviceId]?.running) {
         await invoke('stop_device_modbus', { deviceId });
         setServerStatus((prev) => ({ ...prev, [deviceId]: { ...prev[deviceId], running: false } }));
       } else {
-        await invoke('start_device_modbus', { deviceId, config: { ip_address: config.ipAddress, port: config.port, slave_id: config.slaveId } });
+        await invoke('start_device_modbus', {
+          deviceId,
+          device_type: deviceType,
+          config: {
+            ip_address: config.ipAddress,
+            port: config.port,
+            slave_id: config.slaveId,
+            registers: config.registers,
+          },
+        });
         setServerStatus((prev) => ({ ...prev, [deviceId]: { deviceId, running: true, connectedClients: 0, errorCount: 0 } }));
       }
     } catch (error) {
       alert('操作失败：' + error);
     }
-  }, [configs, serverStatus]);
+  }, [configs, serverStatus, devices]);
 
   const stats = useMemo(() => {
     const enabledConfigs = Object.values(configs).filter((c) => c.enabled);
@@ -248,34 +258,41 @@ export default function Modbus() {
                   </div>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">寄存器映射</h3>
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">有功功率 (读写)</label>
-                        <div className="flex gap-2">
-                          <input type="number" value={selectedConfig.registerMapping.activePower} onChange={(e) => updateConfig(selectedDevice!, { registerMapping: { ...selectedConfig.registerMapping, activePower: Number(e.target.value) } })} className="flex-1 px-2 py-1.5 bg-white border border-gray-300 rounded text-sm" />
-                          <span className="px-2 py-1.5 bg-gray-100 rounded text-gray-500 text-xs">0x{selectedConfig.registerMapping.activePower.toString(16).padStart(4, '0')}</span>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">无功功率 (读写)</label>
-                        <div className="flex gap-2">
-                          <input type="number" value={selectedConfig.registerMapping.reactivePower} onChange={(e) => updateConfig(selectedDevice!, { registerMapping: { ...selectedConfig.registerMapping, reactivePower: Number(e.target.value) } })} className="flex-1 px-2 py-1.5 bg-white border border-gray-300 rounded text-sm" />
-                          <span className="px-2 py-1.5 bg-gray-100 rounded text-gray-500 text-xs">0x{selectedConfig.registerMapping.reactivePower.toString(16).padStart(4, '0')}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">电压 (只读)</label>
-                        <input type="number" value={selectedConfig.registerMapping.voltage} onChange={(e) => updateConfig(selectedDevice!, { registerMapping: { ...selectedConfig.registerMapping, voltage: Number(e.target.value) } })} className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-600 mb-1">电流 (只读)</label>
-                        <input type="number" value={selectedConfig.registerMapping.current} onChange={(e) => updateConfig(selectedDevice!, { registerMapping: { ...selectedConfig.registerMapping, current: Number(e.target.value) } })} className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-sm" />
-                      </div>
-                    </div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">寄存器列表（固定：每类设备对应预定义 IR 更新逻辑与 HR 命令逻辑，仅值可编辑）</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border border-gray-200">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          <th className="px-2 py-1.5 text-left font-medium text-gray-700">地址</th>
+                          <th className="px-2 py-1.5 text-left font-medium text-gray-700">值</th>
+                          <th className="px-2 py-1.5 text-left font-medium text-gray-700">类型</th>
+                          <th className="px-2 py-1.5 text-left font-medium text-gray-700">名称</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedConfig.registers.map((reg, idx) => (
+                          <tr key={`${reg.type}-${reg.address}-${idx}`} className="border-b border-gray-100">
+                            <td className="px-2 py-1 text-gray-700 tabular-nums">{reg.address}</td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="number"
+                                min={reg.type === 'coils' || reg.type === 'discrete_inputs' ? 0 : 0}
+                                max={reg.type === 'coils' || reg.type === 'discrete_inputs' ? 1 : 65535}
+                                value={reg.value}
+                                onChange={(e) => {
+                                  const next = [...selectedConfig.registers];
+                                  next[idx] = { ...next[idx], value: Number(e.target.value) };
+                                  updateConfig(selectedDevice!, { registers: next });
+                                }}
+                                className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-xs"
+                              />
+                            </td>
+                            <td className="px-2 py-1 text-gray-600 text-xs">{MODBUS_REGISTER_TYPE_LABELS[reg.type]}</td>
+                            <td className="px-2 py-1 text-gray-600 text-xs">{reg.name ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
