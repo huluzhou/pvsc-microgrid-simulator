@@ -155,12 +155,20 @@ impl Service for ModbusContextService {
 }
 
 /// 在 (ip, port) 上启动 Modbus TCP 服务，使用共享上下文；任务被 abort 时退出
+/// 当 port < 1024 时，在 Linux/WSL 上无 root 会 EACCES，故改用 127.0.0.1:(10000+port) 绑定
 pub async fn run_modbus_tcp_server(
     ip: &str,
     port: u16,
     context: Arc<RwLock<ModbusDeviceContext>>,
 ) -> std::io::Result<()> {
-    let addr: SocketAddr = format!("{}:{}", ip, port).parse().map_err(|e| {
+    let (bind_ip, bind_port) = if port < 1024 {
+        let high_port = 10000u32.saturating_add(port as u32).min(65535) as u16;
+        eprintln!("Modbus 端口 {} 映射到 {}（无需 root 权限）", port, high_port);
+        ("127.0.0.1", high_port)
+    } else {
+        (ip, port)
+    };
+    let addr: SocketAddr = format!("{}:{}", bind_ip, bind_port).parse().map_err(|e| {
         std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
     })?;
     let listener = TcpListener::bind(addr).await?;

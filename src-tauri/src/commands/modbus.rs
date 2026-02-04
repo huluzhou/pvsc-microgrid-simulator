@@ -43,21 +43,58 @@ pub async fn start_all_modbus_servers(
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
     modbus_service: State<'_, ModbusService>,
 ) -> Result<(), String> {
+    // 说明：
+    // - 旧版逻辑仅启动 properties 中明确配置了 ip/port 的设备
+    // - 但默认拓扑（例如 topology.json）通常未配置这些字段，导致前端“运行中”但实际没有 Modbus 端口监听
+    // - 这里为常用设备类型提供默认端口分配（与 working_*_client.py 保持一致），让仿真开机即具备可连的 Modbus TCP 服务
     let devices_to_start: Vec<(String, String, String, u16)> = {
         let store = metadata_store.lock().map_err(|e| e.to_string())?;
-        store
-            .get_all_devices()
-            .iter()
+        let mut devices = store.get_all_devices();
+        // HashMap 的 values() 顺序不稳定，这里按 id 排序，保证默认端口分配稳定
+        devices.sort_by(|a, b| a.id.cmp(&b.id));
+
+        let mut type_counters: std::collections::HashMap<String, u16> = std::collections::HashMap::new();
+
+        devices
+            .into_iter()
             .filter_map(|d| {
-                let ip = d.properties.get("ip").and_then(|v| v.as_str()).map(String::from)?;
-                let port = d
+                let device_type = device_type_to_string(&d.device_type);
+
+                // 1) 读取拓扑配置（若存在）
+                let ip_opt = d
+                    .properties
+                    .get("ip")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let port_opt = d
                     .properties
                     .get("port")
-                    .and_then(|v| v.as_u64().map(|n| n as u16).or_else(|| v.as_str().and_then(|s| s.parse::<u16>().ok())))?;
-                if ip.is_empty() {
+                    .and_then(|v| v.as_u64().map(|n| n as u16).or_else(|| v.as_str().and_then(|s| s.parse::<u16>().ok())));
+
+                // 2) 提供默认 ip/port（与 Python 工作客户端默认一致）
+                let default_base_port: Option<u16> = match device_type.as_str() {
+                    "Meter" => Some(403),
+                    "Storage" => Some(502),
+                    "Pv" => Some(602),
+                    "Charger" => Some(702),
+                    _ => None,
+                };
+
+                let ip = ip_opt.unwrap_or_else(|| "127.0.0.1".to_string());
+                let port = if let Some(p) = port_opt {
+                    p
+                } else if let Some(base) = default_base_port {
+                    let c = type_counters.entry(device_type.clone()).or_insert(0);
+                    let p = base.saturating_add(*c);
+                    *c = c.saturating_add(1);
+                    p
+                } else {
+                    // 其他设备类型没有默认端口分配则跳过
                     return None;
-                }
-                Some((d.id.clone(), device_type_to_string(&d.device_type), ip, port))
+                };
+
+                Some((d.id.clone(), device_type, ip, port))
             })
             .collect()
     };
