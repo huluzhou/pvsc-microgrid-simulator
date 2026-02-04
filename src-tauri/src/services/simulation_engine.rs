@@ -423,6 +423,20 @@ impl SimulationEngine {
                                     let power_snapshot: HashMap<String, (f64, Option<f64>, Option<f64>)> =
                                         last_device_power.lock().unwrap().clone();
                                     let _ = modbus.update_all_devices_from_simulation(&power_snapshot).await;
+                                    // 推送寄存器快照到前端，联动更新 Modbus 页面的寄存器值显示
+                                    for device_id in modbus.running_device_ids() {
+                                        if let Some((ir, hr)) = modbus.get_device_register_snapshot(&device_id).await {
+                                            let ir_map: std::collections::HashMap<String, u16> =
+                                                ir.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+                                            let hr_map: std::collections::HashMap<String, u16> =
+                                                hr.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+                                            let _ = app.emit("modbus-registers-updated", serde_json::json!({
+                                                "device_id": device_id,
+                                                "input_registers": ir_map,
+                                                "holding_registers": hr_map,
+                                            }));
+                                        }
+                                    }
                                 }
                                 // 本拍成功获取到数据，标记拓扑内设备在本轮仿真中为在线
                                 let mut active = device_active_status.lock().await;

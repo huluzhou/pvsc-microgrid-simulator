@@ -1,7 +1,7 @@
 /**
  * 设备控制表格组件 - 浅色主题
  */
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { Settings, Zap, Dice5, History, MoreVertical } from 'lucide-react';
 import { DEVICE_TYPES, DeviceType } from '../../constants/deviceTypes';
 import { DataSourceType, DeviceControlConfig } from '../../types/dataSource';
@@ -19,6 +19,11 @@ interface DeviceControlTableProps {
   onSelect: (ids: string[]) => void;
   onConfigureDevice: (device: DeviceInfo) => void;
   onChangeDataSource: (deviceId: string, type: DataSourceType) => void;
+  /** 有 Modbus 配置（ip/port）的设备 id，这些设备显示运行/关机开关 */
+  modbusDeviceIds?: string[];
+  /** 当前 Modbus 服务器已启动的设备 id */
+  runningModbusIds?: string[];
+  onToggleModbus?: (deviceId: string, turnOn: boolean) => Promise<void>;
 }
 
 // 数据源类型图标
@@ -87,6 +92,9 @@ const DeviceRow = memo(function DeviceRow({
   onSelectToggle,
   onConfigure,
   onChangeDataSource,
+  hasModbus,
+  modbusRunning,
+  onToggleModbus,
 }: {
   device: DeviceInfo;
   config?: DeviceControlConfig;
@@ -94,8 +102,21 @@ const DeviceRow = memo(function DeviceRow({
   onSelectToggle: () => void;
   onConfigure: () => void;
   onChangeDataSource: (type: DataSourceType) => void;
+  hasModbus: boolean;
+  modbusRunning: boolean;
+  onToggleModbus?: (deviceId: string, turnOn: boolean) => Promise<void>;
 }) {
   const deviceInfo = DEVICE_TYPES[device.deviceType];
+  const [toggling, setToggling] = useState(false);
+  const handleToggle = useCallback(async () => {
+    if (!onToggleModbus) return;
+    setToggling(true);
+    try {
+      await onToggleModbus(device.id, !modbusRunning);
+    } finally {
+      setToggling(false);
+    }
+  }, [onToggleModbus, device.id, modbusRunning]);
 
   return (
     <tr className={`border-b border-gray-200 ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
@@ -122,6 +143,22 @@ const DeviceRow = memo(function DeviceRow({
             <div className="text-xs text-gray-500">{deviceInfo?.name}</div>
           </div>
         </div>
+      </td>
+
+      {/* 运行/关机（仅对有 Modbus 配置的设备显示） */}
+      <td className="px-4 py-3">
+        {hasModbus && onToggleModbus ? (
+          <button
+            type="button"
+            onClick={handleToggle}
+            disabled={toggling}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${modbusRunning ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-gray-300 hover:bg-gray-400 text-gray-800'}`}
+          >
+            {toggling ? '…' : modbusRunning ? '运行' : '关机'}
+          </button>
+        ) : (
+          <span className="text-gray-400 text-xs">—</span>
+        )}
       </td>
 
       {/* 数据源类型 */}
@@ -178,6 +215,9 @@ export default function DeviceControlTable({
   onSelect,
   onConfigureDevice,
   onChangeDataSource,
+  modbusDeviceIds = [],
+  runningModbusIds = [],
+  onToggleModbus,
 }: DeviceControlTableProps) {
   const handleSelectAll = useCallback(() => {
     if (selectedIds.length === devices.length) {
@@ -218,6 +258,7 @@ export default function DeviceControlTable({
               />
             </th>
             <th className="px-4 py-3 text-sm font-semibold text-gray-600">设备</th>
+            <th className="px-4 py-3 text-sm font-semibold text-gray-600 w-20">运行</th>
             <th className="px-4 py-3 text-sm font-semibold text-gray-600">数据源</th>
             <th className="px-4 py-3 text-sm font-semibold text-gray-600">配置摘要</th>
             <th className="px-4 py-3 text-sm font-semibold text-gray-600 w-16">操作</th>
@@ -226,7 +267,7 @@ export default function DeviceControlTable({
         <tbody>
           {devices.length === 0 ? (
             <tr>
-              <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+              <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
                 暂无功率设备，请先在拓扑设计中添加设备
               </td>
             </tr>
@@ -240,6 +281,9 @@ export default function DeviceControlTable({
                 onSelectToggle={() => handleToggleSelect(device.id)}
                 onConfigure={() => onConfigureDevice(device)}
                 onChangeDataSource={(type) => onChangeDataSource(device.id, type)}
+                hasModbus={modbusDeviceIds?.includes(device.id) ?? false}
+                modbusRunning={runningModbusIds?.includes(device.id) ?? false}
+                onToggleModbus={onToggleModbus}
               />
             ))
           )}

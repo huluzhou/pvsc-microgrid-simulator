@@ -15,6 +15,8 @@ export interface RegisterEntry {
   value: number; // Coils/Discrete: 0|1; Input/Holding: 16-bit
   type: ModbusRegisterType;
   name?: string;
+  /** 语义键，参与仿真更新或 HR 命令的寄存器有值，用于可配置地址 */
+  key?: string;
 }
 
 const REG_TYPES: ModbusRegisterType[] = [
@@ -34,7 +36,7 @@ export const MODBUS_REGISTER_TYPE_LABELS: Record<ModbusRegisterType, string> = {
 /** v1.5.0 meter: Input Registers 0,1,2,3,4,5,6,7,8,9,20,10,11 */
 function getMeterDefaults(): RegisterEntry[] {
   return [
-    { address: 0, value: 0, type: 'input_registers', name: '当前有功功率' },
+    { address: 0, value: 0, type: 'input_registers', name: '当前有功功率', key: 'active_power' },
     { address: 1, value: 220, type: 'input_registers', name: 'A相电压' },
     { address: 2, value: 220, type: 'input_registers', name: 'B相电压' },
     { address: 3, value: 220, type: 'input_registers', name: 'C相电压' },
@@ -46,35 +48,35 @@ function getMeterDefaults(): RegisterEntry[] {
     { address: 9, value: 0, type: 'input_registers', name: '组合有功总电能' },
     { address: 10, value: 0, type: 'input_registers', name: '四象限-无功导出' },
     { address: 11, value: 0, type: 'input_registers', name: '四象限-无功导入' },
-    { address: 20, value: 0, type: 'input_registers', name: '无功功率' },
+    { address: 20, value: 0, type: 'input_registers', name: '无功功率', key: 'reactive_power' },
   ];
 }
 
 /** v1.5.0 static_generator: HR 5005,5007,5038,5040,5041; IR 5001,5003,5004,5030-5033 */
 function getStaticGeneratorDefaults(): RegisterEntry[] {
   return [
-    { address: 5005, value: 1, type: 'holding_registers', name: '开关机' },
-    { address: 5007, value: 100, type: 'holding_registers', name: '有功功率百分比限制' },
-    { address: 5038, value: 0x7fff, type: 'holding_registers', name: '有功功率限制' },
-    { address: 5040, value: 0, type: 'holding_registers', name: '无功补偿百分比' },
-    { address: 5041, value: 0, type: 'holding_registers', name: '功率因数' },
+    { address: 5005, value: 1, type: 'holding_registers', name: '开关机', key: 'on_off' },
+    { address: 5007, value: 100, type: 'holding_registers', name: '有功功率百分比限制', key: 'power_limit_pct' },
+    { address: 5038, value: 0x7fff, type: 'holding_registers', name: '有功功率限制', key: 'power_limit_raw' },
+    { address: 5040, value: 0, type: 'holding_registers', name: '无功补偿百分比', key: 'reactive_comp_pct' },
+    { address: 5041, value: 0, type: 'holding_registers', name: '功率因数', key: 'power_factor' },
     { address: 5001, value: 0, type: 'input_registers', name: '额定功率' },
     { address: 5003, value: 0, type: 'input_registers', name: '今日发电量' },
     { address: 5004, value: 0, type: 'input_registers', name: '总发电量' },
-    { address: 5030, value: 0, type: 'input_registers', name: '当前有功功率(低)' },
-    { address: 5031, value: 0, type: 'input_registers', name: '当前有功功率(高)' },
-    { address: 5032, value: 0, type: 'input_registers', name: '无功功率(低)' },
-    { address: 5033, value: 0, type: 'input_registers', name: '无功功率(高)' },
+    { address: 5030, value: 0, type: 'input_registers', name: '当前有功功率(低)', key: 'active_power_low' },
+    { address: 5031, value: 0, type: 'input_registers', name: '当前有功功率(高)', key: 'active_power_high' },
+    { address: 5032, value: 0, type: 'input_registers', name: '无功功率(低)', key: 'reactive_power_low' },
+    { address: 5033, value: 0, type: 'input_registers', name: '无功功率(高)', key: 'reactive_power_high' },
   ];
 }
 
 /** v1.5.0 storage: HR 4,55,5095,5033; IR 0,2,8,9,12,39-43,400,408-414,420-421,426-432,839,900+ */
 function getStorageDefaults(): RegisterEntry[] {
   return [
-    { address: 4, value: 0, type: 'holding_registers', name: '设置功率' },
-    { address: 55, value: 243, type: 'holding_registers', name: '开关机(243默认开机)' },
-    { address: 5095, value: 0, type: 'holding_registers', name: '并离网模式(0-并网,1-离网)' },
-    { address: 5033, value: 0, type: 'holding_registers', name: 'PCS充放电状态(1-放电,2-充电)' },
+    { address: 4, value: 0, type: 'holding_registers', name: '设置功率', key: 'set_power' },
+    { address: 55, value: 243, type: 'holding_registers', name: '开关机(243默认开机)', key: 'on_off' },
+    { address: 5095, value: 0, type: 'holding_registers', name: '并离网模式(0-并网,1-离网)', key: 'grid_mode' },
+    { address: 5033, value: 0, type: 'holding_registers', name: 'PCS充放电状态(1-放电,2-充电)', key: 'pcs_charge_discharge_state' },
     { address: 0, value: 3, type: 'input_registers', name: 'state1' },
     { address: 2, value: 288, type: 'input_registers', name: 'SOC' },
     { address: 8, value: 10000, type: 'input_registers', name: '最大充电功率' },
@@ -93,8 +95,8 @@ function getStorageDefaults(): RegisterEntry[] {
     { address: 412, value: 0, type: 'input_registers', name: 'A相电流' },
     { address: 413, value: 0, type: 'input_registers', name: 'B相电流' },
     { address: 414, value: 0, type: 'input_registers', name: 'C相电流' },
-    { address: 420, value: 0, type: 'input_registers', name: '有功功率(低)' },
-    { address: 421, value: 0, type: 'input_registers', name: '有功功率(高)' },
+    { address: 420, value: 0, type: 'input_registers', name: '有功功率(低)', key: 'active_power_low' },
+    { address: 421, value: 0, type: 'input_registers', name: '有功功率(高)', key: 'active_power_high' },
     { address: 426, value: 0, type: 'input_registers', name: '日充电量' },
     { address: 427, value: 0, type: 'input_registers', name: '日放电量' },
     { address: 428, value: 0, type: 'input_registers', name: '累计充电总量(低)' },
@@ -110,8 +112,8 @@ function getStorageDefaults(): RegisterEntry[] {
 /** v1.5.0 charger: IR 0,1,2,4,100-103; HR 0 */
 function getChargerDefaults(): RegisterEntry[] {
   return [
-    { address: 0, value: 0x7fff, type: 'holding_registers', name: '功率限制' },
-    { address: 0, value: 0, type: 'input_registers', name: '有功功率' },
+    { address: 0, value: 0x7fff, type: 'holding_registers', name: '功率限制', key: 'power_limit_raw' },
+    { address: 0, value: 0, type: 'input_registers', name: '有功功率', key: 'active_power' },
     { address: 1, value: 1, type: 'input_registers', name: '状态' },
     { address: 2, value: 0, type: 'input_registers', name: '需求功率' },
     { address: 3, value: 0, type: 'input_registers', name: '枪数量' },

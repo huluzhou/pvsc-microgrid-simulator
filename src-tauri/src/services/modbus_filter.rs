@@ -1,7 +1,7 @@
 // Modbus 过滤：原始数据经四类指令独立处理，冲突时只响应最新指令。
 // 1. 开关机：关机则不应有功率  2. 功率百分比限制  3. 功率限制  4. 功率设定
 
-use crate::services::modbus_schema::{holding_register_commands, HrCommandId};
+use crate::services::modbus_schema::{holding_register_commands, hr_key_to_command_id, HrCommandId};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -95,14 +95,23 @@ fn hr_address_to_command(device_type: &str, address: u16) -> Option<HrCommandId>
         .map(|(_, c)| *c)
 }
 
-/// 更新设备 Modbus 状态并返回应推送到 Python 的有效属性（独立指令；冲突只响应最新）
-pub fn apply_hr_write_and_effective_properties(
+/// 按 (device_type, key) 应用 HR 写入并返回有效属性（支持自定义地址时由调用方先解析 address -> key）
+pub fn apply_hr_write_by_key(
     state: &mut ModbusDeviceControlState,
     device_type: &str,
-    address: u16,
+    key: &str,
     value: u16,
 ) -> Option<serde_json::Value> {
-    let cmd = hr_address_to_command(device_type, address)?;
+    let cmd = hr_key_to_command_id(key)?;
+    apply_hr_write_inner(state, device_type, cmd, value)
+}
+
+fn apply_hr_write_inner(
+    state: &mut ModbusDeviceControlState,
+    device_type: &str,
+    cmd: HrCommandId,
+    value: u16,
+) -> Option<serde_json::Value> {
     match (device_type, cmd) {
         ("static_generator", HrCommandId::OnOff) => {
             state.on_off = Some(value);
@@ -141,6 +150,18 @@ pub fn apply_hr_write_and_effective_properties(
         }
         _ => None,
     }
+}
+
+/// 更新设备 Modbus 状态并返回应推送到 Python 的有效属性（独立指令；冲突只响应最新）
+/// 优先用 address 查默认 key，再按 key 应用（兼容自定义地址时由调用方先解析 key）
+pub fn apply_hr_write_and_effective_properties(
+    state: &mut ModbusDeviceControlState,
+    device_type: &str,
+    address: u16,
+    value: u16,
+) -> Option<serde_json::Value> {
+    let cmd = hr_address_to_command(device_type, address)?;
+    apply_hr_write_inner(state, device_type, cmd, value)
 }
 
 /// 全局每设备 Modbus 控制状态，供 HR 写入时更新并计算有效属性

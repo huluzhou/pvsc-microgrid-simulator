@@ -180,6 +180,8 @@ fn main() {
             commands::device::get_device,
             commands::modbus::start_device_modbus,
             commands::modbus::stop_device_modbus,
+            commands::modbus::start_all_modbus_servers,
+            commands::modbus::get_running_modbus_device_ids,
             commands::device::update_device_config,
             commands::device::batch_set_device_mode,
             commands::ai::predict_device_data,

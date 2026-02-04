@@ -188,20 +188,30 @@ pub async fn run_modbus_tcp_server(
 const POWER_UNIT_KW: f64 = 10.0; // 0.1 kW per register unit
 
 /// 根据设备类型与 modbus_schema 将仿真结果写入对应输入寄存器（每个 IR 有固定更新逻辑）
+/// entries 可选：若提供则按 key 查找自定义地址，否则使用 schema 默认地址
 pub fn update_context_from_simulation(
     ctx: &mut ModbusDeviceContext,
     device_type: &str,
+    entries: Option<&[ModbusRegisterEntry]>,
     p_active_kw: Option<f64>,
     p_reactive_kvar: Option<f64>,
 ) {
-    use modbus_schema::{input_register_updates, IrUpdateKey};
+    use modbus_schema::{input_register_updates, ir_update_key_to_default_key, IrUpdateKey};
     let p_kw = p_active_kw.unwrap_or(0.0);
     let q_kvar = p_reactive_kvar.unwrap_or(0.0);
     let p_reg = (p_kw * POWER_UNIT_KW).round().max(0.0) as u32;
     let q_reg = (q_kvar * POWER_UNIT_KW).round().max(0.0) as u32;
 
-    for &(addr, key) in input_register_updates(device_type) {
-        let value = match key {
+    for &(default_addr, ir_key) in input_register_updates(device_type) {
+        let key = ir_update_key_to_default_key(ir_key);
+        let addr = entries
+            .and_then(|e| {
+                e.iter()
+                    .find(|r| r.type_ == "input_registers" && r.key.as_deref() == Some(key))
+                    .map(|r| r.address)
+            })
+            .unwrap_or(default_addr);
+        let value = match ir_key {
             IrUpdateKey::ActivePower => (p_reg & 0xFFFF) as u16,
             IrUpdateKey::ReactivePower => (q_reg & 0xFFFF) as u16,
             IrUpdateKey::ActivePowerLow => (p_reg & 0xFFFF) as u16,

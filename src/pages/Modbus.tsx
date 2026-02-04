@@ -5,7 +5,8 @@
  */
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Radio, Play, Square, Settings, RefreshCw, CheckCircle, Info } from 'lucide-react';
+import { listen } from '@tauri-apps/api/event';
+import { Radio, Settings, RefreshCw, CheckCircle, Info } from 'lucide-react';
 import { DeviceType, DEVICE_TYPES } from '../constants/deviceTypes';
 import {
   type RegisterEntry,
@@ -101,8 +102,8 @@ export default function Modbus() {
         const device = modbusDevices[index];
         let registers: RegisterEntry[];
         try {
-          const fromBackend = await invoke<Array<{ address: number; value: number; type: string; name?: string }>>('get_modbus_register_defaults', { deviceType: device.device_type });
-          registers = fromBackend.map((r) => ({ address: r.address, value: r.value, type: r.type as ModbusRegisterType, name: r.name }));
+          const fromBackend = await invoke<Array<{ address: number; value: number; type: string; name?: string; key?: string }>>('get_modbus_register_defaults', { deviceType: device.device_type });
+          registers = fromBackend.map((r) => ({ address: r.address, value: r.value, type: r.type as ModbusRegisterType, name: r.name, key: r.key }));
         } catch {
           registers = getPredefinedRegistersForDeviceType(device.device_type).map((r) => ({ ...r }));
         }
@@ -116,7 +117,15 @@ export default function Modbus() {
           registers,
         };
       }
+      const runningIds = await invoke<string[]>('get_running_modbus_device_ids').catch(() => []);
       setConfigs(defaultConfigs);
+      setServerStatus((prev) => {
+        const next = { ...prev };
+        list.forEach((d) => {
+          next[d.id] = { deviceId: d.id, running: runningIds.includes(d.id), connectedClients: 0, errorCount: 0 };
+        });
+        return next;
+      });
     } catch (error) {
       console.error('Failed to load Modbus devices from topology:', error);
       setDevices([]);
@@ -128,36 +137,54 @@ export default function Modbus() {
 
   useEffect(() => { loadDevices(); }, [loadDevices]);
 
+  // 仿真每步计算后后端会推送寄存器快照，联动更新前端寄存器值显示
+  useEffect(() => {
+    const unlisten = listen<{
+      device_id: string;
+      input_registers: Record<string, number>;
+      holding_registers: Record<string, number>;
+    }>('modbus-registers-updated', (event) => {
+      const payload = event.payload;
+      if (!payload?.device_id) return;
+      setConfigs((prev) => {
+        const c = prev[payload.device_id];
+        if (!c?.registers) return prev;
+        const regs = c.registers.map((r) => {
+          const addr = String(r.address);
+          if (r.type === 'input_registers' && payload.input_registers?.[addr] !== undefined) {
+            return { ...r, value: payload.input_registers[addr] };
+          }
+          if (r.type === 'holding_registers' && payload.holding_registers?.[addr] !== undefined) {
+            return { ...r, value: payload.holding_registers[addr] };
+          }
+          return r;
+        });
+        return { ...prev, [payload.device_id]: { ...c, registers: regs } };
+      });
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   const updateConfig = useCallback((deviceId: string, updates: Partial<DeviceModbusConfig>) => {
     setConfigs((prev) => ({ ...prev, [deviceId]: { ...prev[deviceId], ...updates } }));
   }, []);
 
-  const toggleServer = useCallback(async (deviceId: string) => {
-    const config = configs[deviceId];
-    if (!config) return;
-    const device = devices.find((d) => d.id === deviceId);
-    const deviceType = device?.deviceType ?? 'meter';
+  const refreshServerStatus = useCallback(async () => {
     try {
-      if (serverStatus[deviceId]?.running) {
-        await invoke('stop_device_modbus', { deviceId });
-        setServerStatus((prev) => ({ ...prev, [deviceId]: { ...prev[deviceId], running: false } }));
-      } else {
-        await invoke('start_device_modbus', {
-          deviceId,
-          device_type: deviceType,
-          config: {
-            ip_address: config.ipAddress,
-            port: config.port,
-            slave_id: config.slaveId,
-            registers: config.registers,
-          },
+      const runningIds = await invoke<string[]>('get_running_modbus_device_ids');
+      setServerStatus((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((id) => {
+          next[id] = { ...next[id], running: runningIds.includes(id) };
         });
-        setServerStatus((prev) => ({ ...prev, [deviceId]: { deviceId, running: true, connectedClients: 0, errorCount: 0 } }));
-      }
-    } catch (error) {
-      alert('操作失败：' + error);
+        return next;
+      });
+    } catch {
+      // ignore
     }
-  }, [configs, serverStatus, devices]);
+  }, []);
 
   const stats = useMemo(() => {
     const enabledConfigs = Object.values(configs).filter((c) => c.enabled);
@@ -231,11 +258,11 @@ export default function Modbus() {
                 {devices.find((d) => d.id === selectedDevice)?.name} - Modbus配置
               </h1>
               <div className="flex-1" />
-              <button
-                onClick={() => toggleServer(selectedDevice!)}
-                className={`px-3 py-1.5 rounded text-white text-sm flex items-center gap-1.5 transition-colors ${serverStatus[selectedDevice!]?.running ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}
-              >
-                {serverStatus[selectedDevice!]?.running ? (<><Square className="w-4 h-4" />停止</>) : (<><Play className="w-4 h-4" />启动</>)}
+              <span className={`px-2 py-1 rounded text-xs font-medium ${serverStatus[selectedDevice!]?.running ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                {serverStatus[selectedDevice!]?.running ? '运行中' : '未运行'}
+              </span>
+              <button onClick={refreshServerStatus} className="p-1.5 hover:bg-gray-100 rounded transition-colors" title="刷新状态">
+                <RefreshCw className="w-4 h-4 text-gray-500" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
@@ -258,7 +285,7 @@ export default function Modbus() {
                   </div>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">寄存器列表（固定：每类设备对应预定义 IR 更新逻辑与 HR 命令逻辑，仅值可编辑）</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">寄存器列表（含义固定，可修改某含义的地址；值可编辑）</h3>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm border border-gray-200">
                       <thead>
@@ -272,7 +299,20 @@ export default function Modbus() {
                       <tbody>
                         {selectedConfig.registers.map((reg, idx) => (
                           <tr key={`${reg.type}-${reg.address}-${idx}`} className="border-b border-gray-100">
-                            <td className="px-2 py-1 text-gray-700 tabular-nums">{reg.address}</td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="number"
+                                min={0}
+                                max={65535}
+                                value={reg.address}
+                                onChange={(e) => {
+                                  const next = [...selectedConfig.registers];
+                                  next[idx] = { ...next[idx], address: Number(e.target.value) };
+                                  updateConfig(selectedDevice!, { registers: next });
+                                }}
+                                className="w-20 px-1.5 py-0.5 border border-gray-300 rounded text-xs tabular-nums"
+                              />
+                            </td>
                             <td className="px-2 py-1">
                               <input
                                 type="number"
@@ -318,9 +358,9 @@ export default function Modbus() {
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <h3 className="text-sm font-semibold text-blue-700 mb-2 flex items-center gap-2"><Info className="w-4 h-4" />使用说明</h3>
                   <div className="text-xs text-blue-600 space-y-1">
-                    <p>• 每个设备独立运行一个Modbus TCP服务器</p>
-                    <p>• 外部系统可通过写入功率寄存器控制设备</p>
-                    <p>• 上方可针对单个设备开关“允许远程控制”；仿真页为全局总开关</p>
+                    <p>• Modbus 服务器随仿真启动自动启动；设备运行/关机请在「设备控制」页操作</p>
+                    <p>• 每个设备独立运行一个 Modbus TCP 服务器，外部系统可通过写入功率寄存器控制设备</p>
+                    <p>• 上方可针对单个设备开关「允许远程控制」；仿真页为全局总开关</p>
                   </div>
                 </div>
               </div>

@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::{mpsc, RwLock};
 use crate::commands::device::ModbusRegisterEntry;
-use crate::services::modbus_filter::ModbusControlStateStore;
+use crate::services::modbus_filter::{self, ModbusControlStateStore};
+use crate::services::modbus_schema::holding_register_default_key;
 use crate::services::modbus_server::{self, ModbusDeviceContext, OnHoldingRegisterWrite};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,11 +22,13 @@ pub struct DeviceRegisterMapping {
     pub registers: HashMap<String, u16>,
 }
 
-/// 每设备 Modbus TCP 服务：通过 abort JoinHandle 停止；持有共享上下文供仿真同步写入
+/// 每设备 Modbus TCP 服务：通过 abort JoinHandle 停止；持有共享上下文与寄存器列表（含 key/address）供自定义地址解析
 pub struct RunningDeviceServer {
     pub join: tokio::task::JoinHandle<std::io::Result<()>>,
     pub device_type: String,
     pub context: Arc<RwLock<ModbusDeviceContext>>,
+    /// 启动时传入的寄存器列表（含 key），用于 HR 写入时按地址解析 key、IR 更新时按 key 取地址
+    pub registers: Vec<ModbusRegisterEntry>,
 }
 
 /// 保持寄存器写入事件：(device_id, address, value)，由接收端发出 Tauri 事件供命令逻辑使用
@@ -57,7 +60,22 @@ impl ModbusService {
         }
     }
 
-    /// 应用一次 HR 写入（更新控制状态），返回应推送到 Python 的有效属性；若该地址不参与功率过滤则返回 None
+    /// 从运行中设备的寄存器列表中按地址解析 HR 的语义 key（先查条目 key，再回退到默认）
+    pub fn get_key_for_holding_register(&self, device_id: &str, address: u16) -> Option<String> {
+        let running = self.running_servers.lock().ok()?;
+        let server = running.get(device_id)?;
+        for e in &server.registers {
+            if e.type_ == "holding_registers" && e.address == address {
+                if let Some(ref k) = e.key {
+                    return Some(k.clone());
+                }
+                break;
+            }
+        }
+        holding_register_default_key(&server.device_type, address).map(String::from)
+    }
+
+    /// 应用一次 HR 写入（更新控制状态），返回应推送到 Python 的有效属性；支持自定义地址（按 key 解析）
     pub fn apply_hr_write_and_effective_properties(
         &self,
         device_id: &str,
@@ -65,6 +83,12 @@ impl ModbusService {
         address: u16,
         value: u16,
     ) -> Option<serde_json::Value> {
+        let key = self.get_key_for_holding_register(device_id, address);
+        if let Some(k) = key {
+            let mut map = self.control_state.per_device.lock().ok()?;
+            let state = map.entry(device_id.to_string()).or_default();
+            return modbus_filter::apply_hr_write_by_key(state, device_type, &k, value);
+        }
         self.control_state
             .apply_hr_write(device_id, device_type, address, value)
     }
@@ -119,8 +143,9 @@ impl ModbusService {
             device_id,
             RunningDeviceServer {
                 join,
-                device_type,
+                device_type: device_type.clone(),
                 context,
+                registers,
             },
         );
         Ok(())
@@ -143,24 +168,45 @@ impl ModbusService {
         self.running_servers.lock().map(|r| r.contains_key(device_id)).unwrap_or(false)
     }
 
+    /// 运行中的设备 id 列表（用于仿真步后推送寄存器快照到前端）
+    pub fn running_device_ids(&self) -> Vec<String> {
+        self.running_servers
+            .lock()
+            .map(|r| r.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// 获取某设备当前输入寄存器与保持寄存器的快照（地址→值），供前端显示
+    pub async fn get_device_register_snapshot(
+        &self,
+        device_id: &str,
+    ) -> Option<(HashMap<u16, u16>, HashMap<u16, u16>)> {
+        let context = {
+            let running = self.running_servers.lock().ok()?;
+            running.get(device_id).map(|s| s.context.clone())?
+        };
+        let ctx = context.read().await;
+        Some((ctx.input_registers.clone(), ctx.holding_registers.clone()))
+    }
+
     /// 根据仿真功率缓存更新所有运行中设备的 Modbus 输入寄存器（v1.5.0 update_* 逻辑）
     pub async fn update_all_devices_from_simulation(
         &self,
         power_snapshot: &HashMap<String, (f64, Option<f64>, Option<f64>)>,
     ) {
-        let to_update: Vec<(String, String, Arc<RwLock<ModbusDeviceContext>>)> = {
+        let to_update: Vec<(String, String, Arc<RwLock<ModbusDeviceContext>>, Vec<ModbusRegisterEntry>)> = {
             let running = self.running_servers.lock().map_err(|_| ()).ok();
             let Some(r) = running else { return };
             r.iter()
-                .map(|(id, s)| (id.clone(), s.device_type.clone(), s.context.clone()))
+                .map(|(id, s)| (id.clone(), s.device_type.clone(), s.context.clone(), s.registers.clone()))
                 .collect()
         };
-        for (device_id, device_type, context) in to_update {
+        for (device_id, device_type, context, registers) in to_update {
             let (_, p_active, p_reactive) = power_snapshot.get(&device_id).copied().unwrap_or((0.0, None, None));
             let p_kw = p_active.unwrap_or(0.0);
             let q_kvar = p_reactive;
             let mut ctx = context.write().await;
-            modbus_server::update_context_from_simulation(&mut *ctx, &device_type, Some(p_kw), q_kvar);
+            modbus_server::update_context_from_simulation(&mut *ctx, &device_type, Some(&registers), Some(p_kw), q_kvar);
         }
     }
 }

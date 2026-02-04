@@ -23,6 +23,8 @@ const POWER_DEVICE_TYPES: DeviceType[] = ['static_generator', 'storage', 'load',
 
 export default function DeviceControl() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
+  const [modbusDevices, setModbusDevices] = useState<Array<{ id: string; name: string; device_type: string; ip: string; port: number }>>([]);
+  const [runningModbusIds, setRunningModbusIds] = useState<string[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<DeviceInfo | null>(null);
   const [configMode, setConfigMode] = useState<DataSourceType | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -32,15 +34,19 @@ export default function DeviceControl() {
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
     try {
-      // 从后端元数据存储获取设备（与拓扑设计页面同步）
-      const devicesMetadata = await invoke<Array<{ id: string; name: string; device_type: string }>>('get_all_devices');
+      const [devicesMetadata, modbusList, runningIds] = await Promise.all([
+        invoke<Array<{ id: string; name: string; device_type: string }>>('get_all_devices'),
+        invoke<Array<{ id: string; name: string; device_type: string; ip: string; port: number }>>('get_modbus_devices').catch(() => []),
+        invoke<string[]>('get_running_modbus_device_ids').catch(() => []),
+      ]);
       const powerDevices = devicesMetadata
         .filter((d) => POWER_DEVICE_TYPES.includes(d.device_type as DeviceType))
         .map((d) => ({ id: d.id, name: d.name, deviceType: d.device_type as DeviceType }));
       setDevices(powerDevices);
+      setModbusDevices(modbusList);
+      setRunningModbusIds(runningIds);
     } catch (error) {
       console.error('Failed to load devices from metadata:', error);
-      // 如果后端元数据为空，尝试从默认拓扑文件加载
       try {
         const topologyData = await invoke<{ devices: Array<{ id: string; name: string; device_type: string }> }>('load_topology', { path: 'topology.json' });
         const powerDevices = topologyData.devices
@@ -55,6 +61,61 @@ export default function DeviceControl() {
       setIsLoading(false);
     }
   }, []);
+
+  const refreshRunningModbusIds = useCallback(async () => {
+    try {
+      const ids = await invoke<string[]>('get_running_modbus_device_ids');
+      setRunningModbusIds(ids);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleToggleModbus = useCallback(
+    async (deviceId: string, turnOn: boolean) => {
+      const modbusDevice = modbusDevices.find((d) => d.id === deviceId);
+      const device = devices.find((d) => d.id === deviceId);
+      if (turnOn) {
+        if (!modbusDevice || !device) return;
+        try {
+          const registers = await invoke<Array<{ address: number; value: number; type: string; name?: string; key?: string }>>('get_modbus_register_defaults', {
+            deviceType: device.deviceType,
+          });
+          await invoke('start_device_modbus', {
+            deviceId,
+            deviceType: device.deviceType,
+            config: {
+              ip_address: modbusDevice.ip,
+              port: modbusDevice.port,
+              registers,
+            },
+          });
+          await invoke('update_device_properties_for_simulation', {
+            deviceId,
+            properties: { on_off: 1 },
+          });
+        } catch (e) {
+          console.error('开机/启动 Modbus 失败:', e);
+          alert('操作失败：' + e);
+          return;
+        }
+      } else {
+        try {
+          await invoke('stop_device_modbus', { deviceId });
+          await invoke('update_device_properties_for_simulation', {
+            deviceId,
+            properties: { on_off: 0 },
+          });
+        } catch (e) {
+          console.error('关机/停止 Modbus 失败:', e);
+          alert('操作失败：' + e);
+          return;
+        }
+      }
+      await refreshRunningModbusIds();
+    },
+    [modbusDevices, devices, refreshRunningModbusIds]
+  );
 
   useEffect(() => { loadDevices(); }, [loadDevices]);
 
@@ -168,7 +229,17 @@ export default function DeviceControl() {
 
         {/* 设备表格 */}
         <div className="flex-1 overflow-auto bg-white">
-          <DeviceControlTable devices={devices} configs={deviceConfigs} selectedIds={selectedDeviceIds} onSelect={setSelectedDevices} onConfigureDevice={handleConfigureDevice} onChangeDataSource={setDataSourceType} />
+          <DeviceControlTable
+            devices={devices}
+            configs={deviceConfigs}
+            selectedIds={selectedDeviceIds}
+            onSelect={setSelectedDevices}
+            onConfigureDevice={handleConfigureDevice}
+            onChangeDataSource={setDataSourceType}
+            modbusDeviceIds={modbusDevices.map((d) => d.id)}
+            runningModbusIds={runningModbusIds}
+            onToggleModbus={handleToggleModbus}
+          />
         </div>
       </div>
 

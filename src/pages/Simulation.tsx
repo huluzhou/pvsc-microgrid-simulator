@@ -89,6 +89,12 @@ export default function Simulation() {
     try {
       // 先启动仿真（设置拓扑并启动 Python），再同步手动设定，这样 Python 已有拓扑后再应用功率
       await invoke('start_simulation', { config: { calculation_interval_ms: config.calculationInterval, remote_control_enabled: config.remoteControlEnabled } });
+      // 运行仿真时自动启动所有 Modbus 服务器（拓扑中配置了 ip/port 的设备）
+      try {
+        await invoke('start_all_modbus_servers');
+      } catch (e) {
+        console.warn('自动启动 Modbus 服务器失败:', e);
+      }
       // 启动后将设备控制中的设定同步到仿真，确保下一拍计算生效
       for (const [deviceId, cfg] of Object.entries(deviceConfigs)) {
         if (cfg?.dataSourceType === 'manual' && cfg.manualSetpoint) {
