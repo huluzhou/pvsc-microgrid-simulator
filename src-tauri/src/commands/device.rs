@@ -168,33 +168,60 @@ pub async fn get_all_devices(
     }).collect())
 }
 
-/// 返回拓扑中定义了 ip 和 port 的设备列表（供 Modbus 通信面板使用；兼容旧版拓扑 Measurement/Storage 的 ip/port 与新版 properties）
+/// 支持 Modbus 的设备类型（与 get_modbus_register_defaults 一致）；无 ip/port 时使用默认值，保证设备树不为空
+const MODBUS_CAPABLE_TYPES: &[crate::domain::topology::DeviceType] = &[
+    crate::domain::topology::DeviceType::Meter,
+    crate::domain::topology::DeviceType::Storage,
+    crate::domain::topology::DeviceType::Pv,
+    crate::domain::topology::DeviceType::Charger,
+];
+
+/// 返回拓扑中可配置 Modbus 的设备列表（供 Modbus 通信面板使用）。若设备未配置 ip/port 则使用默认值，保证设备树显示所有支持 Modbus 的设备。
 #[tauri::command]
 pub async fn get_modbus_devices(
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
 ) -> Result<Vec<ModbusDeviceInfo>, String> {
     let metadata_store = metadata_store.lock().unwrap();
     let mut out = Vec::new();
+    let mut type_counters: std::collections::HashMap<String, u16> = std::collections::HashMap::new();
     for d in metadata_store.get_all_devices().iter() {
-        let ip = d.properties.get("ip")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-        let port = d.properties.get("port")
-            .and_then(|v| {
-                v.as_u64().map(|n| n as u16)
-                    .or_else(|| v.as_str().and_then(|s| s.parse::<u16>().ok()))
-            });
-        if let (Some(ip), Some(port)) = (ip, port) {
-            if !ip.is_empty() {
-                out.push(ModbusDeviceInfo {
-                    id: d.id.clone(),
-                    name: d.name.clone(),
-                    device_type: device_type_to_string(&d.device_type),
-                    ip,
-                    port,
-                });
-            }
+        if !MODBUS_CAPABLE_TYPES.contains(&d.device_type) {
+            continue;
         }
+        let ip = d
+            .properties
+            .get("ip")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+        let dt_str = device_type_to_string(&d.device_type);
+        let port = d.properties.get("port").and_then(|v| {
+            v.as_u64().map(|n| n as u16).or_else(|| v.as_str().and_then(|s| s.parse::<u16>().ok()))
+        });
+        let port = match port {
+            Some(p) => p,
+            None => {
+                let base: u16 = match d.device_type {
+                    crate::domain::topology::DeviceType::Meter => 403,
+                    crate::domain::topology::DeviceType::Storage => 502,
+                    crate::domain::topology::DeviceType::Pv => 602,
+                    crate::domain::topology::DeviceType::Charger => 702,
+                    _ => continue,
+                };
+                let c = type_counters.entry(dt_str.clone()).or_insert(0);
+                let p = base.saturating_add(*c);
+                *c = c.saturating_add(1);
+                p
+            }
+        };
+        out.push(ModbusDeviceInfo {
+            id: d.id.clone(),
+            name: d.name.clone(),
+            device_type: dt_str,
+            ip,
+            port,
+        });
     }
     Ok(out)
 }

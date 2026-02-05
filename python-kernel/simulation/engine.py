@@ -671,13 +671,17 @@ class SimulationEngine:
                                 self.cached_network.load.at[load_idx, "q_mvar"] = q_mvar
                 
                 elif device_type == "Storage":
-                    # 更新储能功率
+                    # 更新储能功率与并离网（in_service：0=并网参与计算，1=离网不参与）
                     if device_id in self.cached_device_map.get("storages", {}):
                         storage_idx = self.cached_device_map["storages"][device_id]
                         if 0 <= storage_idx < len(self.cached_network.storage):
                             self.cached_network.storage.at[storage_idx, "p_mw"] = p_mw
                             if "q_mvar" in self.cached_network.storage.columns:
                                 self.cached_network.storage.at[storage_idx, "q_mvar"] = q_mvar
+                            grid_mode = properties.get("grid_mode", 0)
+                            in_service = (int(grid_mode) == 0)
+                            if "in_service" in self.cached_network.storage.columns:
+                                self.cached_network.storage.at[storage_idx, "in_service"] = in_service
                 
                 elif device_type == "Charger":
                     # 更新充电桩功率（作为负载处理）

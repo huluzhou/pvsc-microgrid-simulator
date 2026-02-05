@@ -72,12 +72,12 @@ pub async fn start_all_modbus_servers(
                     .get("port")
                     .and_then(|v| v.as_u64().map(|n| n as u16).or_else(|| v.as_str().and_then(|s| s.parse::<u16>().ok())));
 
-                // 2) 提供默认 ip/port（与 Python 工作客户端默认一致）
+                // 2) 提供默认 ip/port（与 device_type_to_string 返回值一致：meter/storage/static_generator/charger）
                 let default_base_port: Option<u16> = match device_type.as_str() {
-                    "Meter" => Some(403),
-                    "Storage" => Some(502),
-                    "Pv" => Some(602),
-                    "Charger" => Some(702),
+                    "meter" => Some(403),
+                    "storage" => Some(502),
+                    "static_generator" => Some(602),
+                    "charger" => Some(702),
                     _ => None,
                 };
 

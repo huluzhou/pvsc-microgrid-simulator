@@ -84,6 +84,11 @@ impl ModbusDeviceContext {
         self.input_registers.insert(addr, value);
     }
 
+    /// 供仿真同步写入保持寄存器，不触发 on_holding_register_write（用于 state_map 写 HR 5033 等）
+    pub fn set_holding_register_silent(&mut self, addr: u16, value: u16) {
+        self.holding_registers.insert(addr, value);
+    }
+
     pub fn set_discrete_input(&mut self, addr: u16, value: bool) {
         self.discrete_inputs.insert(addr, value);
     }
@@ -192,7 +197,7 @@ pub async fn run_modbus_tcp_server(
     Ok(())
 }
 
-/// 功率单位：非电表 0.1 kW/单位；电表 0.5 kW/单位（int16 有符号）
+/// 非电表有功/无功：寄存器单位 0.1 kW（寄存器值 = p_kw × 10）；储能可为负（放电）
 const POWER_UNIT_KW_DEFAULT: f64 = 10.0;
 /// 电表有功/无功：寄存器单位 0.5 kW，int16 有符号
 const METER_POWER_UNIT_KW: f64 = 2.0; // 1/0.5
@@ -207,8 +212,10 @@ fn clamp_i16_as_u16(v: i32) -> u16 {
 
 /// 根据设备类型与 modbus_schema 将仿真结果写入对应输入寄存器（每个 IR 有固定更新逻辑）
 /// 电表：有功/无功为 int16、单位 0.5 kW；四象限电量与组合有功总电能为 kWh（0.1 kWh/单位），由 P/Q 积分得到
+/// 储能：Rust 维护的 SOC、日充电量、日放电量、累计充电/放电总量写入 IR 2/12/426-431
 /// entries 可选：若提供则按 key 查找自定义地址，否则使用 schema 默认地址
 /// dt_seconds：本步时长（秒），用于电表四象限电量与总电能积分；仅电表且为 Some 时累加
+/// storage_state：储能状态（SOC、日/累计电量），仅 storage 且为 Some 时写 IR 2/12/426-431
 pub fn update_context_from_simulation(
     ctx: &mut ModbusDeviceContext,
     device_type: &str,
@@ -216,6 +223,7 @@ pub fn update_context_from_simulation(
     p_active_kw: Option<f64>,
     p_reactive_kvar: Option<f64>,
     dt_seconds: Option<f64>,
+    storage_state: Option<&crate::domain::simulation::StorageState>,
 ) {
     use modbus_schema::{input_register_updates, ir_update_key_to_default_key, IrUpdateKey};
     let p_kw = p_active_kw.unwrap_or(0.0);
@@ -224,9 +232,17 @@ pub fn update_context_from_simulation(
     // 电表：int16 有符号，单位 0.5 kW -> 寄存器值 = kW * 2
     let p_reg_meter = clamp_i16_as_u16((p_kw * METER_POWER_UNIT_KW).round() as i32);
     let q_reg_meter = clamp_i16_as_u16((q_kvar * METER_POWER_UNIT_KW).round() as i32);
-    // 其他设备：0.1 kW/单位，32 位拆高低字
-    let p_reg_other = (p_kw * POWER_UNIT_KW_DEFAULT).round().max(0.0) as u32;
-    let q_reg_other = (q_kvar * POWER_UNIT_KW_DEFAULT).round().max(0.0) as u32;
+    // 非电表：0.1 kW/单位，32 位拆高低字；储能有功可为负（放电），按有符号 i32 存
+    let p_reg_other = if device_type == "storage" {
+        (p_kw * POWER_UNIT_KW_DEFAULT).round() as i32 as u32
+    } else {
+        (p_kw * POWER_UNIT_KW_DEFAULT).round().max(0.0) as u32
+    };
+    let q_reg_other = if device_type == "storage" {
+        (q_kvar * POWER_UNIT_KW_DEFAULT).round() as i32 as u32
+    } else {
+        (q_kvar * POWER_UNIT_KW_DEFAULT).round().max(0.0) as u32
+    };
 
     for &(default_addr, ir_key) in input_register_updates(device_type) {
         let key = ir_update_key_to_default_key(ir_key);
@@ -291,5 +307,44 @@ pub fn update_context_from_simulation(
         ctx.set_input_register(9, write_energy(e_total_p));
         ctx.set_input_register(10, write_energy(e_export_q));
         ctx.set_input_register(11, write_energy(e_import_q));
+    }
+
+    // 储能 state_map：HR 55 仅表示开关机。关机=停机；开机后按功率区分就绪/充电/放电；故障由其他异常表示。
+    if device_type == "storage" {
+        let reg55 = ctx.holding_registers.get(&55).copied().unwrap_or(243);
+        let (reg839, reg0, reg5033) = if reg55 == 240 {
+            (240u16, 1u16, 0u16)
+        } else {
+            if p_kw > 0.001 {
+                (245, 2, 2)
+            } else if p_kw < -0.001 {
+                (245, 3, 1)
+            } else {
+                (243, 1, 0)
+            }
+        };
+        ctx.set_input_register(839, reg839);
+        ctx.set_input_register(0, reg0);
+        ctx.set_holding_register_silent(5033, reg5033);
+    }
+
+    // 储能：Rust 维护的 SOC、日充电量、日放电量、累计充电/放电总量 → IR 2/12/426-431（单位与 modbus_manager 一致）
+    if device_type == "storage" {
+        if let Some(s) = storage_state {
+            let soc_reg = (s.soc_percent * 10.0).round().clamp(0.0, 1000.0) as u16;
+            ctx.set_input_register(2, soc_reg);
+            let remaining_kwh_x10 = (s.energy_kwh * 10.0).round().clamp(0.0, 65535.0) as u16;
+            ctx.set_input_register(12, remaining_kwh_x10);
+            let daily_charge = (s.daily_charge_kwh * 10.0).round().clamp(0.0, 65535.0) as u16;
+            let daily_discharge = (s.daily_discharge_kwh * 10.0).round().clamp(0.0, 65535.0) as u16;
+            ctx.set_input_register(426, daily_charge);
+            ctx.set_input_register(427, daily_discharge);
+            let total_charge_x10 = (s.total_charge_kwh * 10.0).round().clamp(0.0, u32::MAX as f64) as u32;
+            ctx.set_input_register(428, (total_charge_x10 & 0xFFFF) as u16);
+            ctx.set_input_register(429, (total_charge_x10 >> 16) as u16);
+            let total_discharge_x10 = (s.total_discharge_kwh * 10.0).round().clamp(0.0, u32::MAX as f64) as u32;
+            ctx.set_input_register(430, (total_discharge_x10 & 0xFFFF) as u16);
+            ctx.set_input_register(431, (total_discharge_x10 >> 16) as u16);
+        }
     }
 }

@@ -229,18 +229,29 @@ export default function TopologyDesign() {
         return; // 用户取消了保存
       }
 
+      // 保存时用后端 metadata 合并每个设备的 properties，保证 ip/port 等与前端显示一致并写入拓扑文件
+      const backendDevices = await invoke<Array<{ id: string; name: string; device_type: string; properties: Record<string, unknown> }>>('get_all_devices').catch(() => []);
       const topologyData: TopologyData = {
-        devices: nodes.map((node) => ({
-          id: node.id,
-          name: node.data.name,
-          device_type: node.data.deviceType,
-          properties: node.data.properties || {},
-          position: {
-            x: node.position.x,
-            y: node.position.y,
-            z: 0,
-          },
-        })),
+        devices: nodes.map((node) => {
+          const backendDevice = backendDevices.find((d) => d.id === node.id);
+          const raw = { ...(node.data.properties || {}), ...(backendDevice?.properties || {}) };
+          const properties =
+            node.data.deviceType === 'bus' &&
+            (raw.voltage_kv == null || raw.voltage_kv === '')
+              ? { ...raw, voltage_kv: 10 }
+              : raw;
+          return {
+            id: node.id,
+            name: node.data.name,
+            device_type: node.data.deviceType,
+            properties,
+            position: {
+              x: node.position.x,
+              y: node.position.y,
+              z: 0,
+            },
+          };
+        }),
         connections: edges.map((edge) => ({
           id: edge.id,
           from: edge.source,
@@ -277,18 +288,29 @@ export default function TopologyDesign() {
 
     setSaveStatus('saving');
     try {
+      // 保存时用后端 metadata 合并每个设备的 properties，保证 ip/port 等与前端显示一致并写入拓扑文件
+      const backendDevices = await invoke<Array<{ id: string; name: string; device_type: string; properties: Record<string, unknown> }>>('get_all_devices').catch(() => []);
       const topologyData: TopologyData = {
-        devices: nodes.map((node) => ({
-          id: node.id,
-          name: node.data.name,
-          device_type: node.data.deviceType,
-          properties: node.data.properties || {},
-          position: {
-            x: node.position.x,
-            y: node.position.y,
-            z: 0,
-          },
-        })),
+        devices: nodes.map((node) => {
+          const backendDevice = backendDevices.find((d) => d.id === node.id);
+          const raw = { ...(node.data.properties || {}), ...(backendDevice?.properties || {}) };
+          const properties =
+            node.data.deviceType === 'bus' &&
+            (raw.voltage_kv == null || raw.voltage_kv === '')
+              ? { ...raw, voltage_kv: 10 }
+              : raw;
+          return {
+            id: node.id,
+            name: node.data.name,
+            device_type: node.data.deviceType,
+            properties,
+            position: {
+              x: node.position.x,
+              y: node.position.y,
+              z: 0,
+            },
+          };
+        }),
         connections: edges.map((edge) => ({
           id: edge.id,
           from: edge.source,
@@ -444,6 +466,9 @@ export default function TopologyDesign() {
     const deviceId = deviceIdCounter.current++;
     const typeName = DEVICE_TYPE_TO_CN[deviceType] || deviceType;
     
+    // 母线/节点设备创建时带默认电压等级，避免未在面板保存时传出空 properties
+    const initialProperties =
+      deviceType === 'bus' ? { voltage_kv: 10 } : {};
     const newNode: Node = {
       id: `device-${deviceId}`,
       type: 'device',
@@ -454,7 +479,7 @@ export default function TopologyDesign() {
       data: {
         name: `${typeName}-${deviceId}`,
         deviceType,
-        properties: {},
+        properties: initialProperties,
       },
     };
     

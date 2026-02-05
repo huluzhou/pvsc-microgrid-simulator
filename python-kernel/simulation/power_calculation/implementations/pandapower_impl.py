@@ -7,6 +7,20 @@ from ..interface import PowerCalculationKernel
 import pandas as pd
 
 
+def _nan_to_none(obj: Any) -> Any:
+    """将 NaN 转为 None，使结果可被标准 JSON 序列化（Rust serde_json 不接受 NaN）。"""
+    if isinstance(obj, dict):
+        return {k: _nan_to_none(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_nan_to_none(v) for v in obj]
+    try:
+        if pd.isna(obj):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return obj
+
+
 class PandapowerKernel(PowerCalculationKernel):
     """pandapower 计算内核实现"""
     
@@ -112,7 +126,7 @@ class PandapowerKernel(PowerCalculationKernel):
                     row = res_df.loc[idx].to_dict()
                     if name_series is not None and idx in name_series.index:
                         row["name"] = name_series[idx]
-                    out[str(idx)] = row
+                    out[str(idx)] = _nan_to_none(row)
                 return out
 
             try:
@@ -200,7 +214,7 @@ class PandapowerKernel(PowerCalculationKernel):
                 })
             
             results["errors"] = errors
-            return results
+            return _nan_to_none(results)
             
         except Exception as e:
             errors.append({

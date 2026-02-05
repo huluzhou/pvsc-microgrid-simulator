@@ -1,5 +1,5 @@
 // 仿真引擎核心
-use crate::domain::simulation::{SimulationStatus, DeviceWorkModes};
+use crate::domain::simulation::{SimulationStatus, DeviceWorkModes, StorageState};
 use crate::domain::topology::Topology;
 use crate::services::python_bridge::PythonBridge;
 use crate::services::database::Database;
@@ -29,6 +29,8 @@ pub struct SimulationEngine {
     device_active_status: Arc<tokio::sync::Mutex<HashMap<String, bool>>>,
     /// 当前功率单一数据源：device_id -> (timestamp, p_active_kw, p_reactive_kvar)，与 device-data-update 同源，供轮询使用
     last_device_power: Arc<StdMutex<HashMap<String, (f64, Option<f64>, Option<f64>)>>>,
+    /// 储能设备独立维护：SOC、日充电量、日放电量、累计充电/放电总量（pandapower 仅返回有功/无功）
+    storage_state: Arc<StdMutex<HashMap<String, StorageState>>>,
     /// 计算循环是否已启动过（只 spawn 一次，避免暂停后再点「启动」产生多个循环导致计算次数暴增）
     calculation_loop_started: Arc<AtomicBool>,
     /// 停止时发送一次，让计算循环退出（停止时真正结束循环，避免空转）
@@ -52,6 +54,7 @@ impl SimulationEngine {
             device_remote_control_allowed: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             device_active_status: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_device_power: Arc::new(StdMutex::new(HashMap::new())),
+            storage_state: Arc::new(StdMutex::new(HashMap::new())),
             calculation_loop_started: Arc::new(AtomicBool::new(false)),
             cancel_tx: Arc::new(tokio::sync::Mutex::new(None)),
         }
@@ -118,9 +121,10 @@ impl SimulationEngine {
         // 将拓扑数据转换为标准格式并传递给Python内核
         let topology_data = self.convert_topology_to_standard_format(&topology.unwrap()).await?;
         
-        // 新一轮仿真开始，清空设备在线状态与功率缓存，等首拍成功后再标记为在线
+        // 新一轮仿真开始，清空设备在线状态、功率缓存与储能状态，等首拍成功后再标记为在线
         self.device_active_status.lock().await.clear();
         self.last_device_power.lock().unwrap().clear();
+        self.storage_state.lock().unwrap().clear();
         
         let mut bridge = self.python_bridge.lock().await;
         
@@ -261,6 +265,7 @@ impl SimulationEngine {
         let database = self.database.clone();
         let device_active_status = self.device_active_status.clone();
         let last_device_power = self.last_device_power.clone();
+        let storage_state = self.storage_state.clone();
         let calculation_loop_started = self.calculation_loop_started.clone();
         
         tokio::spawn(async move {
@@ -416,14 +421,15 @@ impl SimulationEngine {
                                     .unwrap()
                                     .as_secs_f64();
                                 
-                                // 处理并存储计算结果（传入完整拓扑以便电表落库与连接解析；同时更新功率缓存供轮询使用）
-                                Self::process_calculation_results_inline(&app, devices, t, &database, &last_device_power, timestamp);
+                                let dt_seconds = calculation_interval_ms as f64 / 1000.0;
+                                // 处理并存储计算结果（传入完整拓扑、储能状态与步长；更新功率缓存与储能 SOC/日/累计电量）
+                                Self::process_calculation_results_inline(&app, devices, t, &database, &last_device_power, &storage_state, timestamp, dt_seconds);
                                 // 仿真结果同步到运行中的 Modbus 设备寄存器（v1.5.0 update_* 逻辑）
                                 if let Some(modbus) = app.try_state::<crate::services::modbus::ModbusService>() {
                                     let power_snapshot: HashMap<String, (f64, Option<f64>, Option<f64>)> =
                                         last_device_power.lock().unwrap().clone();
-                                    let dt_seconds = calculation_interval_ms as f64 / 1000.0;
-                                    let _ = modbus.update_all_devices_from_simulation(&power_snapshot, dt_seconds).await;
+                                    let storage_states = storage_state.lock().unwrap().clone();
+                                    let _ = modbus.update_all_devices_from_simulation(&power_snapshot, dt_seconds, Some(&storage_states)).await;
                                     // 推送寄存器快照到前端，联动更新 Modbus 页面的寄存器值显示
                                     for device_id in modbus.running_device_ids() {
                                         if let Some((ir, hr)) = modbus.get_device_register_snapshot(&device_id).await {
@@ -506,10 +512,13 @@ impl SimulationEngine {
         topology: &Topology,
         database: &Arc<StdMutex<Database>>,
         last_device_power: &Arc<StdMutex<HashMap<String, (f64, Option<f64>, Option<f64>)>>>,
+        storage_state: &Arc<StdMutex<HashMap<String, StorageState>>>,
         timestamp: f64,
+        dt_seconds: f64,
     ) {
         let devices = &topology.devices;
         let target_to_meters = Self::build_target_to_meters(topology);
+        let dt_h = dt_seconds / 3600.0;
 
         // 处理计算结果并存储到数据库：功率设备、母线、线路、变压器与电表落库，供监控界面分析所有设备运行状态
         // 同时发送事件通知前端
@@ -705,11 +714,13 @@ impl SimulationEngine {
                 let p_reactive_mvar = load_data.get("q_mvar").and_then(|v| v.as_f64());
                 let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0); // 转换为kVar
                 
-                // 尝试找到对应的Load设备（仅功率设备落库；电表落库其指向节点的数据）
+                // 尝试找到对应的 Load/Charger 设备（Python 端 Charger 也建为 load；仅功率设备落库；电表落库其指向节点的数据）
                 if let Some(load_name) = load_data.get("name").and_then(|v| v.as_str()) {
                     for (device_id, device) in devices {
-                        if device.device_type == crate::domain::topology::DeviceType::Load 
-                            && device.name == load_name {
+                        if (device.device_type == crate::domain::topology::DeviceType::Load
+                            || device.device_type == crate::domain::topology::DeviceType::Charger)
+                            && device.name == load_name
+                        {
                             let db = database.lock().unwrap();
                             let data_json = serde_json::to_string(load_data).ok();
                             let _ = db.insert_device_data(
@@ -840,6 +851,48 @@ impl SimulationEngine {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Storage 
                             && device.name == storage_name {
+                            let p_kw = p_active_kw.unwrap_or(0.0);
+                            // 容量：支持 capacity / capacity_kwh（设备详情用 capacity_kwh）；max_e_mwh 单位 MWh -> kWh
+                            let capacity_kwh: f64 = device
+                                .properties
+                                .get("capacity_kwh")
+                                .or_else(|| device.properties.get("capacity"))
+                                .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok())))
+                                .or_else(|| {
+                                    device.properties.get("max_e_mwh")
+                                        .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok())))
+                                        .map(|v| v * 1000.0)
+                                })
+                                .unwrap_or(1000.0);
+                            // 初始 SOC：设备详情修改并保存后从 properties.initial_soc 读取（0–100），默认 50
+                            let initial_soc: f64 = device
+                                .properties
+                                .get("initial_soc")
+                                .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok())))
+                                .map(|v| v.clamp(0.0, 100.0))
+                                .unwrap_or(50.0);
+                            if capacity_kwh > 0.0 {
+                                let mut state_map = storage_state.lock().unwrap();
+                                let state = state_map.entry(device_id.clone()).or_insert_with(|| StorageState {
+                                    capacity_kwh,
+                                    energy_kwh: capacity_kwh * (initial_soc / 100.0),
+                                    soc_percent: initial_soc,
+                                    ..Default::default()
+                                });
+                                if (state.capacity_kwh - capacity_kwh).abs() > 1e-6 {
+                                    state.capacity_kwh = capacity_kwh;
+                                }
+                                state.energy_kwh += -p_kw * dt_h;
+                                state.energy_kwh = state.energy_kwh.clamp(0.0, state.capacity_kwh);
+                                state.soc_percent = (state.energy_kwh / state.capacity_kwh * 100.0).clamp(0.0, 100.0);
+                                if p_kw > 0.0 {
+                                    state.daily_charge_kwh += p_kw * dt_h;
+                                    state.total_charge_kwh += p_kw * dt_h;
+                                } else if p_kw < 0.0 {
+                                    state.daily_discharge_kwh += -p_kw * dt_h;
+                                    state.total_discharge_kwh += -p_kw * dt_h;
+                                }
+                            }
                             let db = database.lock().unwrap();
                             let data_json = serde_json::to_string(storage_data).ok();
                             let _ = db.insert_device_data(
@@ -1068,9 +1121,10 @@ impl SimulationEngine {
         if let Some(tx) = self.cancel_tx.lock().await.take() {
             let _ = tx.send(()).await;
         }
-        // 仿真已停止，设备数据通道关闭，全部视为离线；清空功率缓存
+        // 仿真已停止，设备数据通道关闭，全部视为离线；清空功率缓存与储能状态
         self.device_active_status.lock().await.clear();
         self.last_device_power.lock().unwrap().clear();
+        self.storage_state.lock().unwrap().clear();
         
         // 通过 Python 桥接停止仿真
         let mut bridge = self.python_bridge.lock().await;
@@ -1124,6 +1178,18 @@ impl SimulationEngine {
     pub fn get_last_device_power(&self, device_id: &str) -> Option<(f64, Option<f64>, Option<f64>)> {
         let m = self.last_device_power.lock().unwrap();
         m.get(device_id).copied()
+    }
+
+    /// 储能状态：SOC、日充电量、日放电量、累计充电/放电总量（Rust 独立维护）
+    pub fn get_storage_state(&self, device_id: &str) -> Option<StorageState> {
+        let m = self.storage_state.lock().unwrap();
+        m.get(device_id).cloned()
+    }
+
+    /// 所有储能设备状态快照（供 Modbus 同步写 IR）
+    pub fn get_all_storage_states(&self) -> HashMap<String, StorageState> {
+        let m = self.storage_state.lock().unwrap();
+        m.clone()
     }
 
     pub async fn set_device_mode(&self, device_id: String, mode: String) -> Result<(), String> {

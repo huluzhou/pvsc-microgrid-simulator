@@ -67,14 +67,8 @@ export default function DataChart({
     (params?: { batch?: Array<{ startValue?: number; endValue?: number; start?: number; end?: number }> }) => {
       // 保存当前缩放状态，防止 enableDataZoom 变化时回弹
       const batch = params?.batch?.[0];
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/b8e265ce-e1a5-4ce6-9816-ec26ce5c4c56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:67',message:'handleDataZoom called',data:{hasBatch:batch!=null,batchStart:batch?.start,batchEnd:batch?.end,batchStartValue:batch?.startValue,batchEndValue:batch?.endValue,prevZoomRange:zoomRange},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C1,C3'})}).catch(()=>{});
-      // #endregion
       if (batch != null && typeof batch.start === 'number' && typeof batch.end === 'number') {
         setZoomRange({ start: batch.start, end: batch.end });
-        // #region agent log
-        fetch('http://127.0.0.1:7244/ingest/b8e265ce-e1a5-4ce6-9816-ec26ce5c4c56',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DataChart.tsx:71',message:'zoom range updated',data:{newStart:batch.start,newEnd:batch.end},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C1'})}).catch(()=>{});
-        // #endregion
       }
       
       if (!onVisibleRangeChange) return;

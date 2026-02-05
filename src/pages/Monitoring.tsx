@@ -35,6 +35,8 @@ interface DeviceStatus {
   energy_total_kwh?: number | null;
   energy_reactive_export_kvarh?: number | null;
   energy_reactive_import_kvarh?: number | null;
+  /** 仅储能有值：并离网模式，0=并网 1=离网（来自 Modbus HR 5095） */
+  grid_mode?: number | null;
 }
 
 interface DeviceDataPoint {
@@ -179,6 +181,10 @@ export default function Monitoring() {
   useEffect(() => {
     loadDevices();
     const interval = setInterval(loadDevices, 2000);
+    // 首拍完成后后端会写入 device_active，立即拉取一次设备状态，使设备树（含电表）正确显示在线
+    const unsubCalcPromise = listen('calculation-result-update', () => {
+      loadDevices();
+    });
     const unsubscribePromise = listen('device-data-update', (event: any) => {
       const { device_id, data } = event.payload;
       setDevices((prevDevices) =>
@@ -208,6 +214,7 @@ export default function Monitoring() {
     });
     return () => {
       clearInterval(interval);
+      unsubCalcPromise.then((unsubscribe) => unsubscribe());
       unsubscribePromise.then((unsubscribe) => unsubscribe());
     };
   }, [loadDevices, selectedDevice]);
@@ -355,6 +362,15 @@ export default function Monitoring() {
                     <div className="text-xl font-bold text-purple-600">{formatPowerKw(selectedDeviceInfo.reactive_power)} <span className="text-xs text-gray-400">kVar</span></div>
                   </div>
                 </div>
+                {selectedDeviceInfo.device_type === 'storage' && selectedDeviceInfo.grid_mode != null && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <div className="text-xs text-gray-500 mb-1">并离网状态</div>
+                    <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-sm font-medium ${selectedDeviceInfo.grid_mode === 0 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {selectedDeviceInfo.grid_mode === 0 ? '并网' : selectedDeviceInfo.grid_mode === 1 ? '离网' : `寄存器值 ${selectedDeviceInfo.grid_mode}`}
+                    </div>
+                    <span className="ml-2 text-xs text-gray-500">（Modbus HR 5095，0=并网参与计算，1=离网不参与）</span>
+                  </div>
+                )}
                 {selectedDeviceInfo.device_type === 'meter' && (selectedDeviceInfo.energy_export_kwh != null || selectedDeviceInfo.energy_import_kwh != null || selectedDeviceInfo.energy_total_kwh != null || selectedDeviceInfo.energy_reactive_export_kvarh != null || selectedDeviceInfo.energy_reactive_import_kvarh != null) && (
                   <div className="mt-3 pt-3 border-t border-gray-200">
                     <div className="text-xs text-gray-500 mb-2">电量数据（Modbus，显示单位 0.1 kWh/0.1 kVarh）</div>

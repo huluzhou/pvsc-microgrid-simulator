@@ -27,7 +27,10 @@ const DEVICE_PROPERTY_FIELDS: Record<string, Array<{
   defaultValue?: any;
 }>> = {
   bus: [
-    { key: 'voltage_kv', label: '额定电压', type: 'number', unit: 'kV', defaultValue: 10 },
+    { key: 'voltage_kv', label: '电压等级', type: 'number', unit: 'kV', defaultValue: 10 },
+  ],
+  Node: [
+    { key: 'voltage_kv', label: '电压等级', type: 'number', unit: 'kV', defaultValue: 10 },
   ],
   line: [
     { key: 'length_km', label: '长度', type: 'number', unit: 'km', defaultValue: 1 },
@@ -202,6 +205,24 @@ export default function DevicePropertiesPanel({
           }
         }
       });
+
+      // 将“显示值”中来自默认值的字段写回设备，保证前端显示与后端/状态一致
+      const defaultsToPersist: Record<string, unknown> = {};
+      propertyFields.forEach((field) => {
+        if (device.properties[field.key] === undefined && field.defaultValue !== undefined) {
+          defaultsToPersist[field.key] = field.defaultValue;
+        }
+      });
+      if (needsCommConfig) {
+        if (device.properties.ip === undefined) defaultsToPersist.ip = initialData.ip ?? '0.0.0.0';
+        if (device.properties.port === undefined) defaultsToPersist.port = initialData.port;
+        if (device.properties.baudrate === undefined) defaultsToPersist.baudrate = initialData.baudrate ?? 9600;
+        if (device.properties.parity === undefined) defaultsToPersist.parity = initialData.parity ?? 'none';
+        if (device.properties.comm_mode === undefined) defaultsToPersist.comm_mode = initialData.comm_mode ?? 'tcp';
+      }
+      if (Object.keys(defaultsToPersist).length > 0) {
+        onUpdate(device.id, { name: device.name, properties: { ...device.properties, ...defaultsToPersist } });
+      }
       
       // 尝试从后端获取设备元数据（如果 properties 中没有）
       try {

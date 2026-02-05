@@ -189,12 +189,13 @@ impl ModbusService {
         Some((ctx.input_registers.clone(), ctx.holding_registers.clone()))
     }
 
-    /// 根据仿真功率缓存更新所有运行中设备的 Modbus 输入寄存器（v1.5.0 update_* 逻辑）
-    /// dt_seconds：本步时长（秒），用于电表四象限电量与总电能积分
+    /// 根据仿真功率缓存与储能状态更新所有运行中设备的 Modbus 输入寄存器（v1.5.0 update_* 逻辑）
+    /// dt_seconds：本步时长（秒）；storage_states：储能 SOC/日/累计电量，用于写 IR 2/12/426-431
     pub async fn update_all_devices_from_simulation(
         &self,
         power_snapshot: &HashMap<String, (f64, Option<f64>, Option<f64>)>,
         dt_seconds: f64,
+        storage_states: Option<&HashMap<String, crate::domain::simulation::StorageState>>,
     ) {
         let to_update: Vec<(String, String, Arc<RwLock<ModbusDeviceContext>>, Vec<ModbusRegisterEntry>)> = {
             let running = self.running_servers.lock().map_err(|_| ()).ok();
@@ -207,6 +208,7 @@ impl ModbusService {
             let (_, p_active, p_reactive) = power_snapshot.get(&device_id).copied().unwrap_or((0.0, None, None));
             let p_kw = p_active.unwrap_or(0.0);
             let q_kvar = p_reactive;
+            let storage_state = storage_states.and_then(|m| m.get(&device_id));
             let mut ctx = context.write().await;
             modbus_server::update_context_from_simulation(
                 &mut *ctx,
@@ -215,6 +217,7 @@ impl ModbusService {
                 Some(p_kw),
                 q_kvar,
                 Some(dt_seconds),
+                storage_state,
             );
         }
     }

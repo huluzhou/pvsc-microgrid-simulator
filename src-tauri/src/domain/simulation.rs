@@ -119,3 +119,22 @@ impl Default for SimulationStatus {
 
 // 设备工作模式映射
 pub type DeviceWorkModes = HashMap<String, WorkMode>;
+
+/// 储能设备独立维护的状态（pandapower 仅返回有功/无功功率）
+#[derive(Debug, Clone, Default)]
+pub struct StorageState {
+    /// 额定容量 kWh（从拓扑 properties.capacity / max_e_mwh 解析，仅首次初始化）
+    pub capacity_kwh: f64,
+    /// 当前能量 kWh（积分功率得到，用于计算 SOC）
+    pub energy_kwh: f64,
+    /// SOC 百分比 0–100（由 energy_kwh / capacity_kwh 计算）
+    pub soc_percent: f64,
+    /// 日充电量 kWh（仿真步内积分，日重置可后续扩展）
+    pub daily_charge_kwh: f64,
+    /// 日放电量 kWh
+    pub daily_discharge_kwh: f64,
+    /// 累计充电总量 kWh
+    pub total_charge_kwh: f64,
+    /// 累计放电总量 kWh
+    pub total_discharge_kwh: f64,
+}

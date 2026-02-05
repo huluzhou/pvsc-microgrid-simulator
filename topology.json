@@ -3,99 +3,113 @@
   "name": "Imported Topology",
   "description": "",
   "devices": {
-    "device-4": {
-      "id": "device-4",
-      "name": "开关-4",
-      "device_type": "Switch",
+    "device-9": {
+      "id": "device-9",
+      "name": "电表-9",
+      "device_type": "Meter",
       "properties": {
-        "element": 11,
-        "bus": 1,
-        "element_type": "bus"
+        "element_type": "ext_grid",
+        "element": 1,
+        "side": "bottom"
       },
       "position": {
-        "x": 760.0,
-        "y": 300.0,
+        "x": -100.0,
+        "y": 80.0,
         "z": 0.0
       },
       "location": null
     },
-    "device-2": {
-      "id": "device-2",
-      "name": "线路-2",
-      "device_type": "Line",
+    "device-6": {
+      "id": "device-6",
+      "name": "储能-6",
+      "device_type": "Storage",
       "properties": {
-        "to_bus": 12,
-        "from_bus": 11
+        "bus": 4
       },
       "position": {
-        "x": 840.0,
-        "y": 560.0,
-        "z": 0.0
-      },
-      "location": null
-    },
-    "device-12": {
-      "id": "device-12",
-      "name": "母线-12",
-      "device_type": "Node",
-      "properties": {},
-      "position": {
-        "x": 760.0,
-        "y": 680.0,
+        "x": 20.0,
+        "y": 580.0,
         "z": 0.0
       },
       "location": null
     },
     "device-1": {
       "id": "device-1",
-      "name": "母线-1",
-      "device_type": "Node",
-      "properties": {},
+      "name": "外部电网-1",
+      "device_type": "ExternalGrid",
+      "properties": {
+        "bus": 2
+      },
       "position": {
-        "x": 740.0,
-        "y": 200.0,
+        "x": 60.0,
+        "y": 40.0,
+        "z": 0.0
+      },
+      "location": null
+    },
+    "device-7": {
+      "id": "device-7",
+      "name": "负载-7",
+      "device_type": "Load",
+      "properties": {
+        "rated_power_kw": 50,
+        "power_factor": 0.9,
+        "bus": 4
+      },
+      "position": {
+        "x": 140.0,
+        "y": 560.0,
         "z": 0.0
       },
       "location": null
     },
     "device-8": {
       "id": "device-8",
-      "name": "负载-8",
-      "device_type": "Load",
-      "properties": {
-        "bus": 12
-      },
-      "position": {
-        "x": 760.0,
-        "y": 760.0,
-        "z": 0.0
-      },
-      "location": null
-    },
-    "device-9": {
-      "id": "device-9",
-      "name": "充电桩-9",
+      "name": "充电桩-8",
       "device_type": "Charger",
       "properties": {
-        "bus": 12
+        "port": 702,
+        "baudrate": 9600,
+        "bus": 4,
+        "comm_mode": "tcp",
+        "charger_type": "dc_fast",
+        "rated_power_kw": 60,
+        "ip": "0.0.0.0",
+        "parity": "none"
       },
       "position": {
-        "x": 660.0,
-        "y": 760.0,
+        "x": 280.0,
+        "y": 560.0,
         "z": 0.0
       },
       "location": null
     },
-    "device-13": {
-      "id": "device-13",
-      "name": "储能-13",
-      "device_type": "Storage",
+    "device-3": {
+      "id": "device-3",
+      "name": "开关-3",
+      "device_type": "Switch",
       "properties": {
-        "bus": 12
+        "element": 4,
+        "element_type": "bus",
+        "bus": 2
       },
       "position": {
-        "x": 1020.0,
-        "y": 760.0,
+        "x": 80.0,
+        "y": 280.0,
+        "z": 0.0
+      },
+      "location": null
+    },
+    "device-5": {
+      "id": "device-5",
+      "name": "光伏-5",
+      "device_type": "Pv",
+      "properties": {
+        "bus": 4
+      },
+      "position": {
+        "x": -100.0,
+        "y": 560.0,
         "z": 0.0
       },
       "location": null
@@ -105,153 +119,131 @@
       "name": "电表-10",
       "device_type": "Meter",
       "properties": {
-        "element_type": "ext_grid",
-        "element": 5,
-        "side": "bottom"
+        "side": "top",
+        "element": 6,
+        "element_type": "storage"
       },
       "position": {
-        "x": 540.0,
-        "y": 180.0,
+        "x": -100.0,
+        "y": 440.0,
         "z": 0.0
       },
       "location": null
     },
-    "device-5": {
-      "id": "device-5",
-      "name": "外部电网-5",
-      "device_type": "ExternalGrid",
-      "properties": {
-        "bus": 1
-      },
-      "position": {
-        "x": 780.0,
-        "y": 20.0,
-        "z": 0.0
-      },
-      "location": null
-    },
-    "device-6": {
-      "id": "device-6",
-      "name": "光伏-6",
-      "device_type": "Pv",
-      "properties": {
-        "bus": 12
-      },
-      "position": {
-        "x": 880.0,
-        "y": 760.0,
-        "z": 0.0
-      },
-      "location": null
-    },
-    "device-11": {
-      "id": "device-11",
-      "name": "母线-11",
+    "device-4": {
+      "id": "device-4",
+      "name": "母线-4",
       "device_type": "Node",
-      "properties": {},
+      "properties": {
+        "voltage_kv": 10
+      },
       "position": {
-        "x": 780.0,
-        "y": 480.0,
+        "x": 40.0,
+        "y": 380.0,
+        "z": 0.0
+      },
+      "location": null
+    },
+    "device-2": {
+      "id": "device-2",
+      "name": "母线-2",
+      "device_type": "Node",
+      "properties": {
+        "voltage_kv": 10
+      },
+      "position": {
+        "x": 40.0,
+        "y": 180.0,
         "z": 0.0
       },
       "location": null
     }
   },
   "connections": {
-    "edge-device-11-device-2-1769492151936": {
-      "id": "edge-device-11-device-2-1769492151936",
-      "from_device_id": "device-11",
-      "to_device_id": "device-2",
-      "from_port": "center-source",
-      "to_port": "top",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
-    "edge-device-2-device-12-1769492158355": {
-      "id": "edge-device-2-device-12-1769492158355",
-      "from_device_id": "device-2",
-      "to_device_id": "device-12",
-      "from_port": "bottom-source",
-      "to_port": "center",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
-    "edge-device-12-device-8-1769492173369": {
-      "id": "edge-device-12-device-8-1769492173369",
-      "from_device_id": "device-12",
-      "to_device_id": "device-8",
-      "from_port": "center-source",
-      "to_port": "top",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
-    "edge-device-1-device-4-1769492119863": {
-      "id": "edge-device-1-device-4-1769492119863",
+    "edge-device-1-device-2-1770274732169": {
+      "id": "edge-device-1-device-2-1770274732169",
       "from_device_id": "device-1",
-      "to_device_id": "device-4",
-      "from_port": "center-source",
-      "to_port": "right",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
-    "edge-device-9-device-12-1769492176057": {
-      "id": "edge-device-9-device-12-1769492176057",
-      "from_device_id": "device-9",
-      "to_device_id": "device-12",
-      "from_port": "top-source",
-      "to_port": "center",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
-    "edge-device-12-device-6-1769492177530": {
-      "id": "edge-device-12-device-6-1769492177530",
-      "from_device_id": "device-12",
-      "to_device_id": "device-6",
-      "from_port": "center-source",
-      "to_port": "top",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
-    "edge-device-4-device-11-1769492148721": {
-      "id": "edge-device-4-device-11-1769492148721",
-      "from_device_id": "device-4",
-      "to_device_id": "device-11",
-      "from_port": "left-source",
-      "to_port": "center",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
-    "edge-device-5-device-1-1769492107050": {
-      "id": "edge-device-5-device-1-1769492107050",
-      "from_device_id": "device-5",
-      "to_device_id": "device-1",
+      "to_device_id": "device-2",
       "from_port": "bottom-source",
       "to_port": "center",
       "connection_type": "line",
       "properties": {},
       "is_active": true
     },
-    "edge-device-13-device-12-1769492179226": {
-      "id": "edge-device-13-device-12-1769492179226",
-      "from_device_id": "device-13",
-      "to_device_id": "device-12",
+    "edge-device-6-device-4-1770274778879": {
+      "id": "edge-device-6-device-4-1770274778879",
+      "from_device_id": "device-6",
+      "to_device_id": "device-4",
       "from_port": "top-source",
       "to_port": "center",
       "connection_type": "line",
       "properties": {},
       "is_active": true
     },
-    "edge-device-10-device-5-1769492186192": {
-      "id": "edge-device-10-device-5-1769492186192",
+    "edge-device-2-device-3-1770274747267": {
+      "id": "edge-device-2-device-3-1770274747267",
+      "from_device_id": "device-2",
+      "to_device_id": "device-3",
+      "from_port": "center-source",
+      "to_port": "left",
+      "connection_type": "line",
+      "properties": {},
+      "is_active": true
+    },
+    "edge-device-5-device-4-1770274777208": {
+      "id": "edge-device-5-device-4-1770274777208",
+      "from_device_id": "device-5",
+      "to_device_id": "device-4",
+      "from_port": "top-source",
+      "to_port": "center",
+      "connection_type": "line",
+      "properties": {},
+      "is_active": true
+    },
+    "edge-device-10-device-6-1770274795376": {
+      "id": "edge-device-10-device-6-1770274795376",
       "from_device_id": "device-10",
-      "to_device_id": "device-5",
+      "to_device_id": "device-6",
+      "from_port": "top-source",
+      "to_port": "top",
+      "connection_type": "line",
+      "properties": {},
+      "is_active": true
+    },
+    "edge-device-8-device-4-1770274783118": {
+      "id": "edge-device-8-device-4-1770274783118",
+      "from_device_id": "device-8",
+      "to_device_id": "device-4",
+      "from_port": "top-source",
+      "to_port": "center",
+      "connection_type": "line",
+      "properties": {},
+      "is_active": true
+    },
+    "edge-device-7-device-4-1770274785335": {
+      "id": "edge-device-7-device-4-1770274785335",
+      "from_device_id": "device-7",
+      "to_device_id": "device-4",
+      "from_port": "top-source",
+      "to_port": "center",
+      "connection_type": "line",
+      "properties": {},
+      "is_active": true
+    },
+    "edge-device-3-device-4-1770274749388": {
+      "id": "edge-device-3-device-4-1770274749388",
+      "from_device_id": "device-3",
+      "to_device_id": "device-4",
+      "from_port": "right-source",
+      "to_port": "center",
+      "connection_type": "line",
+      "properties": {},
+      "is_active": true
+    },
+    "edge-device-9-device-1-1770274775022": {
+      "id": "edge-device-9-device-1-1770274775022",
+      "from_device_id": "device-9",
+      "to_device_id": "device-1",
       "from_port": "top-source",
       "to_port": "bottom",
       "connection_type": "line",

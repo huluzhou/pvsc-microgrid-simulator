@@ -45,6 +45,9 @@ pub struct DeviceStatus {
     pub energy_reactive_export_kvarh: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_reactive_import_kvarh: Option<f64>,
+    /// 仅储能有值：并离网模式，从 Modbus HR 5095 读取，0=并网 1=离网
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grid_mode: Option<u16>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -260,6 +263,14 @@ pub async fn get_all_devices_status(
                 (None, None, None, None, None)
             };
 
+        // 储能：从 Modbus 快照读 HR 5095 并离网模式（0=并网 1=离网）
+        let grid_mode = if device.device_type == DeviceType::Storage {
+            modbus.get_device_register_snapshot(&device.id).await
+                .and_then(|(_, hr)| hr.get(&5095).copied())
+        } else {
+            None
+        };
+
         statuses.push(DeviceStatus {
             device_id: device.id.clone(),
             name: device.name.clone(),
@@ -274,6 +285,7 @@ pub async fn get_all_devices_status(
             energy_total_kwh,
             energy_reactive_export_kvarh,
             energy_reactive_import_kvarh,
+            grid_mode,
         });
     }
 
@@ -363,6 +375,13 @@ pub async fn get_device_status(
             (None, None, None, None, None)
         };
 
+    let grid_mode = if device_type == DeviceType::Storage {
+        modbus.get_device_register_snapshot(&device_id).await
+            .and_then(|(_, hr)| hr.get(&5095).copied())
+    } else {
+        None
+    };
+
     Ok(DeviceStatus {
         device_id,
         name,
@@ -377,5 +396,6 @@ pub async fn get_device_status(
         energy_total_kwh,
         energy_reactive_export_kvarh,
         energy_reactive_import_kvarh,
+        grid_mode,
     })
 }

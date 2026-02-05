@@ -180,17 +180,18 @@ class PandapowerTopologyAdapter(TopologyAdapter):
                     warnings: List[AdapterError]) -> Optional[int]:
         """创建母线"""
         properties = device.get("properties", {})
-        
-        # 获取电压等级（标准格式用 voltage_level，旧格式/pandapower 用 vn_kv）
-        vn_kv = properties.get("voltage_level") or properties.get("vn_kv")
+        # 获取电压等级：设备详情用 voltage_kv，标准/旧格式用 voltage_level / vn_kv，额定电压用 rated_voltage
+        vn_kv = properties.get("voltage_level") or properties.get("vn_kv") or properties.get("voltage_kv") or properties.get("rated_voltage")
         if vn_kv is None:
             vn_kv = self.get_default_value("Node", "voltage_level")
-            warnings.append(AdapterError(
-                error_type="adapter",
-                severity="warning",
-                message=f"设备 {device_id} 缺少电压等级，使用默认值 {vn_kv} kV",
-                device_id=device_id
-            ))
+            # 仅当设备已有其他属性但未设置电压等级时告警；properties 为空时静默使用默认值（新建/未编辑的母线）
+            if properties:
+                warnings.append(AdapterError(
+                    error_type="adapter",
+                    severity="warning",
+                    message=f"设备 {device_id} 缺少电压等级，使用默认值 {vn_kv} kV",
+                    device_id=device_id
+                ))
         
         # 类型转换
         if isinstance(vn_kv, str):
@@ -514,16 +515,20 @@ class PandapowerTopologyAdapter(TopologyAdapter):
                      bus: int, element: int, et: str,
                      device_map: Dict[str, Dict[str, int]],
                      errors: List[AdapterError], warnings: List[AdapterError]):
-        """创建开关。et: 'b'=母线-母线, 'l'=母线-线路, 't'=母线-变压器。"""
+        """创建开关。et: 'b'=母线-母线, 'l'=母线-线路, 't'=母线-变压器。默认闭合。"""
         properties = device.get("properties", {})
         is_closed = properties.get("is_closed", True)
+        if isinstance(is_closed, str):
+            is_closed = is_closed.strip().lower() == "true"
+        else:
+            is_closed = bool(is_closed) if is_closed is not None else True
         try:
             switch_idx = self.pp.create_switch(
                 net,
                 bus=bus,
                 element=element,
                 et=et,
-                closed=bool(is_closed),
+                closed=is_closed,
                 name=device.get("name", device_id)
             )
             device_map["switches"][device_id] = switch_idx
@@ -646,10 +651,11 @@ class PandapowerTopologyAdapter(TopologyAdapter):
     def _create_storage(self, net, device_id: str, device: Dict[str, Any],
                        bus: int, device_map: Dict[str, Dict[str, int]],
                        errors: List[AdapterError], warnings: List[AdapterError]):
-        """创建储能设备"""
+        """创建储能设备。并离网模式 grid_mode：0=并网(参与潮流)，1=离网(不参与)，对应 pandapower in_service。"""
         properties = device.get("properties", {})
         
-        max_e_mwh = properties.get("capacity", 0.0)
+        # 容量：支持 capacity / capacity_kwh（前端设备详情用 capacity_kwh，单位 kWh）-> MWh
+        max_e_mwh = properties.get("capacity") or properties.get("capacity_kwh") or 0.0
         if isinstance(max_e_mwh, str):
             try:
                 max_e_mwh = float(max_e_mwh) / 1000.0  # kWh -> MWh
@@ -658,13 +664,33 @@ class PandapowerTopologyAdapter(TopologyAdapter):
         else:
             max_e_mwh = float(max_e_mwh) / 1000.0 if max_e_mwh else 0.0
         
+        # 并离网：0=并网(in_service=True)，1=离网(in_service=False)
+        grid_mode = properties.get("grid_mode", 0)
+        in_service = (int(grid_mode) == 0)
+        # 最大充放电功率与额定功率对齐：rated_power / max_power_kw (kW) -> MW，正=充电上限，负=放电下限
+        rated_kw = properties.get("rated_power") or properties.get("max_power_kw") or properties.get("max_power")
+        if isinstance(rated_kw, str):
+            try:
+                rated_kw = float(rated_kw)
+            except ValueError:
+                rated_kw = 0.0
+        else:
+            rated_kw = float(rated_kw) if rated_kw else 0.0
+        rated_mw = rated_kw / 1000.0 if rated_kw > 0 else 0.0
+        power_limits = {}
+        if rated_mw > 0:
+            power_limits["max_p_mw"] = rated_mw
+            power_limits["min_p_mw"] = -rated_mw
+        
         try:
             storage_idx = self.pp.create_storage(
                 net,
                 bus=bus,
                 p_mw=0.0,
                 max_e_mwh=max_e_mwh,
-                name=device.get("name", device_id)
+                name=device.get("name", device_id),
+                in_service=in_service,
+                **power_limits,
             )
             device_map["storages"][device_id] = storage_idx
         except Exception as e:
