@@ -29,6 +29,12 @@ interface DeviceStatus {
   reactive_power?: number;
   /** 仅电表有值：指向的设备 id，数据项与目标设备类型一致 */
   target_device_id?: string | null;
+  /** 仅电表有值：从 Modbus 快照读取的电量（kWh/kVarh） */
+  energy_export_kwh?: number | null;
+  energy_import_kwh?: number | null;
+  energy_total_kwh?: number | null;
+  energy_reactive_export_kvarh?: number | null;
+  energy_reactive_import_kvarh?: number | null;
 }
 
 interface DeviceDataPoint {
@@ -349,6 +355,43 @@ export default function Monitoring() {
                     <div className="text-xl font-bold text-purple-600">{formatPowerKw(selectedDeviceInfo.reactive_power)} <span className="text-xs text-gray-400">kVar</span></div>
                   </div>
                 </div>
+                {selectedDeviceInfo.device_type === 'meter' && (selectedDeviceInfo.energy_export_kwh != null || selectedDeviceInfo.energy_import_kwh != null || selectedDeviceInfo.energy_total_kwh != null || selectedDeviceInfo.energy_reactive_export_kvarh != null || selectedDeviceInfo.energy_reactive_import_kvarh != null) && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <div className="text-xs text-gray-500 mb-2">电量数据（Modbus，显示单位 0.1 kWh/0.1 kVarh）</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {selectedDeviceInfo.energy_export_kwh != null && (
+                        <div className="p-2 bg-gray-50 rounded border border-gray-100">
+                          <div className="text-xs text-gray-500">有功导出(上网)</div>
+                          <div className="text-sm font-medium text-gray-800">{(selectedDeviceInfo.energy_export_kwh ?? 0) * 10} <span className="text-xs text-gray-500">×0.1 kWh</span></div>
+                        </div>
+                      )}
+                      {selectedDeviceInfo.energy_import_kwh != null && (
+                        <div className="p-2 bg-gray-50 rounded border border-gray-100">
+                          <div className="text-xs text-gray-500">有功导入(下网)</div>
+                          <div className="text-sm font-medium text-gray-800">{(selectedDeviceInfo.energy_import_kwh ?? 0) * 10} <span className="text-xs text-gray-500">×0.1 kWh</span></div>
+                        </div>
+                      )}
+                      {selectedDeviceInfo.energy_total_kwh != null && (
+                        <div className="p-2 bg-gray-50 rounded border border-gray-100">
+                          <div className="text-xs text-gray-500">组合有功总电能</div>
+                          <div className="text-sm font-medium text-gray-800">{(selectedDeviceInfo.energy_total_kwh ?? 0) * 10} <span className="text-xs text-gray-500">×0.1 kWh</span></div>
+                        </div>
+                      )}
+                      {selectedDeviceInfo.energy_reactive_export_kvarh != null && (
+                        <div className="p-2 bg-gray-50 rounded border border-gray-100">
+                          <div className="text-xs text-gray-500">无功导出</div>
+                          <div className="text-sm font-medium text-gray-800">{(selectedDeviceInfo.energy_reactive_export_kvarh ?? 0) * 10} <span className="text-xs text-gray-500">×0.1 kVarh</span></div>
+                        </div>
+                      )}
+                      {selectedDeviceInfo.energy_reactive_import_kvarh != null && (
+                        <div className="p-2 bg-gray-50 rounded border border-gray-100">
+                          <div className="text-xs text-gray-500">无功导入</div>
+                          <div className="text-sm font-medium text-gray-800">{(selectedDeviceInfo.energy_reactive_import_kvarh ?? 0) * 10} <span className="text-xs text-gray-500">×0.1 kVarh</span></div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-3 pt-3 border-t border-gray-200 min-h-[4.5rem]">
                   <div className="text-xs text-gray-500 mb-2">最新数据项</div>
                   {(() => {

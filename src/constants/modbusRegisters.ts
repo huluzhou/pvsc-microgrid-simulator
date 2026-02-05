@@ -33,22 +33,27 @@ export const MODBUS_REGISTER_TYPE_LABELS: Record<ModbusRegisterType, string> = {
   holding_registers: '保持寄存器 (Holding Registers)',
 };
 
-/** v1.5.0 meter: Input Registers 0,1,2,3,4,5,6,7,8,9,20,10,11 */
+/**
+ * v1.5.0 meter: Input Registers 0,1,2,3,4,5,6,7,8,9,20,10,11
+ * - 有功功率(0)、无功功率(20)：int16 有符号，单位 0.5 kW，寄存器值 = 实际(kW) × 2
+ * - 四象限电量(7,8,10,11)与组合有功总电能(9)：由 P/Q 积分得到，单位 kWh，寄存器单位 1 kWh；前端显示时用 0.1 kWh 单位
+ * - 视在功率 S=√(P²+Q²)，总电能(9)为有功累计（上网+下网），单位 kWh
+ */
 function getMeterDefaults(): RegisterEntry[] {
   return [
-    { address: 0, value: 0, type: 'input_registers', name: '当前有功功率', key: 'active_power' },
+    { address: 0, value: 0, type: 'input_registers', name: '当前有功功率(int16,0.5kW)', key: 'active_power' },
     { address: 1, value: 220, type: 'input_registers', name: 'A相电压' },
     { address: 2, value: 220, type: 'input_registers', name: 'B相电压' },
     { address: 3, value: 220, type: 'input_registers', name: 'C相电压' },
     { address: 4, value: 0, type: 'input_registers', name: 'A相电流' },
     { address: 5, value: 0, type: 'input_registers', name: 'B相电流' },
     { address: 6, value: 0, type: 'input_registers', name: 'C相电流' },
-    { address: 7, value: 0, type: 'input_registers', name: '四象限-有功导出(上网)' },
-    { address: 8, value: 0, type: 'input_registers', name: '四象限-有功导入(下网)' },
-    { address: 9, value: 0, type: 'input_registers', name: '组合有功总电能' },
-    { address: 10, value: 0, type: 'input_registers', name: '四象限-无功导出' },
-    { address: 11, value: 0, type: 'input_registers', name: '四象限-无功导入' },
-    { address: 20, value: 0, type: 'input_registers', name: '无功功率', key: 'reactive_power' },
+    { address: 7, value: 0, type: 'input_registers', name: '四象限-有功导出(上网,kWh)' },
+    { address: 8, value: 0, type: 'input_registers', name: '四象限-有功导入(下网,kWh)' },
+    { address: 9, value: 0, type: 'input_registers', name: '组合有功总电能(kWh)' },
+    { address: 10, value: 0, type: 'input_registers', name: '四象限-无功导出(kVarh)' },
+    { address: 11, value: 0, type: 'input_registers', name: '四象限-无功导入(kVarh)' },
+    { address: 20, value: 0, type: 'input_registers', name: '无功功率(int16,0.5kW)', key: 'reactive_power' },
   ];
 }
 

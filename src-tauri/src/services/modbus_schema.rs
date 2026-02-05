@@ -4,9 +4,9 @@
 /// 输入寄存器更新键：仿真结果写入该寄存器时使用的数据源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IrUpdateKey {
-    /// 有功功率 (0.1 kW/单位)
+    /// 有功功率：电表 int16/0.5 kW，其他 0.1 kW/单位
     ActivePower,
-    /// 无功功率 (0.1 kVar/单位)
+    /// 无功功率：电表 int16/0.5 kVar，其他 0.1 kVar/单位
     ReactivePower,
     /// 有功功率 32 位低字
     ActivePowerLow,

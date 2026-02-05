@@ -190,9 +190,11 @@ impl ModbusService {
     }
 
     /// 根据仿真功率缓存更新所有运行中设备的 Modbus 输入寄存器（v1.5.0 update_* 逻辑）
+    /// dt_seconds：本步时长（秒），用于电表四象限电量与总电能积分
     pub async fn update_all_devices_from_simulation(
         &self,
         power_snapshot: &HashMap<String, (f64, Option<f64>, Option<f64>)>,
+        dt_seconds: f64,
     ) {
         let to_update: Vec<(String, String, Arc<RwLock<ModbusDeviceContext>>, Vec<ModbusRegisterEntry>)> = {
             let running = self.running_servers.lock().map_err(|_| ()).ok();
@@ -206,7 +208,14 @@ impl ModbusService {
             let p_kw = p_active.unwrap_or(0.0);
             let q_kvar = p_reactive;
             let mut ctx = context.write().await;
-            modbus_server::update_context_from_simulation(&mut *ctx, &device_type, Some(&registers), Some(p_kw), q_kvar);
+            modbus_server::update_context_from_simulation(
+                &mut *ctx,
+                &device_type,
+                Some(&registers),
+                Some(p_kw),
+                q_kvar,
+                Some(dt_seconds),
+            );
         }
     }
 }

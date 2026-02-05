@@ -192,23 +192,41 @@ pub async fn run_modbus_tcp_server(
     Ok(())
 }
 
-/// 功率单位：寄存器值 = 实际功率(kW) * POWER_UNIT；与 v1.5.0 协议兼容
-const POWER_UNIT_KW: f64 = 10.0; // 0.1 kW per register unit
+/// 功率单位：非电表 0.1 kW/单位；电表 0.5 kW/单位（int16 有符号）
+const POWER_UNIT_KW_DEFAULT: f64 = 10.0;
+/// 电表有功/无功：寄存器单位 0.5 kW，int16 有符号
+const METER_POWER_UNIT_KW: f64 = 2.0; // 1/0.5
+/// 电表电量：寄存器单位 1 kWh（1 寄存器 = 1 kWh；前端显示时用 0.1 kWh 单位）
+const METER_ENERGY_UNIT_KWH: f64 = 1.0;
+
+/// 将 f64 钳位到 i16 并转为 u16 存储（Modbus 寄存器为 u16，按 int16 解释）
+fn clamp_i16_as_u16(v: i32) -> u16 {
+    let clamped = v.clamp(i32::from(i16::MIN), i32::from(i16::MAX));
+    (clamped as i16) as u16
+}
 
 /// 根据设备类型与 modbus_schema 将仿真结果写入对应输入寄存器（每个 IR 有固定更新逻辑）
+/// 电表：有功/无功为 int16、单位 0.5 kW；四象限电量与组合有功总电能为 kWh（0.1 kWh/单位），由 P/Q 积分得到
 /// entries 可选：若提供则按 key 查找自定义地址，否则使用 schema 默认地址
+/// dt_seconds：本步时长（秒），用于电表四象限电量与总电能积分；仅电表且为 Some 时累加
 pub fn update_context_from_simulation(
     ctx: &mut ModbusDeviceContext,
     device_type: &str,
     entries: Option<&[ModbusRegisterEntry]>,
     p_active_kw: Option<f64>,
     p_reactive_kvar: Option<f64>,
+    dt_seconds: Option<f64>,
 ) {
     use modbus_schema::{input_register_updates, ir_update_key_to_default_key, IrUpdateKey};
     let p_kw = p_active_kw.unwrap_or(0.0);
     let q_kvar = p_reactive_kvar.unwrap_or(0.0);
-    let p_reg = (p_kw * POWER_UNIT_KW).round().max(0.0) as u32;
-    let q_reg = (q_kvar * POWER_UNIT_KW).round().max(0.0) as u32;
+
+    // 电表：int16 有符号，单位 0.5 kW -> 寄存器值 = kW * 2
+    let p_reg_meter = clamp_i16_as_u16((p_kw * METER_POWER_UNIT_KW).round() as i32);
+    let q_reg_meter = clamp_i16_as_u16((q_kvar * METER_POWER_UNIT_KW).round() as i32);
+    // 其他设备：0.1 kW/单位，32 位拆高低字
+    let p_reg_other = (p_kw * POWER_UNIT_KW_DEFAULT).round().max(0.0) as u32;
+    let q_reg_other = (q_kvar * POWER_UNIT_KW_DEFAULT).round().max(0.0) as u32;
 
     for &(default_addr, ir_key) in input_register_updates(device_type) {
         let key = ir_update_key_to_default_key(ir_key);
@@ -220,13 +238,58 @@ pub fn update_context_from_simulation(
             })
             .unwrap_or(default_addr);
         let value = match ir_key {
-            IrUpdateKey::ActivePower => (p_reg & 0xFFFF) as u16,
-            IrUpdateKey::ReactivePower => (q_reg & 0xFFFF) as u16,
-            IrUpdateKey::ActivePowerLow => (p_reg & 0xFFFF) as u16,
-            IrUpdateKey::ActivePowerHigh => (p_reg >> 16) as u16,
-            IrUpdateKey::ReactivePowerLow => (q_reg & 0xFFFF) as u16,
-            IrUpdateKey::ReactivePowerHigh => (q_reg >> 16) as u16,
+            IrUpdateKey::ActivePower => {
+                if device_type == "meter" {
+                    p_reg_meter
+                } else {
+                    (p_reg_other & 0xFFFF) as u16
+                }
+            }
+            IrUpdateKey::ReactivePower => {
+                if device_type == "meter" {
+                    q_reg_meter
+                } else {
+                    (q_reg_other & 0xFFFF) as u16
+                }
+            }
+            IrUpdateKey::ActivePowerLow => (p_reg_other & 0xFFFF) as u16,
+            IrUpdateKey::ActivePowerHigh => (p_reg_other >> 16) as u16,
+            IrUpdateKey::ReactivePowerLow => (q_reg_other & 0xFFFF) as u16,
+            IrUpdateKey::ReactivePowerHigh => (q_reg_other >> 16) as u16,
         };
         ctx.set_input_register(addr, value);
+    }
+
+    // 电表：四象限电量与组合有功总电能（单位 kWh，寄存器 1 kWh/单位），由 P/Q 积分
+    if device_type == "meter" {
+        let dt_h = dt_seconds.map(|s| s / 3600.0).unwrap_or(0.0);
+        let read_energy = |ctx: &ModbusDeviceContext, addr: u16| {
+            ctx.input_registers.get(&addr).copied().unwrap_or(0) as f64 / METER_ENERGY_UNIT_KWH
+        };
+        let mut e_export_p = read_energy(ctx, 7);
+        let mut e_import_p = read_energy(ctx, 8);
+        let mut e_export_q = read_energy(ctx, 10);
+        let mut e_import_q = read_energy(ctx, 11);
+        if dt_h > 0.0 {
+            if p_kw > 0.0 {
+                e_export_p += p_kw * dt_h;
+            } else {
+                e_import_p += -p_kw * dt_h;
+            }
+            if let Some(q) = p_reactive_kvar {
+                if q > 0.0 {
+                    e_export_q += q * dt_h;
+                } else {
+                    e_import_q += -q * dt_h;
+                }
+            }
+        }
+        let e_total_p = e_export_p + e_import_p;
+        let write_energy = |v: f64| (v * METER_ENERGY_UNIT_KWH).round().clamp(0.0, 65535.0) as u16;
+        ctx.set_input_register(7, write_energy(e_export_p));
+        ctx.set_input_register(8, write_energy(e_import_p));
+        ctx.set_input_register(9, write_energy(e_total_p));
+        ctx.set_input_register(10, write_energy(e_export_q));
+        ctx.set_input_register(11, write_energy(e_import_q));
     }
 }

@@ -245,10 +245,25 @@ export default function DevicePropertiesPanel({
       ...(data_collection_frequency !== null && data_collection_frequency !== undefined ? { data_collection_frequency } : {}),
     };
     
-    // 更新设备基本属性和仿真参数
+    // 更新画布上的设备节点（本地状态）
     onUpdate(device.id, { name, properties: updatedProperties });
     
-    // 更新设备仿真参数（通过 Tauri 命令，保存到设备元数据）
+    // 同步到后端 metadata，使设备控制等页面立即生效（额定功率等），无需再点左上角保存
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('update_device_metadata', {
+        payload: {
+          device_id: device.id,
+          name: name ?? device.name,
+          properties: updatedProperties,
+        },
+      });
+    } catch (error) {
+      console.error('同步设备元数据失败:', error);
+      // 不阻止保存，只记录错误
+    }
+    
+    // 更新设备仿真参数（通过 Tauri 命令）
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('update_device_config', {

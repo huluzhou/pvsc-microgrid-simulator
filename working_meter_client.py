@@ -50,7 +50,7 @@ class MultiMeterClient:
         """读取所有电表的有功功率（32位数据，高低位组合）"""
         for meter_name, client in self.clients.items():
             try:
-                result = client.read_input_registers(address=0, count=1, device_id=1)
+                result = client.read_input_registers(address=0, count=21, device_id=1)
                 # voltage_a = client.read_input_registers(address=1, count=1, device_id=1)
                 # voltage_b = client.read_input_registers(address=2, count=1, device_id=1)
                 # voltage_c = client.read_input_registers(address=3, count=1, device_id=1)
@@ -65,30 +65,30 @@ class MultiMeterClient:
                     power_kw = raw_value * 0.5 # 转换为MW再转kW，或直接按kW处理
                     self.meter_data[meter_name]['power'] = power_kw
                     self.meter_data[meter_name]['status'] = 'ok'
-                    # self.meter_data[meter_name]['voltage_a'] = result.registers[1]
-                    # self.meter_data[meter_name]['voltage_b'] = result.registers[2]
-                    # self.meter_data[meter_name]['voltage_c'] = result.registers[3]
-                    # self.meter_data[meter_name]['current_a'] = result.registers[4]
-                    # self.meter_data[meter_name]['current_b'] = result.registers[5]
-                    # self.meter_data[meter_name]['current_c'] = result.registers[6]
-                    # self.meter_data[meter_name]['active_export'] = result.registers[7] * 0.5
-                    # self.meter_data[meter_name]['active_import'] = result.registers[8] * 0.5
-                    # self.meter_data[meter_name]['reactive_export'] = result.registers[10] * 0.5
-                    # self.meter_data[meter_name]['reactive_import'] = result.registers[11] * 0.5
-                    # # 解析无功功率 (16位有符号整数)
-                    # reactive_raw = result.registers[20]
-                    self.meter_data[meter_name]['voltage_a'] = 0
-                    self.meter_data[meter_name]['voltage_b'] = 0
-                    self.meter_data[meter_name]['voltage_c'] = 0
-                    self.meter_data[meter_name]['current_a'] = 0
-                    self.meter_data[meter_name]['current_b'] = 0
-                    self.meter_data[meter_name]['current_c'] = 0
-                    self.meter_data[meter_name]['active_export'] = 0
-                    self.meter_data[meter_name]['active_import'] = 0
-                    self.meter_data[meter_name]['reactive_export'] = 0
-                    self.meter_data[meter_name]['reactive_import'] = 0
+                    self.meter_data[meter_name]['voltage_a'] = result.registers[1]
+                    self.meter_data[meter_name]['voltage_b'] = result.registers[2]
+                    self.meter_data[meter_name]['voltage_c'] = result.registers[3]
+                    self.meter_data[meter_name]['current_a'] = result.registers[4]
+                    self.meter_data[meter_name]['current_b'] = result.registers[5]
+                    self.meter_data[meter_name]['current_c'] = result.registers[6]
+                    self.meter_data[meter_name]['active_export'] = result.registers[7]
+                    self.meter_data[meter_name]['active_import'] = result.registers[8]
+                    self.meter_data[meter_name]['reactive_export'] = result.registers[10]
+                    self.meter_data[meter_name]['reactive_import'] = result.registers[11]
                     # 解析无功功率 (16位有符号整数)
-                    reactive_raw = 0
+                    reactive_raw = result.registers[20]
+                    # self.meter_data[meter_name]['voltage_a'] = 0
+                    # self.meter_data[meter_name]['voltage_b'] = 0
+                    # self.meter_data[meter_name]['voltage_c'] = 0
+                    # self.meter_data[meter_name]['current_a'] = 0
+                    # self.meter_data[meter_name]['current_b'] = 0
+                    # self.meter_data[meter_name]['current_c'] = 0
+                    # self.meter_data[meter_name]['active_export'] = 0
+                    # self.meter_data[meter_name]['active_import'] = 0
+                    # self.meter_data[meter_name]['reactive_export'] = 0
+                    # self.meter_data[meter_name]['reactive_import'] = 0
+                    # 解析无功功率 (16位有符号整数)
+                    # reactive_raw = 0
                     if reactive_raw >= 0x8000:
                         reactive_raw -= 0x10000
                     self.meter_data[meter_name]['reactive_power'] = reactive_raw * 0.5

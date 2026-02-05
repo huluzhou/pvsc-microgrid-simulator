@@ -16,10 +16,24 @@ interface DeviceInfo {
   id: string;
   name: string;
   deviceType: DeviceType;
+  /** 拓扑中的属性（含 rated_power_kw / max_power_kw 等），供手动设定范围 */
+  properties?: Record<string, unknown>;
 }
 
 // 设备控制不包含外部电网（外部电网不需用户控制）
 const POWER_DEVICE_TYPES: DeviceType[] = ['static_generator', 'storage', 'load', 'charger'];
+
+/** 从设备属性取额定功率（kW），用于手动设定滑块范围。储能用 max_power_kw，其余用 rated_power_kw */
+function getRatedPowerKw(device: DeviceInfo): number | undefined {
+  const p = device.properties;
+  if (!p) return undefined;
+  if (device.deviceType === 'storage') {
+    const v = p.max_power_kw ?? p.rated_power_kw;
+    return typeof v === 'number' ? v : (typeof v === 'string' ? Number(v) : undefined);
+  }
+  const v = p.rated_power_kw ?? p.rated_power;
+  return typeof v === 'number' ? v : (typeof v === 'string' ? Number(v) : undefined);
+}
 
 export default function DeviceControl() {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
@@ -85,24 +99,35 @@ export default function DeviceControl() {
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
     try {
+      // 直接使用后端当前 metadata（由拓扑设计页保存/加载时更新），不先加载 topology.json，避免覆盖用户刚保存的拓扑
       const [devicesMetadata, modbusList, runningIds] = await Promise.all([
-        invoke<Array<{ id: string; name: string; device_type: string }>>('get_all_devices'),
+        invoke<Array<{ id: string; name: string; device_type: string; properties?: Record<string, unknown> }>>('get_all_devices'),
         invoke<Array<{ id: string; name: string; device_type: string; ip: string; port: number }>>('get_modbus_devices').catch(() => []),
         invoke<string[]>('get_running_modbus_device_ids').catch(() => []),
       ]);
-      const powerDevices = devicesMetadata
+      const powerDevices: DeviceInfo[] = devicesMetadata
         .filter((d) => POWER_DEVICE_TYPES.includes(d.device_type as DeviceType))
-        .map((d) => ({ id: d.id, name: d.name, deviceType: d.device_type as DeviceType }));
+        .map((d) => ({
+          id: d.id,
+          name: d.name,
+          deviceType: d.device_type as DeviceType,
+          properties: d.properties ?? {},
+        }));
       setDevices(powerDevices);
       setModbusDevices(modbusList);
       setRunningModbusIds(runningIds);
     } catch (error) {
       console.error('Failed to load devices from metadata:', error);
       try {
-        const topologyData = await invoke<{ devices: Array<{ id: string; name: string; device_type: string }> }>('load_topology', { path: 'topology.json' });
-        const powerDevices = topologyData.devices
+        const topologyData = await invoke<{ devices: Array<{ id: string; name: string; device_type: string; properties?: Record<string, unknown> }> }>('load_topology', { path: 'topology.json' });
+        const powerDevices: DeviceInfo[] = (topologyData.devices ?? [])
           .filter((d) => POWER_DEVICE_TYPES.includes(d.device_type as DeviceType))
-          .map((d) => ({ id: d.id, name: d.name, deviceType: d.device_type as DeviceType }));
+          .map((d) => ({
+            id: d.id,
+            name: d.name,
+            deviceType: d.device_type as DeviceType,
+            properties: d.properties ?? {},
+          }));
         setDevices(powerDevices);
       } catch (fallbackError) {
         console.error('Failed to load from topology file:', fallbackError);
@@ -352,7 +377,15 @@ export default function DeviceControl() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3">
-            {configMode === 'manual' && <ManualSetpointForm deviceName={selectedDevice.name} initialValue={deviceConfigs[selectedDevice.id]?.manualSetpoint} onSave={handleSaveManual} onCancel={handleCloseConfig} />}
+            {configMode === 'manual' && (
+              <ManualSetpointForm
+                deviceName={selectedDevice.name}
+                ratedPowerKw={getRatedPowerKw(selectedDevice)}
+                initialValue={deviceConfigs[selectedDevice.id]?.manualSetpoint}
+                onSave={handleSaveManual}
+                onCancel={handleCloseConfig}
+              />
+            )}
             {configMode === 'random' && <RandomConfigForm deviceName={selectedDevice.name} initialValue={deviceConfigs[selectedDevice.id]?.randomConfig} onSave={handleSaveRandom} onCancel={handleCloseConfig} />}
             {configMode === 'historical' && <HistoricalConfigForm deviceName={selectedDevice.name} deviceType={selectedDevice.deviceType} initialValue={deviceConfigs[selectedDevice.id]?.historicalConfig} onSave={handleSaveHistorical} onCancel={handleCloseConfig} />}
           </div>

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::domain::metadata::DeviceMetadataStore;
 use crate::domain::device::DeviceMetadata;
+use crate::domain::topology::Device;
 use crate::services::simulation_engine::SimulationEngine;
 use crate::commands::topology::device_type_to_string;
 use std::sync::{Arc, Mutex};
@@ -208,6 +209,29 @@ pub async fn get_device(
         .ok_or_else(|| format!("Device {} not found", device_id))?;
     
     Ok(DeviceMetadata::from_device(&device))
+}
+
+/// 设备属性面板保存时更新单设备元数据（name + properties），使设备控制等页面立即生效，无需再点左上角保存
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateDeviceMetadataPayload {
+    pub device_id: String,
+    pub name: String,
+    pub properties: HashMap<String, serde_json::Value>,
+}
+
+#[tauri::command]
+pub async fn update_device_metadata(
+    payload: UpdateDeviceMetadataPayload,
+    metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
+) -> Result<(), String> {
+    let mut store = metadata_store.lock().unwrap();
+    let mut device = store
+        .get_device(&payload.device_id)
+        .ok_or_else(|| format!("Device {} not found", payload.device_id))?;
+    device.name = payload.name;
+    device.properties = payload.properties;
+    store.update_device(device)?;
+    Ok(())
 }
 
 #[tauri::command]

@@ -156,7 +156,10 @@ class PandapowerKernel(PowerCalculationKernel):
                     "details": {}
                 })
             try:
-                if hasattr(self.net, 'res_gen') and self.net.res_gen is not None:
+                # 光伏等静态发电机在 pandapower 中为 sgen 表，优先用 res_sgen；若有 res_gen 再合并
+                if hasattr(self.net, 'res_sgen') and self.net.res_sgen is not None and not self.net.res_sgen.empty:
+                    results["devices"]["generators"] = _res_to_row_dict(self.net, self.net.res_sgen, "sgen")
+                elif hasattr(self.net, 'res_gen') and self.net.res_gen is not None:
                     results["devices"]["generators"] = _res_to_row_dict(self.net, self.net.res_gen, "gen")
             except Exception as e:
                 errors.append({

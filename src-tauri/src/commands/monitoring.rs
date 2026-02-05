@@ -7,6 +7,7 @@ use crate::domain::metadata::DeviceMetadataStore;
 use crate::domain::simulation::SimulationState;
 use crate::domain::topology::DeviceType;
 use crate::commands::topology::device_type_to_string;
+use crate::services::modbus::ModbusService;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::collections::HashMap;
 
@@ -33,6 +34,17 @@ pub struct DeviceStatus {
     /// 仅电表有值：指向的设备 id，用于监控界面按目标设备类型展示数据项
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_device_id: Option<String>,
+    /// 仅电表有值：从 Modbus 快照读取的电量（单位 kWh/kVarh）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_export_kwh: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_import_kwh: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_total_kwh: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_reactive_export_kvarh: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_reactive_import_kvarh: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -165,11 +177,15 @@ fn build_meter_connections(
     meter_connections
 }
 
+/// 电表 Modbus 电量寄存器单位：1 寄存器 = 1 kWh / 1 kVarh（与 modbus_server 一致；前端显示时按 0.1 单位）
+const METER_ENERGY_UNIT: f64 = 1.0;
+
 #[tauri::command]
 pub async fn get_all_devices_status(
     metadata_store: State<'_, StdMutex<DeviceMetadataStore>>,
     db: State<'_, Arc<StdMutex<Database>>>,
     engine: State<'_, Arc<SimulationEngine>>,
+    modbus: State<'_, ModbusService>,
 ) -> Result<Vec<DeviceStatus>, String> {
     let devices = {
         let metadata_store = metadata_store.lock().unwrap();
@@ -225,6 +241,25 @@ pub async fn get_all_devices_status(
             None
         };
 
+        // 电表：从 Modbus 快照读取电量寄存器 7,8,9,10,11（单位 1 kWh / 1 kVarh）
+        let (energy_export_kwh, energy_import_kwh, energy_total_kwh, energy_reactive_export_kvarh, energy_reactive_import_kvarh) =
+            if device.device_type == DeviceType::Meter {
+                if let Some((ir, _hr)) = modbus.get_device_register_snapshot(&device.id).await {
+                    let read = |addr: u16| ir.get(&addr).copied().unwrap_or(0) as f64 * METER_ENERGY_UNIT;
+                    (
+                        Some(read(7)),
+                        Some(read(8)),
+                        Some(read(9)),
+                        Some(read(10)),
+                        Some(read(11)),
+                    )
+                } else {
+                    (None, None, None, None, None)
+                }
+            } else {
+                (None, None, None, None, None)
+            };
+
         statuses.push(DeviceStatus {
             device_id: device.id.clone(),
             name: device.name.clone(),
@@ -234,6 +269,11 @@ pub async fn get_all_devices_status(
             current_p_active: p_active,
             current_p_reactive: p_reactive,
             target_device_id,
+            energy_export_kwh,
+            energy_import_kwh,
+            energy_total_kwh,
+            energy_reactive_export_kvarh,
+            energy_reactive_import_kvarh,
         });
     }
 
@@ -246,6 +286,7 @@ pub async fn get_device_status(
     metadata_store: State<'_, StdMutex<DeviceMetadataStore>>,
     db: State<'_, Arc<StdMutex<Database>>>,
     engine: State<'_, Arc<SimulationEngine>>,
+    modbus: State<'_, ModbusService>,
 ) -> Result<DeviceStatus, String> {
     let (name, device_type_str, device_type) = {
         let store = metadata_store.lock().unwrap();
@@ -304,6 +345,24 @@ pub async fn get_device_status(
         None
     };
 
+    let (energy_export_kwh, energy_import_kwh, energy_total_kwh, energy_reactive_export_kvarh, energy_reactive_import_kvarh) =
+        if device_type == DeviceType::Meter {
+            if let Some((ir, _hr)) = modbus.get_device_register_snapshot(&device_id).await {
+                let read = |addr: u16| ir.get(&addr).copied().unwrap_or(0) as f64 * METER_ENERGY_UNIT;
+                (
+                    Some(read(7)),
+                    Some(read(8)),
+                    Some(read(9)),
+                    Some(read(10)),
+                    Some(read(11)),
+                )
+            } else {
+                (None, None, None, None, None)
+            }
+        } else {
+            (None, None, None, None, None)
+        };
+
     Ok(DeviceStatus {
         device_id,
         name,
@@ -313,5 +372,10 @@ pub async fn get_device_status(
         current_p_active: p_active,
         current_p_reactive: p_reactive,
         target_device_id,
+        energy_export_kwh,
+        energy_import_kwh,
+        energy_total_kwh,
+        energy_reactive_export_kvarh,
+        energy_reactive_import_kvarh,
     })
 }

@@ -39,7 +39,13 @@ impl DeviceMetadataStore {
         if !self.devices.read().unwrap().contains_key(&device.id) {
             return Err(format!("Device {} not found", device.id));
         }
-        self.devices.write().unwrap().insert(device.id.clone(), device);
+        let device_clone = device.clone();
+        self.devices.write().unwrap().insert(device.id.clone(), device_clone.clone());
+        // 同步更新 topology 中的设备，保证 get_topology() 与 get_all_devices() 一致
+        let mut topo_guard = self.topology.write().unwrap();
+        if let Some(topo) = topo_guard.as_mut() {
+            topo.devices.insert(device.id.clone(), device_clone);
+        }
         Ok(())
     }
 }

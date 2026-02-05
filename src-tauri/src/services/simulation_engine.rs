@@ -422,7 +422,8 @@ impl SimulationEngine {
                                 if let Some(modbus) = app.try_state::<crate::services::modbus::ModbusService>() {
                                     let power_snapshot: HashMap<String, (f64, Option<f64>, Option<f64>)> =
                                         last_device_power.lock().unwrap().clone();
-                                    let _ = modbus.update_all_devices_from_simulation(&power_snapshot).await;
+                                    let dt_seconds = calculation_interval_ms as f64 / 1000.0;
+                                    let _ = modbus.update_all_devices_from_simulation(&power_snapshot, dt_seconds).await;
                                     // 推送寄存器快照到前端，联动更新 Modbus 页面的寄存器值显示
                                     for device_id in modbus.running_device_ids() {
                                         if let Some((ir, hr)) = modbus.get_device_register_snapshot(&device_id).await {

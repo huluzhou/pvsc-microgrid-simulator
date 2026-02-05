@@ -630,8 +630,8 @@ class SimulationEngine:
                 device_type = device.get("device_type", "")
                 properties = device.get("properties", {})
                 
-                # 从 properties 中获取功率值（单位：kW）
-                # 支持多种属性名：rated_power, p_kw, power
+                # 从 properties 中获取功率值（单位：kW / kVar）
+                # 支持多种属性名：rated_power, p_kw, power；无功：q_kvar
                 p_kw = 0.0
                 if "rated_power" in properties:
                     p_kw = float(properties["rated_power"])
@@ -644,17 +644,22 @@ class SimulationEngine:
                         # 如果值很大（>1000），假设单位是W，转换为kW
                         if abs(p_kw) > 1000:
                             p_kw = p_kw / 1000.0
+                q_kvar = float(properties.get("q_kvar", 0.0))
                 
-                # 转换为MW（pandapower使用MW）
+                # 转换为 MW / MVar（pandapower 使用 MW / MVar）
                 p_mw = p_kw / 1000.0
+                q_mvar = q_kvar / 1000.0
                 
-                # 根据设备类型更新对应的功率值
+                # 根据设备类型更新对应的功率值（有功与无功）
                 if device_type == "Pv":
-                    # 更新发电机功率
+                    # 更新发电机功率（光伏在 pandapower 中为 sgen 表）
                     if device_id in self.cached_device_map.get("generators", {}):
                         gen_idx = self.cached_device_map["generators"][device_id]
-                        if 0 <= gen_idx < len(self.cached_network.gen):
-                            self.cached_network.gen.at[gen_idx, "p_mw"] = p_mw
+                        sgen_df = getattr(self.cached_network, "sgen", None)
+                        if sgen_df is not None and 0 <= gen_idx < len(sgen_df):
+                            sgen_df.at[gen_idx, "p_mw"] = p_mw
+                            if "q_mvar" in sgen_df.columns:
+                                sgen_df.at[gen_idx, "q_mvar"] = q_mvar
                 
                 elif device_type == "Load":
                     # 更新负载功率
@@ -662,6 +667,8 @@ class SimulationEngine:
                         load_idx = self.cached_device_map["loads"][device_id]
                         if 0 <= load_idx < len(self.cached_network.load):
                             self.cached_network.load.at[load_idx, "p_mw"] = p_mw
+                            if "q_mvar" in self.cached_network.load.columns:
+                                self.cached_network.load.at[load_idx, "q_mvar"] = q_mvar
                 
                 elif device_type == "Storage":
                     # 更新储能功率
@@ -669,6 +676,8 @@ class SimulationEngine:
                         storage_idx = self.cached_device_map["storages"][device_id]
                         if 0 <= storage_idx < len(self.cached_network.storage):
                             self.cached_network.storage.at[storage_idx, "p_mw"] = p_mw
+                            if "q_mvar" in self.cached_network.storage.columns:
+                                self.cached_network.storage.at[storage_idx, "q_mvar"] = q_mvar
                 
                 elif device_type == "Charger":
                     # 更新充电桩功率（作为负载处理）
@@ -676,6 +685,8 @@ class SimulationEngine:
                         load_idx = self.cached_device_map["loads"][device_id]
                         if 0 <= load_idx < len(self.cached_network.load):
                             self.cached_network.load.at[load_idx, "p_mw"] = p_mw
+                            if "q_mvar" in self.cached_network.load.columns:
+                                self.cached_network.load.at[load_idx, "q_mvar"] = q_mvar
                             
         except Exception as e:
             # 更新功率值失败不影响计算，只记录警告

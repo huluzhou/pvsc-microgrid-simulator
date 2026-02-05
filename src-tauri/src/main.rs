@@ -183,6 +183,7 @@ fn main() {
             commands::modbus::start_all_modbus_servers,
             commands::modbus::get_running_modbus_device_ids,
             commands::device::update_device_config,
+            commands::device::update_device_metadata,
             commands::device::batch_set_device_mode,
             commands::ai::predict_device_data,
             commands::ai::optimize_operation,
