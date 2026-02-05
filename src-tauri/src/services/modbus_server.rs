@@ -309,23 +309,27 @@ pub fn update_context_from_simulation(
         ctx.set_input_register(11, write_energy(e_import_q));
     }
 
-    // 储能 state_map：HR 55 仅表示开关机。关机=停机；开机后按功率区分就绪/充电/放电；故障由其他异常表示。
+    // 储能 state_map：HR 55 仅表示开关机。关机=停机；开机后按实际功率 p_kw 区分就绪/充电/放电（1=放电 2=充电 0=就绪），故障由其他异常表示。
     if device_type == "storage" {
         let reg55 = ctx.holding_registers.get(&55).copied().unwrap_or(243);
         let (reg839, reg0, reg5033) = if reg55 == 240 {
             (240u16, 1u16, 0u16)
         } else {
             if p_kw > 0.001 {
-                (245, 2, 2)
+                (245, 2, 2) // 充电
             } else if p_kw < -0.001 {
-                (245, 3, 1)
+                (245, 3, 1) // 放电
             } else {
-                (243, 1, 0)
+                (243, 1, 0) // 就绪
             }
         };
         ctx.set_input_register(839, reg839);
         ctx.set_input_register(0, reg0);
         ctx.set_holding_register_silent(5033, reg5033);
+        // 并网/离网：根据 HR 5095 同步写 IR 432，与前端/客户端约定一致（bit9=并网 0x0200，bit10=离网 0x0400）
+        let grid_mode = ctx.holding_registers.get(&5095).copied().unwrap_or(0);
+        let ir432 = if grid_mode == 0 { 0x0200u16 } else { 0x0400u16 };
+        ctx.set_input_register(432, ir432);
     }
 
     // 储能：Rust 维护的 SOC、日充电量、日放电量、累计充电/放电总量 → IR 2/12/426-431（单位与 modbus_manager 一致）

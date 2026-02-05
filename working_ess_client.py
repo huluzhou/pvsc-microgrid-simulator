@@ -12,11 +12,17 @@ from pymodbus.client import ModbusTcpClient
 
 class MultiESSClient:
     """多储能客户端"""
-    
+
+    # 与本项目 Modbus 服务一致：端口 < 1024 时映射到 10000+port（无需 root）
+    @staticmethod
+    def _bind_port(port: int) -> int:
+        return (10000 + port) if port < 1024 else port
+
     def __init__(self, base_port=502, ess_count=4):
         self.base_port = base_port
         self.ess_count = ess_count
-        self.ess_ports = list(range(base_port, base_port + ess_count))
+        # 实际连接端口：与模拟器 modbus_server 的映射一致
+        self.ess_ports = [self._bind_port(p) for p in range(base_port, base_port + ess_count)]
         self.clients = {}
         self.ess_data = {}
         
@@ -83,10 +89,10 @@ class MultiESSClient:
                 sn = client.read_input_registers(address=900, count=16, device_id=1)  # 读取SN号 (地址900-915)
                 charge_status = client.read_holding_registers(address=5033, count=1, device_id=1)  # 充放电状态
                 # 写入控制命令 (目前注释掉)
-                client.write_registers(address=4, values=[(300*10)&0xFFFF], device_id=1)
+                client.write_registers(address=4, values=[(-300*10)&0xFFFF], device_id=1)
                 # client.write_registers(address=4, values=[0], device_id=1)
                 # client.write_registers(address=55, values=[243], device_id=1)
-                # client.write_registers(address=5095, values=[1], device_id=1)  # 并网
+                # client.write_registers(address=5095, values=[0], device_id=1)  # 并网
 
                 # 检查所有寄存器的读取结果
                 error_registers = []
@@ -121,7 +127,7 @@ class MultiESSClient:
                 if sn.isError():
                     error_registers.append("SN号(地址900-915)")
                 if grid_connected.isError():
-                    error_registers.append("并网/离网状态(地址5044)")
+                    error_registers.append("并网/离网状态(地址432)")
                 
                 if not error_registers:
                     data = self.ess_data[ess_name]
@@ -229,10 +235,13 @@ class MultiESSClient:
 
 def main():
     """主函数 - 多储能数据监控"""
+    base_port = 502
+    ess_count = 1
+    actual_ports = [MultiESSClient._bind_port(p) for p in range(base_port, base_port + ess_count)]
     print("🔋 多储能数据监控系统")
     print("=" * 60)
     print("服务器: 127.0.0.1")
-    print(f"端口: {700}-{700+3} (四个储能设备)")
+    print(f"端口: {actual_ports} (与模拟器 Modbus 映射一致，502→10502)")
     print("寄存器: 输入寄存器")
     print("  - 状态1-4: 地址0, 408, 839, 400 (各1个寄存器)")
     print("  - SOC: 地址2 (1个寄存器)")
@@ -247,7 +256,7 @@ def main():
     print("📊 开始监控... 按 Ctrl+C 停止")
     print()
     
-    multi_client = MultiESSClient(base_port=502, ess_count=1)
+    multi_client = MultiESSClient(base_port=base_port, ess_count=ess_count)
     
     try:
         if not multi_client.connect_all_ess():

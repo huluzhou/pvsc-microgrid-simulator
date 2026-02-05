@@ -49,6 +49,8 @@ class SimulationEngine:
         self.device_modes: Dict[str, str] = {}
         # 手动模式当前设定：device_id -> {"p_kw": float, "q_kvar": float}（单位 kW/kVar）
         self.device_manual_setpoint: Dict[str, Dict[str, float]] = {}
+        # 远程控制设定（如 Modbus 写入）：device_id -> {"p_kw": float, "q_kvar": float}，最后应用以覆盖随机/历史
+        self.device_remote_setpoint: Dict[str, Dict[str, float]] = {}
         # 历史模式配置占位：device_id -> config dict，具体字段与回放逻辑后期给定
         self.device_historical_config: Dict[str, Dict[str, Any]] = {}
     
@@ -75,6 +77,7 @@ class SimulationEngine:
         self.device_random_config.clear()
         self.device_modes.clear()
         self.device_manual_setpoint.clear()
+        self.device_remote_setpoint.clear()
         self.device_historical_config.clear()
 
         # 使用工厂同时创建计算内核和适配器（如果可用）
@@ -211,6 +214,16 @@ class SimulationEngine:
             q_kvar = float(properties.get("q_kvar", 0))
             if p_kw is not None:
                 self.device_manual_setpoint[device_id] = {"p_kw": p_kw, "q_kvar": q_kvar}
+        # 远程控制（如 Modbus）写入的功率：记录为远程设定，在 _apply_device_power_sources 最后应用，覆盖随机/历史
+        if "p_kw" in properties or "rated_power" in properties:
+            p_kw = None
+            if "rated_power" in properties:
+                p_kw = float(properties["rated_power"])
+            elif "p_kw" in properties:
+                p_kw = float(properties["p_kw"])
+            q_kvar = float(properties.get("q_kvar", 0))
+            if p_kw is not None:
+                self.device_remote_setpoint[device_id] = {"p_kw": p_kw, "q_kvar": q_kvar}
     
     def get_device_data(self, device_id: str) -> Dict[str, Any]:
         """
@@ -546,11 +559,12 @@ class SimulationEngine:
     def _apply_device_power_sources(self) -> None:
         """
         统一入口：按设备模式在每步计算前将功率写入 topology_data 的 properties。
-        顺序：手动 -> 随机 -> 历史（后写覆盖先写，同设备只应配置一种模式）。
+        顺序：手动 -> 随机 -> 历史 -> 远程（后写覆盖先写；远程为 Modbus 等设定，覆盖随机/历史）。
         """
         self._apply_manual_power_values()
         self._apply_random_power_values()
         self._apply_historical_power_values()
+        self._apply_remote_power_values()
 
     def _apply_manual_power_values(self) -> None:
         """
@@ -604,6 +618,29 @@ class SimulationEngine:
         """
         # 占位：后期根据 device_historical_config 与当前仿真时间/步数实现回放
         pass
+
+    def _apply_remote_power_values(self) -> None:
+        """
+        对存在远程设定（如 Modbus 写入）的设备，将远程功率写入 topology_data 的 properties，
+        覆盖本步已应用的随机/历史值，实现“允许远程控制”下 Modbus 设定优先。
+        """
+        if not self.topology_data or not self.device_remote_setpoint:
+            return
+        devices = self.topology_data.get("devices", {})
+        if isinstance(devices, list):
+            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
+        else:
+            devices_dict = devices
+        for device_id, cfg in self.device_remote_setpoint.items():
+            device = devices_dict.get(device_id)
+            if not device:
+                continue
+            p_kw = cfg.get("p_kw", 0.0)
+            q_kvar = cfg.get("q_kvar", 0.0)
+            props = device.setdefault("properties", {})
+            props["rated_power"] = p_kw
+            props["p_kw"] = p_kw
+            props["q_kvar"] = q_kvar
 
     def _update_network_power_values(self):
         """
@@ -726,6 +763,7 @@ class SimulationEngine:
         self.device_random_config.clear()
         self.device_modes.clear()
         self.device_manual_setpoint.clear()
+        self.device_remote_setpoint.clear()
         self.device_historical_config.clear()
 
         # 等待计算线程结束

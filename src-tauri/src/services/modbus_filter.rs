@@ -133,7 +133,9 @@ fn apply_hr_write_inner(
         ("static_generator", HrCommandId::PowerFactor) => Some(json!({ "power_factor": value })),
         ("storage", HrCommandId::SetPower) => {
             state.seq += 1;
-            let p_kw = (value as f64) / 10.0;
+            // 储能功率单位 0.1 kW，寄存器为有符号 16 位（负=放电）；客户端写 (-300*10)&0xFFFF 即 62536，按 i16 解析为 -3000 → -300 kW
+            let raw_i16 = value as i16;
+            let p_kw = (raw_i16 as f64) / 10.0;
             state.power_setpoint_kw = Some((p_kw, state.seq));
             Some(state.effective_properties())
         }

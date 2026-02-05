@@ -882,7 +882,8 @@ impl SimulationEngine {
                                 if (state.capacity_kwh - capacity_kwh).abs() > 1e-6 {
                                     state.capacity_kwh = capacity_kwh;
                                 }
-                                state.energy_kwh += -p_kw * dt_h;
+                                // pandapower 约定：p_kw 正=充电(能量流入)，负=放电(能量流出)；能量增量 = p_kw * dt_h
+                                state.energy_kwh += p_kw * dt_h;
                                 state.energy_kwh = state.energy_kwh.clamp(0.0, state.capacity_kwh);
                                 state.soc_percent = (state.energy_kwh / state.capacity_kwh * 100.0).clamp(0.0, 100.0);
                                 if p_kw > 0.0 {
