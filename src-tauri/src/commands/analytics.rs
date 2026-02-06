@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::services::database::Database;
 use crate::services::python_bridge::PythonBridge;
-use std::sync::Mutex as StdMutex;
+use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,18 +41,22 @@ pub struct ReportRequest {
 #[tauri::command]
 pub async fn analyze_performance(
     request: AnalysisRequest,
-    db: State<'_, StdMutex<Database>>,
+    db: State<'_, Arc<StdMutex<Option<Database>>>>,
     python_bridge: State<'_, TokioMutex<PythonBridge>>,
 ) -> Result<AnalysisResult, String> {
     // 从数据库查询数据
-    let mut all_data = Vec::new();
-    for device_id in &request.device_ids {
-        let db = db.lock().unwrap();
-        let rows = db.query_device_data(device_id, Some(request.start_time), Some(request.end_time), None)
-            .map_err(|e| format!("Failed to query device data: {}", e))?;
-        let data: Vec<(f64, Option<f64>, Option<f64>)> = rows.into_iter().map(|(t, a, r, _)| (t, a, r)).collect();
-        all_data.push((device_id.clone(), data));
-    }
+    let all_data = {
+        let guard = db.lock().unwrap();
+        let db_ref = guard.as_ref().ok_or("尚未开始仿真，无数据库")?;
+        let mut data_vec = Vec::new();
+        for device_id in &request.device_ids {
+            let rows = db_ref.query_device_data(device_id, Some(request.start_time), Some(request.end_time), None)
+                .map_err(|e| format!("Failed to query device data: {}", e))?;
+            let data: Vec<(f64, Option<f64>, Option<f64>)> = rows.into_iter().map(|(t, a, r, _)| (t, a, r)).collect();
+            data_vec.push((device_id.clone(), data));
+        }
+        data_vec
+    };
     
     // 调用 Python 内核进行分析
     let mut bridge = python_bridge.lock().await;
@@ -73,18 +77,22 @@ pub async fn analyze_performance(
 #[tauri::command]
 pub async fn generate_report(
     request: ReportRequest,
-    db: State<'_, StdMutex<Database>>,
+    db: State<'_, Arc<StdMutex<Option<Database>>>>,
     python_bridge: State<'_, TokioMutex<PythonBridge>>,
 ) -> Result<String, String> {
     // 从数据库查询数据
-    let mut all_data = Vec::new();
-    for device_id in &request.device_ids {
-        let db = db.lock().unwrap();
-        let rows = db.query_device_data(device_id, Some(request.start_time), Some(request.end_time), None)
-            .map_err(|e| format!("Failed to query device data: {}", e))?;
-        let data: Vec<(f64, Option<f64>, Option<f64>)> = rows.into_iter().map(|(t, a, r, _)| (t, a, r)).collect();
-        all_data.push((device_id.clone(), data));
-    }
+    let all_data = {
+        let guard = db.lock().unwrap();
+        let db_ref = guard.as_ref().ok_or("尚未开始仿真，无数据库")?;
+        let mut data_vec = Vec::new();
+        for device_id in &request.device_ids {
+            let rows = db_ref.query_device_data(device_id, Some(request.start_time), Some(request.end_time), None)
+                .map_err(|e| format!("Failed to query device data: {}", e))?;
+            let data: Vec<(f64, Option<f64>, Option<f64>)> = rows.into_iter().map(|(t, a, r, _)| (t, a, r)).collect();
+            data_vec.push((device_id.clone(), data));
+        }
+        data_vec
+    };
     
     // 调用 Python 内核生成报告
     let mut bridge = python_bridge.lock().await;

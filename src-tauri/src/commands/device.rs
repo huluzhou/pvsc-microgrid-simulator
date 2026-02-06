@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::domain::metadata::DeviceMetadataStore;
 use crate::domain::device::DeviceMetadata;
-use crate::domain::topology::Device;
 use crate::services::simulation_engine::SimulationEngine;
 use crate::commands::topology::device_type_to_string;
 use std::sync::{Arc, Mutex};
@@ -251,7 +250,7 @@ pub async fn update_device_metadata(
     payload: UpdateDeviceMetadataPayload,
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
 ) -> Result<(), String> {
-    let mut store = metadata_store.lock().unwrap();
+    let store = metadata_store.lock().unwrap();
     let mut device = store
         .get_device(&payload.device_id)
         .ok_or_else(|| format!("Device {} not found", payload.device_id))?;

@@ -18,7 +18,7 @@ pub struct SimulationEngine {
     device_modes: Arc<tokio::sync::Mutex<DeviceWorkModes>>,
     python_bridge: Arc<Mutex<PythonBridge>>,
     topology: Arc<tokio::sync::Mutex<Option<Topology>>>,
-    database: Arc<StdMutex<Database>>,
+    database: Arc<StdMutex<Option<Database>>>,
     /// 当前仿真使用的数据库文件路径（每次启动仿真时切换为新文件，供数据看板「当前应用数据库」使用）
     current_db_path: Arc<StdMutex<String>>,
     /// 全局是否允许远程控制（总闸）
@@ -40,7 +40,7 @@ pub struct SimulationEngine {
 impl SimulationEngine {
     pub fn new(
         python_bridge: Arc<Mutex<PythonBridge>>,
-        database: Arc<StdMutex<Database>>,
+        database: Arc<StdMutex<Option<Database>>>,
         current_db_path: Arc<StdMutex<String>>,
     ) -> Self {
         Self {
@@ -126,6 +126,12 @@ impl SimulationEngine {
         self.last_device_power.lock().unwrap().clear();
         self.storage_state.lock().unwrap().clear();
         
+        // 清除之前的错误列表（新仿真开始，避免旧错误继续显示）
+        {
+            let mut status = self.status.lock().await;
+            status.errors.clear();
+        }
+        
         let mut bridge = self.python_bridge.lock().await;
         
         // 设置拓扑数据
@@ -157,13 +163,15 @@ impl SimulationEngine {
         let new_db = Database::new(Some(dir.as_path())).map_err(|e| format!("创建仿真数据库失败: {}", e))?;
         {
             let mut db_guard = self.database.lock().map_err(|_| "数据库锁异常")?;
-            *db_guard = new_db;
+            *db_guard = Some(new_db);
         }
         if let Ok(mut path_guard) = self.current_db_path.lock() {
             *path_guard = dir.to_string_lossy().to_string();
         }
-        if let Ok(db) = self.database.lock() {
-            let _ = db.set_latest_simulation_start(start_ts);
+        if let Ok(guard) = self.database.lock() {
+            if let Some(ref db) = *guard {
+                let _ = db.set_latest_simulation_start(start_ts);
+            }
         }
 
         let start_params = serde_json::json!({
@@ -510,7 +518,7 @@ impl SimulationEngine {
         app: &AppHandle,
         results: &serde_json::Value,
         topology: &Topology,
-        database: &Arc<StdMutex<Database>>,
+        database: &Arc<StdMutex<Option<Database>>>,
         last_device_power: &Arc<StdMutex<HashMap<String, (f64, Option<f64>, Option<f64>)>>>,
         storage_state: &Arc<StdMutex<HashMap<String, StorageState>>>,
         timestamp: f64,
@@ -551,25 +559,26 @@ impl SimulationEngine {
                         if device.device_type == crate::domain::topology::DeviceType::Node
                             && device.name == bus_name
                         {
-                            let db = database.lock().unwrap();
-                            let data_json = serde_json::to_string(bus_data).ok();
-                            let _ = db.insert_device_data(
-                                device_id,
-                                timestamp,
-                                p_active_kw,
-                                p_reactive_kvar,
-                                data_json.as_deref(),
-                                Some(device.device_type.as_str()),
-                            );
-                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                            if let Some(ref db) = *database.lock().unwrap() {
+                                let data_json = serde_json::to_string(bus_data).ok();
                                 let _ = db.insert_device_data(
-                                    meter_id,
+                                    device_id,
                                     timestamp,
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
-                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    Some(device.device_type.as_str()),
                                 );
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    let _ = db.insert_device_data(
+                                        meter_id,
+                                        timestamp,
+                                        p_active_kw,
+                                        p_reactive_kvar,
+                                        data_json.as_deref(),
+                                        devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    );
+                                }
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
@@ -606,25 +615,26 @@ impl SimulationEngine {
                         if device.device_type == crate::domain::topology::DeviceType::Line
                             && device.name == line_name
                         {
-                            let db = database.lock().unwrap();
-                            let data_json = serde_json::to_string(line_data).ok();
-                            let _ = db.insert_device_data(
-                                device_id,
-                                timestamp,
-                                p_active_kw,
-                                p_reactive_kvar,
-                                data_json.as_deref(),
-                                Some(device.device_type.as_str()),
-                            );
-                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                            if let Some(ref db) = *database.lock().unwrap() {
+                                let data_json = serde_json::to_string(line_data).ok();
                                 let _ = db.insert_device_data(
-                                    meter_id,
+                                    device_id,
                                     timestamp,
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
-                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    Some(device.device_type.as_str()),
                                 );
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    let _ = db.insert_device_data(
+                                        meter_id,
+                                        timestamp,
+                                        p_active_kw,
+                                        p_reactive_kvar,
+                                        data_json.as_deref(),
+                                        devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    );
+                                }
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
@@ -661,25 +671,26 @@ impl SimulationEngine {
                         if device.device_type == crate::domain::topology::DeviceType::Switch
                             && device.name == sw_name
                         {
-                            let db = database.lock().unwrap();
-                            let data_json = serde_json::to_string(sw_data).ok();
-                            let _ = db.insert_device_data(
-                                device_id,
-                                timestamp,
-                                p_active_kw,
-                                p_reactive_kvar,
-                                data_json.as_deref(),
-                                Some(device.device_type.as_str()),
-                            );
-                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                            if let Some(ref db) = *database.lock().unwrap() {
+                                let data_json = serde_json::to_string(sw_data).ok();
                                 let _ = db.insert_device_data(
-                                    meter_id,
+                                    device_id,
                                     timestamp,
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
-                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    Some(device.device_type.as_str()),
                                 );
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    let _ = db.insert_device_data(
+                                        meter_id,
+                                        timestamp,
+                                        p_active_kw,
+                                        p_reactive_kvar,
+                                        data_json.as_deref(),
+                                        devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    );
+                                }
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
@@ -721,25 +732,26 @@ impl SimulationEngine {
                             || device.device_type == crate::domain::topology::DeviceType::Charger)
                             && device.name == load_name
                         {
-                            let db = database.lock().unwrap();
-                            let data_json = serde_json::to_string(load_data).ok();
-                            let _ = db.insert_device_data(
-                                device_id,
-                                timestamp,
-                                p_active_kw,
-                                p_reactive_kvar,
-                                data_json.as_deref(),
-                                Some(device.device_type.as_str()),
-                            );
-                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                            if let Some(ref db) = *database.lock().unwrap() {
+                                let data_json = serde_json::to_string(load_data).ok();
                                 let _ = db.insert_device_data(
-                                    meter_id,
+                                    device_id,
                                     timestamp,
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
-                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    Some(device.device_type.as_str()),
                                 );
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    let _ = db.insert_device_data(
+                                        meter_id,
+                                        timestamp,
+                                        p_active_kw,
+                                        p_reactive_kvar,
+                                        data_json.as_deref(),
+                                        devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    );
+                                }
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
@@ -786,25 +798,26 @@ impl SimulationEngine {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Pv 
                             && device.name == gen_name {
-                            let db = database.lock().unwrap();
-                            let data_json = serde_json::to_string(gen_data).ok();
-                            let _ = db.insert_device_data(
-                                device_id,
-                                timestamp,
-                                p_active_kw,
-                                p_reactive_kvar,
-                                data_json.as_deref(),
-                                Some(device.device_type.as_str()),
-                            );
-                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                            if let Some(ref db) = *database.lock().unwrap() {
+                                let data_json = serde_json::to_string(gen_data).ok();
                                 let _ = db.insert_device_data(
-                                    meter_id,
+                                    device_id,
                                     timestamp,
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
-                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    Some(device.device_type.as_str()),
                                 );
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    let _ = db.insert_device_data(
+                                        meter_id,
+                                        timestamp,
+                                        p_active_kw,
+                                        p_reactive_kvar,
+                                        data_json.as_deref(),
+                                        devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    );
+                                }
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
@@ -894,25 +907,26 @@ impl SimulationEngine {
                                     state.total_discharge_kwh += -p_kw * dt_h;
                                 }
                             }
-                            let db = database.lock().unwrap();
-                            let data_json = serde_json::to_string(storage_data).ok();
-                            let _ = db.insert_device_data(
-                                device_id,
-                                timestamp,
-                                p_active_kw,
-                                p_reactive_kvar,
-                                data_json.as_deref(),
-                                Some(device.device_type.as_str()),
-                            );
-                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                            if let Some(ref db) = *database.lock().unwrap() {
+                                let data_json = serde_json::to_string(storage_data).ok();
                                 let _ = db.insert_device_data(
-                                    meter_id,
+                                    device_id,
                                     timestamp,
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
-                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    Some(device.device_type.as_str()),
                                 );
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    let _ = db.insert_device_data(
+                                        meter_id,
+                                        timestamp,
+                                        p_active_kw,
+                                        p_reactive_kvar,
+                                        data_json.as_deref(),
+                                        devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    );
+                                }
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
@@ -950,25 +964,26 @@ impl SimulationEngine {
                         if device.device_type == crate::domain::topology::DeviceType::ExternalGrid
                             && device.name == ext_name
                         {
-                            let db = database.lock().unwrap();
-                            let data_json = serde_json::to_string(ext_data).ok();
-                            let _ = db.insert_device_data(
-                                device_id,
-                                timestamp,
-                                p_active_kw,
-                                p_reactive_kvar,
-                                data_json.as_deref(),
-                                Some(device.device_type.as_str()),
-                            );
-                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                            if let Some(ref db) = *database.lock().unwrap() {
+                                let data_json = serde_json::to_string(ext_data).ok();
                                 let _ = db.insert_device_data(
-                                    meter_id,
+                                    device_id,
                                     timestamp,
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
-                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    Some(device.device_type.as_str()),
                                 );
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    let _ = db.insert_device_data(
+                                        meter_id,
+                                        timestamp,
+                                        p_active_kw,
+                                        p_reactive_kvar,
+                                        data_json.as_deref(),
+                                        devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    );
+                                }
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
@@ -1004,25 +1019,26 @@ impl SimulationEngine {
                         if device.device_type == crate::domain::topology::DeviceType::Transformer
                             && device.name == trafo_name
                         {
-                            let db = database.lock().unwrap();
-                            let data_json = serde_json::to_string(trafo_data).ok();
-                            let _ = db.insert_device_data(
-                                device_id,
-                                timestamp,
-                                p_active_kw,
-                                p_reactive_kvar,
-                                data_json.as_deref(),
-                                Some(device.device_type.as_str()),
-                            );
-                            for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                            if let Some(ref db) = *database.lock().unwrap() {
+                                let data_json = serde_json::to_string(trafo_data).ok();
                                 let _ = db.insert_device_data(
-                                    meter_id,
+                                    device_id,
                                     timestamp,
                                     p_active_kw,
                                     p_reactive_kvar,
                                     data_json.as_deref(),
-                                    devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    Some(device.device_type.as_str()),
                                 );
+                                for meter_id in target_to_meters.get(device_id).unwrap_or(&vec![]) {
+                                    let _ = db.insert_device_data(
+                                        meter_id,
+                                        timestamp,
+                                        p_active_kw,
+                                        p_reactive_kvar,
+                                        data_json.as_deref(),
+                                        devices.get(meter_id).map(|d| d.device_type.as_str()),
+                                    );
+                                }
                             }
                             let _ = app.emit("device-data-update", serde_json::json!({
                                 "device_id": device_id,
@@ -1126,6 +1142,12 @@ impl SimulationEngine {
         self.device_active_status.lock().await.clear();
         self.last_device_power.lock().unwrap().clear();
         self.storage_state.lock().unwrap().clear();
+        
+        // 停止时清空错误列表（防止旧错误持久显示）
+        {
+            let mut status = self.status.lock().await;
+            status.errors.clear();
+        }
         
         // 通过 Python 桥接停止仿真
         let mut bridge = self.python_bridge.lock().await;
