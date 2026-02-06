@@ -65,12 +65,12 @@ pub struct Alert {
 #[tauri::command]
 pub async fn record_device_data(
     data: DeviceDataPoint,
-    db: State<'_, Arc<StdMutex<Database>>>,
+    db: State<'_, Arc<StdMutex<Option<Database>>>>,
 ) -> Result<(), String> {
+    let guard = db.lock().unwrap();
+    let db = guard.as_ref().ok_or("尚未开始仿真，无数据库")?;
     let json_str = data.data_json.as_ref()
         .and_then(|v| serde_json::to_string(v).ok());
-    
-    let db = db.lock().unwrap();
     db.insert_device_data(
         &data.device_id,
         data.timestamp,
@@ -85,10 +85,13 @@ pub async fn record_device_data(
 
 #[tauri::command]
 pub async fn get_latest_simulation_start_time(
-    db: State<'_, Arc<StdMutex<Database>>>,
+    db: State<'_, Arc<StdMutex<Option<Database>>>>,
 ) -> Result<Option<f64>, String> {
-    let db = db.lock().unwrap();
-    db.get_latest_simulation_start().map_err(|e| format!("Failed to get latest simulation start: {}", e))
+    let guard = db.lock().unwrap();
+    match guard.as_ref() {
+        Some(db) => db.get_latest_simulation_start().map_err(|e| format!("Failed to get latest simulation start: {}", e)),
+        None => Ok(None),
+    }
 }
 
 /// 返回当前仿真使用的数据库文件路径（每次启动仿真会切换到新文件 data_<timestamp>.db），供数据看板「当前应用数据库」与对话框默认路径使用。
@@ -109,21 +112,24 @@ pub struct DashboardDeviceIdsResponse {
 
 /// 从当前应用默认数据库读取 device_data 中所有不重复的 device_id 及 device_type（供数据看板「当前应用数据库」设备列表与类型）
 #[tauri::command]
-pub async fn get_dashboard_device_ids(db: State<'_, Arc<StdMutex<Database>>>) -> Result<DashboardDeviceIdsResponse, String> {
-    let db = db.lock().unwrap();
-    let (device_ids, device_types) = match db.query_device_ids_with_types() {
-        Ok(rows) => {
-            let ids: Vec<String> = rows.iter().map(|(id, _)| id.clone()).collect();
-            let types: std::collections::HashMap<String, String> = rows
-                .into_iter()
-                .filter_map(|(id, t)| t.map(|typ| (id, typ)))
-                .collect();
-            (ids, types)
-        }
-        Err(_) => {
-            let ids = db.query_device_ids().map_err(|e| format!("查询失败: {}", e))?;
-            (ids, std::collections::HashMap::new())
-        }
+pub async fn get_dashboard_device_ids(db: State<'_, Arc<StdMutex<Option<Database>>>>) -> Result<DashboardDeviceIdsResponse, String> {
+    let guard = db.lock().unwrap();
+    let (device_ids, device_types) = match guard.as_ref() {
+        Some(db) => match db.query_device_ids_with_types() {
+            Ok(rows) => {
+                let ids: Vec<String> = rows.iter().map(|(id, _)| id.clone()).collect();
+                let types: std::collections::HashMap<String, String> = rows
+                    .into_iter()
+                    .filter_map(|(id, t)| t.map(|typ| (id, typ)))
+                    .collect();
+                (ids, types)
+            }
+            Err(_) => {
+                let ids = db.query_device_ids().map_err(|e| format!("查询失败: {}", e))?;
+                (ids, std::collections::HashMap::new())
+            }
+        },
+        None => (Vec::new(), std::collections::HashMap::new()),
     };
     Ok(DashboardDeviceIdsResponse {
         device_ids,
@@ -137,11 +143,14 @@ pub async fn query_device_data(
     start_time: Option<f64>,
     end_time: Option<f64>,
     max_points: Option<usize>,
-    db: State<'_, Arc<StdMutex<Database>>>,
+    db: State<'_, Arc<StdMutex<Option<Database>>>>,
 ) -> Result<Vec<DeviceDataPoint>, String> {
-    let db = db.lock().unwrap();
-    let rows = db.query_device_data(&device_id, start_time, end_time, max_points)
-        .map_err(|e| format!("Failed to query device data: {}", e))?;
+    let guard = db.lock().unwrap();
+    let rows = match guard.as_ref() {
+        Some(db) => db.query_device_data(&device_id, start_time, end_time, max_points)
+            .map_err(|e| format!("Failed to query device data: {}", e))?,
+        None => Vec::new(),
+    };
     let points: Vec<DeviceDataPoint> = rows
         .into_iter()
         .map(|(ts, p_a, p_r, json_str)| {
@@ -186,7 +195,7 @@ const METER_ENERGY_UNIT: f64 = 1.0;
 #[tauri::command]
 pub async fn get_all_devices_status(
     metadata_store: State<'_, StdMutex<DeviceMetadataStore>>,
-    db: State<'_, Arc<StdMutex<Database>>>,
+    db: State<'_, Arc<StdMutex<Option<Database>>>>,
     engine: State<'_, Arc<SimulationEngine>>,
     modbus: State<'_, ModbusService>,
 ) -> Result<Vec<DeviceStatus>, String> {
@@ -215,8 +224,8 @@ pub async fn get_all_devices_status(
         } else if device.device_type == DeviceType::Meter {
             if let Some(target_id) = meter_connections.get(&device.id) {
                 let recent = {
-                    let db = db.lock().unwrap();
-                    db.query_device_data_latest(target_id).ok().flatten()
+                    let guard = db.lock().unwrap();
+                    guard.as_ref().and_then(|db| db.query_device_data_latest(target_id).ok().flatten())
                 };
                 if let Some((t, p_a, p_r, _)) = recent {
                     (p_a, p_r, Some(t))
@@ -228,8 +237,8 @@ pub async fn get_all_devices_status(
             }
         } else {
             let recent = {
-                let db = db.lock().unwrap();
-                db.query_device_data_latest(&device.id).ok().flatten()
+                let guard = db.lock().unwrap();
+                guard.as_ref().and_then(|db| db.query_device_data_latest(&device.id).ok().flatten())
             };
             if let Some((t, p_a, p_r, _)) = recent {
                 (p_a, p_r, Some(t))
@@ -296,7 +305,7 @@ pub async fn get_all_devices_status(
 pub async fn get_device_status(
     device_id: String,
     metadata_store: State<'_, StdMutex<DeviceMetadataStore>>,
-    db: State<'_, Arc<StdMutex<Database>>>,
+    db: State<'_, Arc<StdMutex<Option<Database>>>>,
     engine: State<'_, Arc<SimulationEngine>>,
     modbus: State<'_, ModbusService>,
 ) -> Result<DeviceStatus, String> {
@@ -318,8 +327,8 @@ pub async fn get_device_status(
             .and_then(|t| build_meter_connections(t).get(&device_id).cloned());
         if let Some(tid) = target_id {
             let recent = {
-                let db = db.lock().unwrap();
-                db.query_device_data_latest(&tid).ok().flatten()
+                let guard = db.lock().unwrap();
+                guard.as_ref().and_then(|db| db.query_device_data_latest(&tid).ok().flatten())
             };
             if let Some((t, p_a, p_r, _)) = recent {
                 (p_a, p_r, Some(t))
@@ -331,8 +340,8 @@ pub async fn get_device_status(
         }
     } else {
         let recent = {
-            let db = db.lock().unwrap();
-            db.query_device_data_latest(&device_id).ok().flatten()
+            let guard = db.lock().unwrap();
+            guard.as_ref().and_then(|db| db.query_device_data_latest(&device_id).ok().flatten())
         };
         if let Some((t, p_a, p_r, _)) = recent {
             (p_a, p_r, Some(t))

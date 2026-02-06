@@ -32,22 +32,14 @@ fn main() {
             let python_bridge = PythonBridge::new();
             let python_bridge_arc = Arc::new(TokioMutex::new(python_bridge));
 
-            // 初始化数据库（默认 data.db；每次启动仿真时会切换到新文件 data_<timestamp>.db）
-            let mut default_db_path = std::env::current_dir().unwrap();
-            default_db_path.push("data.db");
-            let default_db_path_str = default_db_path.to_string_lossy().to_string();
-            let db = Database::new(Some(default_db_path.as_path())).unwrap_or_else(|e| {
-                eprintln!("Failed to initialize database: {}", e);
-                panic!("Database initialization failed");
-            });
-
-            let current_db_path = Arc::new(StdMutex::new(default_db_path_str));
+            // 数据库仅在开始仿真时创建（data_<timestamp>.db），不仿真不生成空文件
+            let db_arc: Arc<StdMutex<Option<Database>>> = Arc::new(StdMutex::new(None));
+            let current_db_path = Arc::new(StdMutex::new(String::new()));
 
             // 初始化设备元数据仓库
             let metadata_store = DeviceMetadataStore::new();
 
             // 初始化仿真引擎
-            let db_arc = Arc::new(StdMutex::new(db));
             let simulation_engine = Arc::new(SimulationEngine::new(
                 python_bridge_arc.clone(),
                 db_arc.clone(),
