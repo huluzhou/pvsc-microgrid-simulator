@@ -163,6 +163,21 @@ impl ModbusService {
         }
         Ok(())
     }
+    
+    /// 停止所有运行中的 Modbus TCP 服务（仿真停止或加载新拓扑时调用）
+    pub async fn stop_all_device_modbus(&self) {
+        let servers: HashMap<String, RunningDeviceServer> = {
+            let mut running = match self.running_servers.lock() {
+                Ok(r) => r,
+                Err(_) => return,
+            };
+            std::mem::take(&mut *running)
+        };
+        for (_id, server) in servers {
+            server.join.abort();
+            let _ = server.join.await;
+        }
+    }
 
     pub fn is_device_running(&self, device_id: &str) -> bool {
         self.running_servers.lock().map(|r| r.contains_key(device_id)).unwrap_or(false)

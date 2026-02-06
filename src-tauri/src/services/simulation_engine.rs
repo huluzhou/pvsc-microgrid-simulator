@@ -407,6 +407,11 @@ impl SimulationEngine {
                             let mut status_guard = status.lock().await;
                             status_guard.stop();
                             drop(status_guard);
+                            
+                            // 清理设备在线状态、功率缓存与储能状态（与 stop() 保持一致）
+                            device_active_status.lock().await.clear();
+                            last_device_power.lock().unwrap().clear();
+                            storage_state.lock().unwrap().clear();
 
                             let stop_params = serde_json::json!({ "action": "stop" });
                             if let Err(e) = bridge.call("simulation.stop", stop_params).await {

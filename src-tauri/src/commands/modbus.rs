@@ -43,9 +43,12 @@ pub async fn start_all_modbus_servers(
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
     modbus_service: State<'_, ModbusService>,
 ) -> Result<(), String> {
+    // 先停止所有旧的 Modbus 服务器（避免上一轮仿真残留导致"已在运行"错误）
+    modbus_service.stop_all_device_modbus().await;
+    
     // 说明：
     // - 旧版逻辑仅启动 properties 中明确配置了 ip/port 的设备
-    // - 但默认拓扑（例如 topology.json）通常未配置这些字段，导致前端“运行中”但实际没有 Modbus 端口监听
+    // - 但默认拓扑（例如 topology.json）通常未配置这些字段，导致前端"运行中"但实际没有 Modbus 端口监听
     // - 这里为常用设备类型提供默认端口分配（与 working_*_client.py 保持一致），让仿真开机即具备可连的 Modbus TCP 服务
     let devices_to_start: Vec<(String, String, String, u16)> = {
         let store = metadata_store.lock().map_err(|e| e.to_string())?;

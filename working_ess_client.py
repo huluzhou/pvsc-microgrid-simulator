@@ -89,7 +89,7 @@ class MultiESSClient:
                 sn = client.read_input_registers(address=900, count=16, device_id=1)  # 读取SN号 (地址900-915)
                 charge_status = client.read_holding_registers(address=5033, count=1, device_id=1)  # 充放电状态
                 # 写入控制命令 (目前注释掉)
-                client.write_registers(address=4, values=[(-300*10)&0xFFFF], device_id=1)
+                # client.write_registers(address=4, values=[(-300*10)&0xFFFF], device_id=1)
                 # client.write_registers(address=4, values=[0], device_id=1)
                 # client.write_registers(address=55, values=[243], device_id=1)
                 # client.write_registers(address=5095, values=[0], device_id=1)  # 并网

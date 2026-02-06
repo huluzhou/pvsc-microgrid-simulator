@@ -1201,6 +1201,18 @@ pub async fn load_and_validate_topology(
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
     engine: State<'_, std::sync::Arc<crate::services::simulation_engine::SimulationEngine>>,
 ) -> Result<LoadAndValidateResult, String> {
+    // 加载新拓扑前，如果仿真正在运行则自动停止（避免旧拓扑继续运行）
+    {
+        let status = engine.get_status().await;
+        if status.state == crate::domain::simulation::SimulationState::Running
+            || status.state == crate::domain::simulation::SimulationState::Paused
+        {
+            if let Err(e) = engine.stop().await {
+                eprintln!("加载拓扑时自动停止仿真失败: {}", e);
+            }
+        }
+    }
+    
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file: {}", e))?;
     
