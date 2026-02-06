@@ -178,6 +178,7 @@ pub async fn save_topology(
     path: String,
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
     engine: State<'_, std::sync::Arc<crate::services::simulation_engine::SimulationEngine>>,
+    modbus_service: State<'_, crate::services::modbus::ModbusService>,
 ) -> Result<(), String> {
     let topology = convert_topology_data(topology_data)?;
     
@@ -192,6 +193,14 @@ pub async fn save_topology(
     
     // 同步到仿真引擎（克隆拓扑数据）
     engine.set_topology(topology.clone()).await;
+
+    // 保存拓扑后同步不可变寄存器（额定功率/额定容量）到运行中的 Modbus，使「在拓扑中修改并保存」立即生效
+    for (_id, device) in topology.devices.iter() {
+        let device_type_str = device_type_to_string(&device.device_type);
+        modbus_service
+            .update_device_immutable_registers(&device.id, &device_type_str, &device.properties)
+            .await;
+    }
 
     Ok(())
 }

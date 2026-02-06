@@ -197,12 +197,14 @@ pub async fn run_modbus_tcp_server(
     Ok(())
 }
 
-/// 非电表有功/无功：寄存器单位 0.1 kW（寄存器值 = p_kw × 10）；储能可为负（放电）
-const POWER_UNIT_KW_DEFAULT: f64 = 10.0;
-/// 电表有功/无功：寄存器单位 0.5 kW，int16 有符号
-const METER_POWER_UNIT_KW: f64 = 2.0; // 1/0.5
+/// 光伏/储能/充电桩等（非电表）：功率寄存器单位 0.1 kW（寄存器值 = p_kw × 10）；储能可为负（放电）
+const POWER_UNIT_KW: f64 = 10.0;
+/// 电表有功/无功：int16 有符号，单位 0.5 kW（不修改，保持原样）
+const METER_POWER_UNIT_KW: f64 = 2.0;
 /// 电表电量：寄存器单位 1 kWh（1 寄存器 = 1 kWh；前端显示时用 0.1 kWh 单位）
 const METER_ENERGY_UNIT_KWH: f64 = 1.0;
+/// 光伏今日/总发电量：寄存器单位 0.1 kWh（寄存器值 = kWh × 10）
+const PV_ENERGY_UNIT_KWH: f64 = 10.0;
 
 /// 将 f64 钳位到 i16 并转为 u16 存储（Modbus 寄存器为 u16，按 int16 解释）
 fn clamp_i16_as_u16(v: i32) -> u16 {
@@ -213,6 +215,7 @@ fn clamp_i16_as_u16(v: i32) -> u16 {
 /// 根据设备类型与 modbus_schema 将仿真结果写入对应输入寄存器（每个 IR 有固定更新逻辑）
 /// 电表：有功/无功为 int16、单位 0.5 kW；四象限电量与组合有功总电能为 kWh（0.1 kWh/单位），由 P/Q 积分得到
 /// 储能：Rust 维护的 SOC、日充电量、日放电量、累计充电/放电总量写入 IR 2/12/426-431
+/// 光伏额定功率 IR 5001 仅在加载拓扑启动 Modbus 时写入，不在此处每步写入
 /// entries 可选：若提供则按 key 查找自定义地址，否则使用 schema 默认地址
 /// dt_seconds：本步时长（秒），用于电表四象限电量与总电能积分；仅电表且为 Some 时累加
 /// storage_state：储能状态（SOC、日/累计电量），仅 storage 且为 Some 时写 IR 2/12/426-431
@@ -229,19 +232,21 @@ pub fn update_context_from_simulation(
     let p_kw = p_active_kw.unwrap_or(0.0);
     let q_kvar = p_reactive_kvar.unwrap_or(0.0);
 
-    // 电表：int16 有符号，单位 0.5 kW -> 寄存器值 = kW * 2
+    // 电表：int16 有符号，单位 0.5 kW（保持不变）
     let p_reg_meter = clamp_i16_as_u16((p_kw * METER_POWER_UNIT_KW).round() as i32);
     let q_reg_meter = clamp_i16_as_u16((q_kvar * METER_POWER_UNIT_KW).round() as i32);
-    // 非电表：0.1 kW/单位，32 位拆高低字；储能有功可为负（放电），按有符号 i32 存
+    // 光伏/储能/充电桩：功率寄存器单位 0.1 kW（寄存器值 = kW × 10），32 位拆高低字
+    let p_reg_10 = (p_kw * POWER_UNIT_KW).round() as i32;
+    let q_reg_10 = (q_kvar * POWER_UNIT_KW).round() as i32;
     let p_reg_other = if device_type == "storage" {
-        (p_kw * POWER_UNIT_KW_DEFAULT).round() as i32 as u32
+        p_reg_10 as u32
     } else {
-        (p_kw * POWER_UNIT_KW_DEFAULT).round().max(0.0) as u32
+        p_reg_10.max(0) as u32
     };
     let q_reg_other = if device_type == "storage" {
-        (q_kvar * POWER_UNIT_KW_DEFAULT).round() as i32 as u32
+        q_reg_10 as u32
     } else {
-        (q_kvar * POWER_UNIT_KW_DEFAULT).round().max(0.0) as u32
+        q_reg_10.max(0) as u32
     };
 
     for &(default_addr, ir_key) in input_register_updates(device_type) {
@@ -307,6 +312,25 @@ pub fn update_context_from_simulation(
         ctx.set_input_register(9, write_energy(e_total_p));
         ctx.set_input_register(10, write_energy(e_export_q));
         ctx.set_input_register(11, write_energy(e_import_q));
+    }
+
+    // 光伏：今日发电量(IR 5003)、总发电量(IR 5004)，单位 0.1 kWh；由有功功率积分（仅 p_kw>0 累加）
+    // 今日：当前为自仿真启动以来累计，未按自然日清零；可按需扩展按日重置
+    if device_type == "static_generator" {
+        let dt_h = dt_seconds.map(|s| s / 3600.0).unwrap_or(0.0);
+        let read_pv_energy = |ctx: &ModbusDeviceContext, addr: u16| {
+            ctx.input_registers.get(&addr).copied().unwrap_or(0) as f64 / PV_ENERGY_UNIT_KWH
+        };
+        let mut today_kwh = read_pv_energy(ctx, 5003);
+        let mut total_kwh = read_pv_energy(ctx, 5004);
+        if dt_h > 0.0 && p_kw > 0.0 {
+            let delta = p_kw * dt_h;
+            today_kwh += delta;
+            total_kwh += delta;
+        }
+        let write_pv_energy = |v: f64| (v * PV_ENERGY_UNIT_KWH).round().clamp(0.0, 65535.0) as u16;
+        ctx.set_input_register(5003, write_pv_energy(today_kwh));
+        ctx.set_input_register(5004, write_pv_energy(total_kwh));
     }
 
     // 储能 state_map：HR 55 仅表示开关机。关机=停机；开机后按实际功率 p_kw 区分就绪/充电/放电（1=放电 2=充电 0=就绪），故障由其他异常表示。

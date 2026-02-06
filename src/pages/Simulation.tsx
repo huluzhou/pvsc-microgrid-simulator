@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useDeviceControlStore } from '../stores/deviceControl';
-import { Play, Pause, Square, RefreshCw, Settings, Radio, Clock, Activity, Zap, AlertTriangle, ChevronDown, ChevronRight, Info, AlertCircle } from 'lucide-react';
+import { Play, Pause, Square, RefreshCw, Settings, Radio, Clock, Activity, Zap, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface SimulationStatus {
   state: 'Stopped' | 'Running' | 'Paused';
@@ -87,14 +87,16 @@ export default function Simulation() {
   const handleStart = async () => {
     setIsLoading(true);
     try {
+      // 仅当非暂停状态时重启 Modbus，避免在暂停后误点「启动仿真」时清空日电/总电等寄存器
+      if (status?.state !== 'Paused') {
+        try {
+          await invoke('start_all_modbus_servers');
+        } catch (e) {
+          console.warn('自动启动 Modbus 服务器失败:', e);
+        }
+      }
       // 先启动仿真（设置拓扑并启动 Python），再同步手动设定，这样 Python 已有拓扑后再应用功率
       await invoke('start_simulation', { config: { calculation_interval_ms: config.calculationInterval, remote_control_enabled: config.remoteControlEnabled } });
-      // 运行仿真时自动启动所有 Modbus 服务器（拓扑中配置了 ip/port 的设备）
-      try {
-        await invoke('start_all_modbus_servers');
-      } catch (e) {
-        console.warn('自动启动 Modbus 服务器失败:', e);
-      }
       // 启动后将设备控制中的设定同步到仿真，确保下一拍计算生效
       for (const [deviceId, cfg] of Object.entries(deviceConfigs)) {
         if (cfg?.dataSourceType === 'manual' && cfg.manualSetpoint) {

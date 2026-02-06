@@ -437,7 +437,7 @@ impl SimulationEngine {
                                 let dt_seconds = calculation_interval_ms as f64 / 1000.0;
                                 // 处理并存储计算结果（传入完整拓扑、储能状态与步长；更新功率缓存与储能 SOC/日/累计电量）
                                 Self::process_calculation_results_inline(&app, devices, t, &database, &last_device_power, &storage_state, timestamp, dt_seconds);
-                                // 仿真结果同步到运行中的 Modbus 设备寄存器（v1.5.0 update_* 逻辑）
+                                // 仿真结果同步到运行中的 Modbus 设备寄存器（v1.5.0 update_* 逻辑）；额定功率等不可变数据仅在加载拓扑启动时写入
                                 if let Some(modbus) = app.try_state::<crate::services::modbus::ModbusService>() {
                                     let power_snapshot: HashMap<String, (f64, Option<f64>, Option<f64>)> =
                                         last_device_power.lock().unwrap().clone();

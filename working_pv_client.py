@@ -2,21 +2,29 @@
 # -*- coding: utf-8 -*-
 
 """
-光伏客户端 - 多光伏真实测试版
-同时连接多个Modbus服务器端口 (706-709)
-读取光伏设备的输入寄存器数据
+光伏客户端 - 多光伏测试版
+连接应用端 Modbus TCP 端口，读取光伏输入/保持寄存器。
+端口约定与 working_ess_client 一致：base_port 与 start_all_modbus_servers 默认一致（光伏 602），
+端口 < 1024 时映射到 10000+port 避免 root。使用前请启动应用、加载拓扑（含光伏）、启动仿真。
 """
 
 import time
 from pymodbus.client import ModbusTcpClient
 
+
 class MultiPVClient:
-    """多光伏客户端"""
-    
+    """多光伏客户端。默认 base_port=602、pv_count=4。"""
+
+    # 与本项目 Modbus 服务一致：端口 < 1024 时映射到 10000+port（无需 root）
+    @staticmethod
+    def _bind_port(port: int) -> int:
+        return (10000 + port) if port < 1024 else port
+
     def __init__(self, base_port=602, pv_count=4):
         self.base_port = base_port
         self.pv_count = pv_count
-        self.pv_ports = list(range(base_port, base_port + pv_count))
+        # 实际连接端口：与模拟器 modbus_server 的映射一致
+        self.pv_ports = [self._bind_port(p) for p in range(base_port, base_port + pv_count)]
         self.clients = {}
         self.pv_data = {}
         
@@ -48,17 +56,22 @@ class MultiPVClient:
                 print(f"❌ 光伏{i+1} (端口{port}) - 错误: {e}")
                 return False
         return True
+
+    def _hint_if_first_failed(self):
+        """首次连接失败时提示"""
+        print("💡 请先：启动应用 (npm run tauri dev) -> 加载拓扑（含光伏）-> 启动仿真，使 Modbus 在端口 602 等监听。")
     
     def read_all_pv_data(self):
         """读取所有光伏设备的输入寄存器数据"""
         for pv_name, client in self.clients.items():
             try:
-                test = client.read_input_registers(address=0, count=1, device_id=1)
+                # test = client.read_input_registers(address=0, count=1, device_id=1)
                 # # SN号存储在8个寄存器中(4989-4996)，需要读取所有8个寄存器
                 sn = client.read_input_registers(address=4989, count=8, device_id=1)
-                rated_power = client.read_input_registers(address=5000, count=1, device_id=1)
-                # #电量
-                energy_result = client.read_input_registers(address=5002, count=3, device_id=1)
+                # 额定功率 IR 5001，单位 0.1 kW
+                rated_power = client.read_input_registers(address=5001, count=1, device_id=1)
+                # 今日发电量 IR 5003、总发电量 IR 5004，单位 0.1 kWh
+                energy_result = client.read_input_registers(address=5003, count=2, device_id=1)
                 power_result = client.read_input_registers(address=5030, count=2, device_id=1)
                 q_result = client.read_input_registers(address=5032, count=2, device_id=1)
                 reactive_percent = client.read_holding_registers(address=5040, count=1, device_id=1)
@@ -67,7 +80,7 @@ class MultiPVClient:
                 # # client.write_registers(address=5038, values=[400], device_id=1)
                 # client.write_registers(address=5007, values=[10], device_id=1)
                 # client.write_registers(address=5040, values=[65536-1], device_id=1) #无功百分比
-                client.write_registers(address=5040, values=[1], device_id=1) #无功百分比
+                # client.write_registers(address=5040, values=[1], device_id=1) #无功百分比
                 # client.write_registers(address=5041, values=[65536-999], device_id=1) # 功率因数
 
                 # 分别检查每个寄存器的读取结果
@@ -75,10 +88,9 @@ class MultiPVClient:
                 if not error_registers:
                     data = self.pv_data[pv_name]
                     
-                    # 拼接32位数据并进行单位转换
-                    # 有功功率：地址0(低16位) + 地址1(高16位)
+                    # 拼接32位数据并进行单位转换；有功功率单位 0.1 kW
                     active_power_raw = (power_result.registers[1] << 16) | power_result.registers[0]
-                    data['active_power'] = active_power_raw  # 除以10还原实际值 (kW)
+                    data['active_power'] = active_power_raw / 10.0  # 0.1 kW → kW
                     # 正确解析SN号：每个寄存器包含两个ASCII字符，需要拆分
                     sn_str = ''
                     for reg in sn.registers:
@@ -87,9 +99,9 @@ class MultiPVClient:
                         char2 = chr(reg & 0xFF)
                         sn_str += char1 + char2
                     data['sn'] = sn_str  # 拼接SN号
-                    data['rated_power'] = rated_power.registers[0] / 10.0  # 除以10还原实际值 (kW)
-                    data['today_energy'] = energy_result.registers[0] / 10.0  # 除以10还原实际值 (kWh)
-                    data['total_energy'] = (energy_result.registers[2]<<16) | energy_result.registers[1]
+                    data['rated_power'] = rated_power.registers[0] / 10.0  # IR 5001，0.1 kW → kW
+                    data['today_energy'] = energy_result.registers[0] / 10.0   # IR 5003，0.1 kWh → kWh
+                    data['total_energy'] = energy_result.registers[1] / 10.0  # IR 5004，0.1 kWh → kWh
                     reactive_power_raw = (q_result.registers[1] << 16) | q_result.registers[0]
                     # 转换为32位有符号整数
                     if reactive_power_raw >= 0x80000000:
@@ -136,11 +148,12 @@ class MultiPVClient:
 def main():
     """主函数 - 多光伏数据监控"""
     
-    multi_client = MultiPVClient(base_port=602, pv_count=3)
+    multi_client = MultiPVClient(base_port=602, pv_count=1)
     
     try:
         if not multi_client.connect_all_pvs():
             print("❌ 光伏设备连接失败，请检查服务器是否启动")
+            multi_client._hint_if_first_failed()
             return
             
         count = 0

@@ -4,6 +4,7 @@ use tauri::State;
 use crate::domain::metadata::DeviceMetadataStore;
 use crate::domain::device::DeviceMetadata;
 use crate::services::simulation_engine::SimulationEngine;
+use crate::services::modbus::ModbusService;
 use crate::commands::topology::device_type_to_string;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -249,14 +250,23 @@ pub struct UpdateDeviceMetadataPayload {
 pub async fn update_device_metadata(
     payload: UpdateDeviceMetadataPayload,
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
+    modbus_service: State<'_, ModbusService>,
 ) -> Result<(), String> {
-    let store = metadata_store.lock().unwrap();
-    let mut device = store
-        .get_device(&payload.device_id)
-        .ok_or_else(|| format!("Device {} not found", payload.device_id))?;
-    device.name = payload.name;
-    device.properties = payload.properties;
-    store.update_device(device)?;
+    let (device_id, device_type_str, props) = {
+        let store = metadata_store.lock().unwrap();
+        let mut device = store
+            .get_device(&payload.device_id)
+            .ok_or_else(|| format!("Device {} not found", payload.device_id))?;
+        device.name = payload.name.clone();
+        device.properties = payload.properties.clone();
+        let device_type_str = device_type_to_string(&device.device_type);
+        store.update_device(device)?;
+        (payload.device_id.clone(), device_type_str, payload.properties.clone())
+    };
+    // 设备属性编辑后同步不可变寄存器（额定功率/额定容量），仅当该设备 Modbus 在运行时写入
+    modbus_service
+        .update_device_immutable_registers(&device_id, &device_type_str, &props)
+        .await;
     Ok(())
 }
 

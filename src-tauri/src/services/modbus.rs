@@ -1,6 +1,7 @@
 // Modbus TCP 管理：每设备独立 TCP 服务，四类寄存器由 modbus_server 实现
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use serde_json::Value as JsonValue;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::{mpsc, RwLock};
 use crate::commands::device::ModbusRegisterEntry;
@@ -117,6 +118,7 @@ impl ModbusService {
     }
 
     /// 启动指定设备的 Modbus TCP 服务（ip, port, 寄存器列表来自前端）；创建共享上下文供仿真同步
+    /// rated_power_kw：光伏/充电桩额定功率，加载拓扑时写 IR 5001/IR 4；rated_capacity_kwh：储能额定容量，写 IR 39
     pub async fn start_device_modbus(
         &self,
         device_id: String,
@@ -124,10 +126,14 @@ impl ModbusService {
         ip: String,
         port: u16,
         registers: Vec<ModbusRegisterEntry>,
+        rated_power_kw: Option<f64>,
+        rated_capacity_kwh: Option<f64>,
     ) -> Result<(), String> {
-        let mut running = self.running_servers.lock().map_err(|e| e.to_string())?;
-        if running.contains_key(&device_id) {
-            return Err("该设备 Modbus 服务已在运行".to_string());
+        {
+            let running = self.running_servers.lock().map_err(|e| e.to_string())?;
+            if running.contains_key(&device_id) {
+                return Err("该设备 Modbus 服务已在运行".to_string());
+            }
         }
         let tx = self.hr_write_tx.clone();
         let did = device_id.clone();
@@ -135,10 +141,31 @@ impl ModbusService {
             let _ = tx.try_send((did.clone(), addr, value));
         });
         let context = Arc::new(RwLock::new(ModbusDeviceContext::from_entries(&registers, Some(on_holding_write))));
+        // 不可变数据：仅加载拓扑或设备属性编辑时写入（在 await 前释放 MutexGuard，保证 future 为 Send）
+        {
+            let mut ctx = context.write().await;
+            if device_type == "static_generator" {
+                if let Some(kw) = rated_power_kw {
+                    let v = (kw * 10.0_f64).round().clamp(0.0, 65535.0) as u16; // 0.1 kW
+                    ctx.set_input_register(5001, v);
+                }
+            } else if device_type == "storage" {
+                if let Some(kwh) = rated_capacity_kwh {
+                    let v = (kwh * 10.0_f64).round().clamp(0.0, 65535.0) as u16; // 0.1 kWh
+                    ctx.set_input_register(39, v);
+                }
+            } else if device_type == "charger" {
+                if let Some(kw) = rated_power_kw {
+                    let v = (kw * 10.0_f64).round().clamp(0.0, 65535.0) as u16; // 0.1 kW
+                    ctx.set_input_register(4, v);
+                }
+            }
+        }
         let context_for_task = context.clone();
         let join = tokio::task::spawn(async move {
             modbus_server::run_modbus_tcp_server(&ip, port, context_for_task).await
         });
+        let mut running = self.running_servers.lock().map_err(|e| e.to_string())?;
         running.insert(
             device_id,
             RunningDeviceServer {
@@ -204,8 +231,61 @@ impl ModbusService {
         Some((ctx.input_registers.clone(), ctx.holding_registers.clone()))
     }
 
+    /// 设备属性编辑后同步不可变寄存器：光伏 IR 5001、储能 IR 39、充电桩 IR 4（仅当该设备 Modbus 在运行且属性含对应字段时写入）
+    pub async fn update_device_immutable_registers(
+        &self,
+        device_id: &str,
+        device_type: &str,
+        properties: &HashMap<String, JsonValue>,
+    ) {
+        let context = {
+            let running = match self.running_servers.lock() {
+                Ok(r) => r,
+                Err(_) => return,
+            };
+            match running.get(device_id) {
+                Some(s) => s.context.clone(),
+                None => return,
+            }
+        };
+        let (rated_power_kw, rated_capacity_kwh) = if device_type == "static_generator" || device_type == "charger" {
+            let kw = properties
+                .get("rated_power_kw")
+                .or_else(|| properties.get("max_power_kw"))
+                .or_else(|| properties.get("rated_power"))
+                .and_then(|v| v.as_f64().or_else(|| v.as_u64().map(|u| u as f64)));
+            (kw, None)
+        } else if device_type == "storage" {
+            let kwh = properties
+                .get("capacity_kwh")
+                .or_else(|| properties.get("capacity"))
+                .and_then(|v| v.as_f64().or_else(|| v.as_u64().map(|u| u as f64)))
+                .or_else(|| properties.get("max_e_mwh").and_then(|v| v.as_f64().map(|mwh| mwh * 1000.0)));
+            (None, kwh)
+        } else {
+            (None, None)
+        };
+        let mut ctx = context.write().await;
+        if device_type == "static_generator" {
+            if let Some(kw) = rated_power_kw {
+                let v = (kw * 10.0_f64).round().clamp(0.0, 65535.0) as u16;
+                ctx.set_input_register(5001, v);
+            }
+        } else if device_type == "storage" {
+            if let Some(kwh) = rated_capacity_kwh {
+                let v = (kwh * 10.0_f64).round().clamp(0.0, 65535.0) as u16;
+                ctx.set_input_register(39, v);
+            }
+        } else if device_type == "charger" {
+            if let Some(kw) = rated_power_kw {
+                let v = (kw * 10.0_f64).round().clamp(0.0, 65535.0) as u16;
+                ctx.set_input_register(4, v);
+            }
+        }
+    }
+
     /// 根据仿真功率缓存与储能状态更新所有运行中设备的 Modbus 输入寄存器（v1.5.0 update_* 逻辑）
-    /// dt_seconds：本步时长（秒）；storage_states：储能 SOC/日/累计电量，用于写 IR 2/12/426-431
+    /// dt_seconds：本步时长（秒）；storage_states：储能 SOC/日/累计电量。额定功率等不可变数据仅在加载拓扑启动时写入。
     pub async fn update_all_devices_from_simulation(
         &self,
         power_snapshot: &HashMap<String, (f64, Option<f64>, Option<f64>)>,

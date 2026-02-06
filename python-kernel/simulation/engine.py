@@ -352,10 +352,48 @@ class SimulationEngine:
     
     def perform_calculation(self) -> Dict[str, Any]:
         """
-        执行一次计算（由Rust端主动调用）
+        执行一次仿真计算 - 四阶段数据流
         
-        返回:
-            计算结果字典
+        ┌──────────────────────────────────────────────────────────────────┐
+        │ 第1阶段：应用三类原始数据源（优先级递增，后者覆盖前者）          │
+        │ (_apply_device_power_sources)                                   │
+        │                                                                  │
+        │ - 手动设定 (_apply_manual_power_values)                         │
+        │ - 随机数据源 (_apply_random_power_values)                       │
+        │ - 历史数据源 (_apply_historical_power_values)                   │
+        │                                                                  │
+        │ 结果：各设备 properties.p_kw/q_kvar = 原始功率                  │
+        └──────────────────────────────────────────────────────────────────┘
+                                    ↓
+        ┌──────────────────────────────────────────────────────────────────┐
+        │ 第2阶段：应用 Modbus 远程控制指令（所有过滤逻辑在此完成）       │
+        │ (_apply_modbus_instructions)                                    │
+        │                                                                  │
+        │ 包含两类指令的完整处理：                                        │
+        │ 1) 设定指令（HR4 set_power，仅储能）                           │
+        │    → 直接覆盖 properties.p_kw                                   │
+        │ 2) 限制指令（所有设备类型）                                    │
+        │    → 应用 _apply_modbus_filtering 过滤                         │
+        │    - on_off / power_limit_pct / power_limit_raw 等             │
+        │    → properties.p_kw = min(p_kw, limit)                        │
+        │                                                                  │
+        │ 结果：各设备 properties.p_kw/q_kvar = 最终过滤后功率            │
+        └──────────────────────────────────────────────────────────────────┘
+                                    ↓
+        ┌──────────────────────────────────────────────────────────────────┐
+        │ 第3阶段：更新网络功率值（纯网络更新，无任何过滤）              │
+        │ (_update_network_power_values)                                  │
+        │                                                                  │
+        │ - 读取 properties 中的最终功率值（额定/限制在第2阶段完成，     │
+        │   额定容量从拓扑 max_power_kw/rated_power 获取）                │
+        │ - 写入 pandapower 网络各表（sgen/load/storage）                │
+        │                                                                  │
+        │ 结果：pandapower 网络已准备完毕                                 │
+        └──────────────────────────────────────────────────────────────────┘
+                                    ↓
+        ┌──────────────────────────────────────────────────────────────────┐
+        │ 第4阶段：执行潮流计算 & 更新状态                               │
+        └──────────────────────────────────────────────────────────────────┘
         """
         if not self.is_running:
             return {
@@ -468,12 +506,13 @@ class SimulationEngine:
             if hasattr(self.topology_adapter, 'get_device_map'):
                 self.cached_device_map = self.topology_adapter.get_device_map()
         
-        # 统一后端更新：按模式（手动/随机/历史）每步写 properties，再读入潮流
+        # 第1阶段：应用三类原始数据源（手动 -> 随机 -> 历史）
         self._apply_device_power_sources()
-        # 更新网络中的功率值（从拓扑 properties 读入）
+        # 第2阶段：应用 Modbus 远程控制指令（set_power + 限制过滤）
+        self._apply_modbus_instructions()
+        # 第3阶段：更新网络功率值（读 properties，光伏 power_limit_pct 精确计算，写网络）
         self._update_network_power_values()
-        
-        # 执行潮流计算（使用缓存的网络对象）
+        # 第4阶段：执行潮流计算（使用缓存的网络对象）
         try:
             calculation_result = self.power_calculator.calculate_power_flow(self.cached_network)
             
@@ -558,13 +597,70 @@ class SimulationEngine:
     
     def _apply_device_power_sources(self) -> None:
         """
-        统一入口：按设备模式在每步计算前将功率写入 topology_data 的 properties。
-        顺序：手动 -> 随机 -> 历史 -> 远程（后写覆盖先写；远程为 Modbus 等设定，覆盖随机/历史）。
+        第1阶段：应用三类原始数据源。顺序：手动 -> 随机 -> 历史（后写覆盖先写）。
+        远程（Modbus set_power）在第2阶段 _apply_modbus_instructions 中处理。
         """
         self._apply_manual_power_values()
         self._apply_random_power_values()
         self._apply_historical_power_values()
-        self._apply_remote_power_values()
+
+    def _apply_modbus_instructions(self) -> None:
+        """
+        第2阶段：应用 Modbus 远程控制指令（所有过滤逻辑在此完成）。
+        1) 设定指令（HR4 set_power，仅储能）-> 直接覆盖 properties.p_kw
+        2) 限制指令（所有设备）-> _apply_modbus_filtering -> properties.p_kw = min(p_kw, limit)
+        """
+        if not self.topology_data:
+            return
+        devices = self.topology_data.get("devices", {})
+        if isinstance(devices, list):
+            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
+        else:
+            devices_dict = devices
+        # 1) 设定指令：储能的 set_power 寄存器
+        if self.device_remote_setpoint:
+            for device_id, cfg in self.device_remote_setpoint.items():
+                device = devices_dict.get(device_id)
+                if not device:
+                    continue
+                p_kw = cfg.get("p_kw", 0.0)
+                q_kvar = cfg.get("q_kvar", 0.0)
+                props = device.setdefault("properties", {})
+                props["rated_power"] = p_kw
+                props["p_kw"] = p_kw
+                props["q_kvar"] = q_kvar
+        # 2) 限制指令过滤：对所有设备应用 on_off / power_limit_pct / power_limit_raw 等
+        for device_id, device in devices_dict.items():
+            device_type = device.get("device_type", "")
+            properties = device.get("properties", {})
+            p_kw = float(properties.get("rated_power", properties.get("p_kw", 0.0)))
+            q_kvar = float(properties.get("q_kvar", 0.0))
+            p_kw, q_kvar = self._apply_modbus_filtering(device_type, properties, p_kw, q_kvar)
+            properties["p_kw"] = p_kw
+            properties["q_kvar"] = q_kvar
+
+    def _apply_modbus_filtering(self, device_type: str, properties: dict, p_kw: float, q_kvar: float) -> tuple:
+        """
+        统一 Modbus 限制指令过滤：on_off、power_limit_pct、power_limit_raw、reactive_comp_pct/power_factor。
+        额定容量从拓扑属性 max_power_kw/rated_power 获取。返回 (p_kw, q_kvar)。
+        """
+        on_off = properties.get("on_off", 1)
+        if on_off == 0:
+            p_kw = 0.0
+        if "power_limit_pct" in properties:
+            nominal_kw = float(properties.get("max_power_kw") or properties.get("rated_power") or 0)
+            if nominal_kw > 0:
+                pct = float(properties["power_limit_pct"])
+                p_kw = min(p_kw, nominal_kw * pct / 100.0)
+        if "power_limit_raw" in properties:
+            raw = int(properties["power_limit_raw"]) & 0xFFFF
+            cap_kw = raw / 10.0
+            p_kw = min(p_kw, cap_kw)
+        if device_type == "Pv" and "power_factor" in properties:
+            pf = float(properties["power_factor"])
+            if 0 < pf <= 1:
+                q_kvar = abs(p_kw * ((1 - pf ** 2) ** 0.5) / pf)
+        return p_kw, q_kvar
 
     def _apply_manual_power_values(self) -> None:
         """
@@ -619,71 +715,35 @@ class SimulationEngine:
         # 占位：后期根据 device_historical_config 与当前仿真时间/步数实现回放
         pass
 
-    def _apply_remote_power_values(self) -> None:
-        """
-        对存在远程设定（如 Modbus 写入）的设备，将远程功率写入 topology_data 的 properties，
-        覆盖本步已应用的随机/历史值，实现“允许远程控制”下 Modbus 设定优先。
-        """
-        if not self.topology_data or not self.device_remote_setpoint:
-            return
-        devices = self.topology_data.get("devices", {})
-        if isinstance(devices, list):
-            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
-        else:
-            devices_dict = devices
-        for device_id, cfg in self.device_remote_setpoint.items():
-            device = devices_dict.get(device_id)
-            if not device:
-                continue
-            p_kw = cfg.get("p_kw", 0.0)
-            q_kvar = cfg.get("q_kvar", 0.0)
-            props = device.setdefault("properties", {})
-            props["rated_power"] = p_kw
-            props["p_kw"] = p_kw
-            props["q_kvar"] = q_kvar
-
     def _update_network_power_values(self):
         """
-        更新网络中的功率值（从拓扑数据的 properties 中读取）
-        
-        只更新会变化的功率值，不重新创建网络结构
-        功率值应该由外部（Rust端或前端）通过更新拓扑数据来设置
+        第3阶段：更新网络功率值（纯网络更新）。
+        从 properties 读取已过滤的功率值（额定/限制在第2阶段完成，额定容量从拓扑 max_power_kw/rated_power 获取），写入 pandapower 网络。
         """
-        if not self.cached_network:
+        if not self.cached_network or not self.topology_data:
             return
-        
         try:
-            import pandapower as pp
-            
-            # 获取设备字典
             devices = self.topology_data.get("devices", {})
             if isinstance(devices, list):
                 devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
             else:
                 devices_dict = devices
-            
-            # 更新各设备的功率值（从拓扑数据的 properties 中读取）
             for device_id, device in devices_dict.items():
                 device_type = device.get("device_type", "")
                 properties = device.get("properties", {})
-                
-                # 从 properties 中获取功率值（单位：kW / kVar）
-                # 支持多种属性名：rated_power, p_kw, power；无功：q_kvar
                 p_kw = 0.0
-                if "rated_power" in properties:
-                    p_kw = float(properties["rated_power"])
-                elif "p_kw" in properties:
+                if "p_kw" in properties:
                     p_kw = float(properties["p_kw"])
+                elif "rated_power" in properties:
+                    p_kw = float(properties["rated_power"])
                 elif "power" in properties:
                     power_val = properties["power"]
                     if isinstance(power_val, (int, float)):
                         p_kw = float(power_val)
-                        # 如果值很大（>1000），假设单位是W，转换为kW
                         if abs(p_kw) > 1000:
                             p_kw = p_kw / 1000.0
                 q_kvar = float(properties.get("q_kvar", 0.0))
-                
-                # 转换为 MW / MVar（pandapower 使用 MW / MVar）
+                # 额定容量与 power_limit_pct 限制已在第2阶段 _apply_modbus_filtering 中完成（从拓扑 max_power_kw/rated_power 获取）
                 p_mw = p_kw / 1000.0
                 q_mvar = q_kvar / 1000.0
                 

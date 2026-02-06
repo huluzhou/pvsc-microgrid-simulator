@@ -13,7 +13,6 @@ import {
   type ModbusRegisterType,
   getPredefinedRegistersForDeviceType,
   MODBUS_REGISTER_TYPE_LABELS,
-  getAllRegisterTypes,
 } from '../constants/modbusRegisters';
 
 interface DeviceModbusConfig {
@@ -117,7 +116,7 @@ export default function Modbus() {
           registers,
         };
       }
-      const runningIds = await invoke<string[]>('get_running_modbus_device_ids').catch(() => []);
+      const runningIds = await invoke<string[]>('get_running_modbus_device_ids').catch((): string[] => []);
       setConfigs(defaultConfigs);
       setServerStatus((prev) => {
         const next = { ...prev };
