@@ -76,12 +76,13 @@ class MultiPVClient:
                 q_result = client.read_input_registers(address=5032, count=2, device_id=1)
                 reactive_percent = client.read_holding_registers(address=5040, count=1, device_id=1)
                 
-                # client.write_registers(address=5005, values=[1], device_id=1)
-                # # client.write_registers(address=5038, values=[400], device_id=1)
+                client.write_registers(address=5005, values=[1], device_id=1)
+                # client.write_registers(address=5038, values=[600], device_id=1)
                 # client.write_registers(address=5007, values=[10], device_id=1)
-                # client.write_registers(address=5040, values=[65536-1], device_id=1) #无功百分比
-                # client.write_registers(address=5040, values=[1], device_id=1) #无功百分比
-                # client.write_registers(address=5041, values=[65536-999], device_id=1) # 功率因数
+                # HR 5040 无功补偿百分比：-1000~1000 表示 -100%~100%（有符号，如 100=10%，-100=-10%）
+                # client.write_registers(address=5040, values=[100], device_id=1)  # 10%
+                # HR 5041 功率因数：800~1000=0.8~1，-1000~-800=-1~-0.8（有符号，如 900=0.9）
+                client.write_registers(address=5041, values=[900], device_id=1)  # 0.9
 
                 # 分别检查每个寄存器的读取结果
                 error_registers = []
@@ -106,8 +107,11 @@ class MultiPVClient:
                     # 转换为32位有符号整数
                     if reactive_power_raw >= 0x80000000:
                         reactive_power_raw -= 0x100000000
-                    data['reactive_power'] = reactive_power_raw
-                    data['reactive_percent_limit'] = reactive_percent.registers[0]
+                    data['reactive_power'] = reactive_power_raw / 10.0
+                    # HR 5040：-1000~1000 表示 -100%~100%，有符号
+                    raw_q = reactive_percent.registers[0]
+                    raw_q = raw_q if raw_q <= 32767 else raw_q - 65536
+                    data['reactive_percent_limit'] = raw_q / 10.0  # 百分比 -100 ~ 100
                     data['status'] = 'ok'
                 else:
                     self.pv_data[pv_name]['status'] = 'read_error'
@@ -134,7 +138,7 @@ class MultiPVClient:
                 print(f"    无功功率: {data['reactive_power']:6.1f}kVar")
                 print(f"    今日发电量: {data['today_energy']:6.1f}kWh")
                 print(f"    总发电量: {data['total_energy']:6.1f}kWh")
-                print(f"    无功补偿百分比: {data['reactive_percent_limit']:3d}%")
+                print(f"    无功补偿百分比: {data['reactive_percent_limit']:+.1f}%")
             else:
                 print(f"  光伏{i} (端口{data['port']}): 离线")
         print("-" * 60)

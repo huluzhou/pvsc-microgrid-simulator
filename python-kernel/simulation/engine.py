@@ -189,41 +189,61 @@ class SimulationEngine:
             "max_power": float(max_power),
         }
 
+    def _parse_power_from_properties(self, properties: Dict[str, Any]) -> Optional[tuple]:
+        """从 properties 解析 (p_kw, q_kvar)，无功率字段时返回 None。"""
+        if "rated_power" in properties:
+            p_kw = float(properties["rated_power"])
+        elif "p_kw" in properties:
+            p_kw = float(properties["p_kw"])
+        else:
+            return None
+        q_kvar = float(properties.get("q_kvar", 0))
+        return (p_kw, q_kvar)
+
     def update_device_properties(self, device_id: str, properties: Dict[str, Any]) -> None:
         """
-        事件驱动远程控制：将设备属性增量立即写入当前拓扑数据，下一拍 _update_network_power_values 即生效。
-        若该设备为 manual 模式，同时更新 device_manual_setpoint，以便统一后端每步写 properties 时使用。
+        事件驱动远程控制：将属性增量写入当前拓扑的 device.properties，下一拍计算即生效。
+
+        数据源与触发式约定：
+        - 手动/随机/历史：数据源，每步写 properties.p_kw，不在此处改写数据源缓存。
+        - Modbus on_off/power_limit：触发式过滤，只写 properties；仅储能的 set_power 写 device_remote_setpoint。
+
+        逻辑概要：
+        1. 有功功率限制与百分比限制互斥：写入 power_limit_raw 时清除 power_limit_pct，写入 power_limit_pct 时清除 power_limit_raw，只响应最新一条。
+        2. 合并 properties 到拓扑对应设备的 props。
+        3. 手动模式：仅在“用户设定功率”时同步 device_manual_setpoint；Modbus 关机（on_off=0）不覆盖，保证 5005 先 0 再 1 后功率可恢复。
+        4. 储能：set_power（HR4）写入 device_remote_setpoint；光伏/充电桩开机（on_off=1）时清除 device_remote_setpoint 残留。
         """
         if not self.topology_data:
             return
         devices = self.topology_data.get("devices", {})
-        if isinstance(devices, list):
-            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
-        else:
-            devices_dict = devices
+        devices_dict = {d.get("id", ""): d for d in devices if d.get("id")} if isinstance(devices, list) else devices
         if device_id not in devices_dict:
             return
-        props = devices_dict[device_id].setdefault("properties", {})
+        device = devices_dict[device_id]
+        props = device.setdefault("properties", {})
+        # 有功功率限制与百分比限制互斥：只响应最新一条，写入一种时清除另一种
+        if "power_limit_raw" in properties:
+            props.pop("power_limit_pct", None)
+        if "power_limit_pct" in properties:
+            props.pop("power_limit_raw", None)
         props.update(properties)
-        if self.device_modes.get(device_id) == "manual":
-            p_kw = None
-            if "rated_power" in properties:
-                p_kw = float(properties["rated_power"])
-            elif "p_kw" in properties:
-                p_kw = float(properties["p_kw"])
-            q_kvar = float(properties.get("q_kvar", 0))
-            if p_kw is not None:
-                self.device_manual_setpoint[device_id] = {"p_kw": p_kw, "q_kvar": q_kvar}
-        # 远程控制（如 Modbus）写入的功率：记录为远程设定，在 _apply_device_power_sources 最后应用，覆盖随机/历史
-        if "p_kw" in properties or "rated_power" in properties:
-            p_kw = None
-            if "rated_power" in properties:
-                p_kw = float(properties["rated_power"])
-            elif "p_kw" in properties:
-                p_kw = float(properties["p_kw"])
-            q_kvar = float(properties.get("q_kvar", 0))
-            if p_kw is not None:
-                self.device_remote_setpoint[device_id] = {"p_kw": p_kw, "q_kvar": q_kvar}
+
+        power_tuple = self._parse_power_from_properties(properties)
+        device_type = device.get("device_type", "")
+        is_shutdown = properties.get("on_off") == 0
+
+        # 1) 手动模式：仅用户设定功率时同步；Modbus 关机指令不覆盖手动设定
+        if self.device_modes.get(device_id) == "manual" and power_tuple is not None and not is_shutdown:
+            p_kw, q_kvar = power_tuple
+            self.device_manual_setpoint[device_id] = {"p_kw": p_kw, "q_kvar": q_kvar}
+
+        # 2) 储能 set_power → device_remote_setpoint；光伏/充电桩 on_off=1 → 清除 remote 残留
+        if device_type == "Storage" and power_tuple is not None:
+            p_kw, q_kvar = power_tuple
+            self.device_remote_setpoint[device_id] = {"p_kw": p_kw, "q_kvar": q_kvar}
+        elif device_type != "Storage" and properties.get("on_off") not in (None, 0):
+            self.device_remote_setpoint.pop(device_id, None)
     
     def get_device_data(self, device_id: str) -> Dict[str, Any]:
         """
@@ -626,14 +646,13 @@ class SimulationEngine:
                 p_kw = cfg.get("p_kw", 0.0)
                 q_kvar = cfg.get("q_kvar", 0.0)
                 props = device.setdefault("properties", {})
-                props["rated_power"] = p_kw
                 props["p_kw"] = p_kw
                 props["q_kvar"] = q_kvar
-        # 2) 限制指令过滤：对所有设备应用 on_off / power_limit_pct / power_limit_raw 等
+        # 2) 限制指令过滤：对所有设备应用 on_off / power_limit_pct / power_limit_raw 等；当前功率只读 p_kw（额定功率仅从拓扑获取）
         for device_id, device in devices_dict.items():
             device_type = device.get("device_type", "")
             properties = device.get("properties", {})
-            p_kw = float(properties.get("rated_power", properties.get("p_kw", 0.0)))
+            p_kw = float(properties.get("p_kw", 0.0))
             q_kvar = float(properties.get("q_kvar", 0.0))
             p_kw, q_kvar = self._apply_modbus_filtering(device_type, properties, p_kw, q_kvar)
             properties["p_kw"] = p_kw
@@ -642,13 +661,21 @@ class SimulationEngine:
     def _apply_modbus_filtering(self, device_type: str, properties: dict, p_kw: float, q_kvar: float) -> tuple:
         """
         统一 Modbus 限制指令过滤：on_off、power_limit_pct、power_limit_raw、reactive_comp_pct/power_factor。
-        额定容量从拓扑属性 max_power_kw/rated_power 获取。返回 (p_kw, q_kvar)。
+        百分比限制的基准功率从拓扑额定容量取：rated_power_kw / max_power_kw（不用 rated_power，以免被手动设定覆盖）。
+        返回 (p_kw, q_kvar)。
         """
         on_off = properties.get("on_off", 1)
         if on_off == 0:
             p_kw = 0.0
+            q_kvar = 0.0
         if "power_limit_pct" in properties:
-            nominal_kw = float(properties.get("max_power_kw") or properties.get("rated_power") or 0)
+            # 额定容量优先用拓扑 nameplate，避免 rated_power 被手动设定覆盖导致百分比不起效
+            nominal_kw = float(
+                properties.get("rated_power_kw")
+                or properties.get("max_power_kw")
+                or properties.get("rated_power")
+                or 0
+            )
             if nominal_kw > 0:
                 pct = float(properties["power_limit_pct"])
                 p_kw = min(p_kw, nominal_kw * pct / 100.0)
@@ -657,9 +684,27 @@ class SimulationEngine:
             cap_kw = raw / 10.0
             p_kw = min(p_kw, cap_kw)
         if device_type == "Pv" and "power_factor" in properties:
-            pf = float(properties["power_factor"])
-            if 0 < pf <= 1:
-                q_kvar = abs(p_kw * ((1 - pf ** 2) ** 0.5) / pf)
+            # HR 5041：功率因数寄存器 800~1000 表示 0.8~1，-1000~-800 表示 -1~-0.8（超前）
+            raw_pf = int(properties["power_factor"])
+            raw_pf = raw_pf if raw_pf <= 32767 else raw_pf - 65536
+            pf = raw_pf / 1000.0
+            if (0.8 <= pf <= 1.0) or (-1.0 <= pf <= -0.8):
+                q_mag = abs(p_kw * ((1 - pf ** 2) ** 0.5) / pf) if pf != 0 else 0.0
+                q_kvar = q_mag if pf >= 0 else -q_mag
+        if device_type == "Pv" and "reactive_comp_pct" in properties and "power_factor" not in properties:
+            # HR 5040：无功补偿百分比 -1000~1000 表示 -100%~100%，限制 |q_kvar| 在额定×|pct|/100 内；若已设功率因数(5041)则不再封顶，由功率因数控制 Q
+            raw_pct = int(properties["reactive_comp_pct"])
+            raw_pct = raw_pct if raw_pct <= 32767 else raw_pct - 65536
+            pct = raw_pct / 10.0  # -100 ~ 100
+            nominal_kw = float(
+                properties.get("rated_power_kw")
+                or properties.get("max_power_kw")
+                or properties.get("rated_power")
+                or 0
+            )
+            if nominal_kw > 0 and -100 <= pct <= 100:
+                q_limit = nominal_kw * abs(pct) / 100.0
+                q_kvar = max(-q_limit, min(q_limit, q_kvar))
         return p_kw, q_kvar
 
     def _apply_manual_power_values(self) -> None:
@@ -680,7 +725,6 @@ class SimulationEngine:
             p_kw = cfg.get("p_kw", 0.0)
             q_kvar = cfg.get("q_kvar", 0.0)
             props = device.setdefault("properties", {})
-            props["rated_power"] = p_kw
             props["p_kw"] = p_kw
             props["q_kvar"] = q_kvar
 
@@ -704,7 +748,6 @@ class SimulationEngine:
             max_p = cfg.get("max_power", 0.0)
             p_kw = min_p + random.random() * (max_p - min_p) if max_p > min_p else min_p
             props = device.setdefault("properties", {})
-            props["rated_power"] = p_kw
             props["p_kw"] = p_kw
             props["q_kvar"] = 0.0
 

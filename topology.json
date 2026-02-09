@@ -3,22 +3,6 @@
   "name": "Imported Topology",
   "description": "",
   "devices": {
-    "device-9": {
-      "id": "device-9",
-      "name": "电表-9",
-      "device_type": "Meter",
-      "properties": {
-        "element_type": "ext_grid",
-        "element": 1,
-        "side": "bottom"
-      },
-      "position": {
-        "x": -100.0,
-        "y": 80.0,
-        "z": 0.0
-      },
-      "location": null
-    },
     "device-6": {
       "id": "device-6",
       "name": "储能-6",
@@ -33,32 +17,18 @@
       },
       "location": null
     },
-    "device-1": {
-      "id": "device-1",
-      "name": "外部电网-1",
-      "device_type": "ExternalGrid",
+    "device-3": {
+      "id": "device-3",
+      "name": "开关-3",
+      "device_type": "Switch",
       "properties": {
-        "bus": 2
+        "element_type": "bus",
+        "bus": 2,
+        "element": 4
       },
       "position": {
-        "x": 60.0,
-        "y": 40.0,
-        "z": 0.0
-      },
-      "location": null
-    },
-    "device-7": {
-      "id": "device-7",
-      "name": "负载-7",
-      "device_type": "Load",
-      "properties": {
-        "rated_power_kw": 50,
-        "power_factor": 0.9,
-        "bus": 4
-      },
-      "position": {
-        "x": 140.0,
-        "y": 560.0,
+        "x": 80.0,
+        "y": 280.0,
         "z": 0.0
       },
       "location": null
@@ -68,14 +38,14 @@
       "name": "充电桩-8",
       "device_type": "Charger",
       "properties": {
-        "port": 702,
         "baudrate": 9600,
-        "bus": 4,
         "comm_mode": "tcp",
-        "charger_type": "dc_fast",
-        "rated_power_kw": 60,
         "ip": "0.0.0.0",
-        "parity": "none"
+        "port": 702,
+        "bus": 4,
+        "parity": "none",
+        "charger_type": "dc_fast",
+        "rated_power_kw": 60
       },
       "position": {
         "x": 280.0,
@@ -84,48 +54,16 @@
       },
       "location": null
     },
-    "device-3": {
-      "id": "device-3",
-      "name": "开关-3",
-      "device_type": "Switch",
+    "device-2": {
+      "id": "device-2",
+      "name": "母线-2",
+      "device_type": "Node",
       "properties": {
-        "element": 4,
-        "element_type": "bus",
-        "bus": 2
+        "voltage_kv": 10
       },
       "position": {
-        "x": 80.0,
-        "y": 280.0,
-        "z": 0.0
-      },
-      "location": null
-    },
-    "device-5": {
-      "id": "device-5",
-      "name": "光伏-5",
-      "device_type": "Pv",
-      "properties": {
-        "bus": 4
-      },
-      "position": {
-        "x": -100.0,
-        "y": 560.0,
-        "z": 0.0
-      },
-      "location": null
-    },
-    "device-10": {
-      "id": "device-10",
-      "name": "电表-10",
-      "device_type": "Meter",
-      "properties": {
-        "side": "top",
-        "element": 6,
-        "element_type": "storage"
-      },
-      "position": {
-        "x": -100.0,
-        "y": 440.0,
+        "x": 40.0,
+        "y": 180.0,
         "z": 0.0
       },
       "location": null
@@ -144,16 +82,84 @@
       },
       "location": null
     },
-    "device-2": {
-      "id": "device-2",
-      "name": "母线-2",
-      "device_type": "Node",
+    "device-1": {
+      "id": "device-1",
+      "name": "外部电网-1",
+      "device_type": "ExternalGrid",
       "properties": {
-        "voltage_kv": 10
+        "bus": 2
       },
       "position": {
-        "x": 40.0,
-        "y": 180.0,
+        "x": 60.0,
+        "y": 40.0,
+        "z": 0.0
+      },
+      "location": null
+    },
+    "device-5": {
+      "id": "device-5",
+      "name": "光伏-5",
+      "device_type": "Pv",
+      "properties": {
+        "rated_power_kw": 1000,
+        "port": 602,
+        "efficiency": 95,
+        "baudrate": 9600,
+        "comm_mode": "tcp",
+        "ip": "0.0.0.0",
+        "parity": "none"
+      },
+      "position": {
+        "x": -100.0,
+        "y": 560.0,
+        "z": 0.0
+      },
+      "location": null
+    },
+    "device-10": {
+      "id": "device-10",
+      "name": "电表-10",
+      "device_type": "Meter",
+      "properties": {
+        "element_type": "storage",
+        "element": 6,
+        "side": "top"
+      },
+      "position": {
+        "x": -100.0,
+        "y": 440.0,
+        "z": 0.0
+      },
+      "location": null
+    },
+    "device-7": {
+      "id": "device-7",
+      "name": "负载-7",
+      "device_type": "Load",
+      "properties": {
+        "power_factor": 0.9,
+        "bus": 4,
+        "rated_power_kw": 50
+      },
+      "position": {
+        "x": 140.0,
+        "y": 560.0,
+        "z": 0.0
+      },
+      "location": null
+    },
+    "device-9": {
+      "id": "device-9",
+      "name": "电表-9",
+      "device_type": "Meter",
+      "properties": {
+        "element": 1,
+        "side": "bottom",
+        "element_type": "ext_grid"
+      },
+      "position": {
+        "x": -100.0,
+        "y": 80.0,
         "z": 0.0
       },
       "location": null
@@ -170,16 +176,6 @@
       "properties": {},
       "is_active": true
     },
-    "edge-device-6-device-4-1770274778879": {
-      "id": "edge-device-6-device-4-1770274778879",
-      "from_device_id": "device-6",
-      "to_device_id": "device-4",
-      "from_port": "top-source",
-      "to_port": "center",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
     "edge-device-2-device-3-1770274747267": {
       "id": "edge-device-2-device-3-1770274747267",
       "from_device_id": "device-2",
@@ -190,32 +186,12 @@
       "properties": {},
       "is_active": true
     },
-    "edge-device-5-device-4-1770274777208": {
-      "id": "edge-device-5-device-4-1770274777208",
-      "from_device_id": "device-5",
-      "to_device_id": "device-4",
+    "edge-device-9-device-1-1770274775022": {
+      "id": "edge-device-9-device-1-1770274775022",
+      "from_device_id": "device-9",
+      "to_device_id": "device-1",
       "from_port": "top-source",
-      "to_port": "center",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
-    "edge-device-10-device-6-1770274795376": {
-      "id": "edge-device-10-device-6-1770274795376",
-      "from_device_id": "device-10",
-      "to_device_id": "device-6",
-      "from_port": "top-source",
-      "to_port": "top",
-      "connection_type": "line",
-      "properties": {},
-      "is_active": true
-    },
-    "edge-device-8-device-4-1770274783118": {
-      "id": "edge-device-8-device-4-1770274783118",
-      "from_device_id": "device-8",
-      "to_device_id": "device-4",
-      "from_port": "top-source",
-      "to_port": "center",
+      "to_port": "bottom",
       "connection_type": "line",
       "properties": {},
       "is_active": true
@@ -240,12 +216,42 @@
       "properties": {},
       "is_active": true
     },
-    "edge-device-9-device-1-1770274775022": {
-      "id": "edge-device-9-device-1-1770274775022",
-      "from_device_id": "device-9",
-      "to_device_id": "device-1",
+    "edge-device-8-device-4-1770274783118": {
+      "id": "edge-device-8-device-4-1770274783118",
+      "from_device_id": "device-8",
+      "to_device_id": "device-4",
       "from_port": "top-source",
-      "to_port": "bottom",
+      "to_port": "center",
+      "connection_type": "line",
+      "properties": {},
+      "is_active": true
+    },
+    "edge-device-6-device-4-1770274778879": {
+      "id": "edge-device-6-device-4-1770274778879",
+      "from_device_id": "device-6",
+      "to_device_id": "device-4",
+      "from_port": "top-source",
+      "to_port": "center",
+      "connection_type": "line",
+      "properties": {},
+      "is_active": true
+    },
+    "edge-device-5-device-4-1770274777208": {
+      "id": "edge-device-5-device-4-1770274777208",
+      "from_device_id": "device-5",
+      "to_device_id": "device-4",
+      "from_port": "top-source",
+      "to_port": "center",
+      "connection_type": "line",
+      "properties": {},
+      "is_active": true
+    },
+    "edge-device-10-device-6-1770274795376": {
+      "id": "edge-device-10-device-6-1770274795376",
+      "from_device_id": "device-10",
+      "to_device_id": "device-6",
+      "from_port": "top-source",
+      "to_port": "top",
       "connection_type": "line",
       "properties": {},
       "is_active": true

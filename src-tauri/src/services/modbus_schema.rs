@@ -44,7 +44,7 @@ pub fn input_register_updates(device_type: &str) -> &'static [(u16, IrUpdateKey)
             (0, IrUpdateKey::ActivePower),
             (20, IrUpdateKey::ReactivePower),
         ],
-        "static_generator" => &[
+        "static_generator" | "Pv" => &[
             (5030, IrUpdateKey::ActivePowerLow),
             (5031, IrUpdateKey::ActivePowerHigh),
             (5032, IrUpdateKey::ReactivePowerLow),
@@ -62,7 +62,7 @@ pub fn input_register_updates(device_type: &str) -> &'static [(u16, IrUpdateKey)
 /// 按设备类型返回具有命令逻辑的保持寄存器：(地址, 命令 id)
 pub fn holding_register_commands(device_type: &str) -> &'static [(u16, HrCommandId)] {
     match device_type {
-        "static_generator" => &[
+        "static_generator" | "Pv" => &[
             (5005, HrCommandId::OnOff),
             (5007, HrCommandId::PowerLimitPct),
             (5038, HrCommandId::PowerLimitRaw),
@@ -83,7 +83,7 @@ pub fn holding_register_commands(device_type: &str) -> &'static [(u16, HrCommand
 /// 按设备类型返回保持寄存器默认 (地址, 语义 key)；用于从自定义地址解析命令时回退
 pub fn holding_register_default_key(device_type: &str, address: u16) -> Option<&'static str> {
     let keys: &[(u16, &str)] = match device_type {
-        "static_generator" => &[
+        "static_generator" | "Pv" => &[
             (5005, "on_off"),
             (5007, "power_limit_pct"),
             (5038, "power_limit_raw"),

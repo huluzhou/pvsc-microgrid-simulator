@@ -122,6 +122,14 @@ export default function DataChart({
         .filter((x): x is [number, number] => x !== null)
     : (data as DataPointLegacy[]).map((point) => [point.timestamp * 1000, point.value]);
 
+  // 根据纵轴数值范围决定小数位数，避免 toFixed(1) 导致刻度标签重复（如 10.01/10.02 都显示为 10.0）
+  const yValues = chartData.map(([, y]) => y);
+  const yMin = yValues.length ? Math.min(...yValues) : 0;
+  const yMax = yValues.length ? Math.max(...yValues) : 0;
+  const yRange = Math.max(yMax - yMin, 0) || 1;
+  const yDecimals =
+    yRange < 0.01 ? 4 : yRange < 0.1 ? 3 : yRange < 1 ? 2 : yRange < 10 ? 1 : 0;
+
   const option = {
     title: {
       text: title,
@@ -173,7 +181,7 @@ export default function DataChart({
         color: "#999",
         formatter: (value: unknown) => {
           const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
-          return `${Number(n).toFixed(1)} ${unit}`;
+          return `${Number(n).toFixed(yDecimals)} ${unit}`;
         },
       },
     },

@@ -113,24 +113,30 @@ fn apply_hr_write_inner(
     value: u16,
 ) -> Option<serde_json::Value> {
     match (device_type, cmd) {
-        ("static_generator", HrCommandId::OnOff) => {
+        ("static_generator", HrCommandId::OnOff) | ("Pv", HrCommandId::OnOff) => {
             state.on_off = Some(value);
             Some(state.effective_properties())
         }
-        ("static_generator", HrCommandId::PowerLimitPct) => {
+        ("static_generator", HrCommandId::PowerLimitPct) | ("Pv", HrCommandId::PowerLimitPct) => {
             state.seq += 1;
             state.power_limit_pct = Some((value, state.seq));
             Some(state.effective_properties())
         }
-        ("static_generator", HrCommandId::PowerLimitRaw) => {
+        ("static_generator", HrCommandId::PowerLimitRaw) | ("Pv", HrCommandId::PowerLimitRaw) => {
             state.seq += 1;
             state.power_limit_raw = Some((value, state.seq));
             Some(state.effective_properties())
         }
-        ("static_generator", HrCommandId::ReactiveCompPct) => {
-            Some(json!({ "reactive_comp_pct": value }))
+        ("static_generator", HrCommandId::ReactiveCompPct) | ("Pv", HrCommandId::ReactiveCompPct) => {
+            // HR 5040：-1000~1000 表示 -100%~100%，按有符号 16 位下发给 Python
+            let raw_i16 = value as i16;
+            Some(json!({ "reactive_comp_pct": raw_i16 }))
         }
-        ("static_generator", HrCommandId::PowerFactor) => Some(json!({ "power_factor": value })),
+        ("static_generator", HrCommandId::PowerFactor) | ("Pv", HrCommandId::PowerFactor) => {
+            // HR 5041：[-1000,-800] 与 [800,1000] 表示 (-1,-0.8] 与 [0.8,1]，按有符号 16 位下发给 Python
+            let raw_i16 = value as i16;
+            Some(json!({ "power_factor": raw_i16 }))
+        }
         ("storage", HrCommandId::SetPower) => {
             state.seq += 1;
             // 储能功率单位 0.1 kW，寄存器为有符号 16 位（负=放电）；客户端写 (-300*10)&0xFFFF 即 62536，按 i16 解析为 -3000 → -300 kW
