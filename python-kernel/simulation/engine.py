@@ -227,6 +227,11 @@ class SimulationEngine:
             props.pop("power_limit_pct", None)
         if "power_limit_pct" in properties:
             props.pop("power_limit_raw", None)
+        # 无功控制事件互斥：写功率因数(5041)时清除无功百分比(5040)，写无功百分比(5040)时清除功率因数(5041)，一个指令不受另一个影响
+        if "power_factor" in properties:
+            props.pop("reactive_comp_pct", None)
+        if "reactive_comp_pct" in properties:
+            props.pop("power_factor", None)
         props.update(properties)
 
         power_tuple = self._parse_power_from_properties(properties)
@@ -691,8 +696,8 @@ class SimulationEngine:
             if (0.8 <= pf <= 1.0) or (-1.0 <= pf <= -0.8):
                 q_mag = abs(p_kw * ((1 - pf ** 2) ** 0.5) / pf) if pf != 0 else 0.0
                 q_kvar = q_mag if pf >= 0 else -q_mag
-        if device_type == "Pv" and "reactive_comp_pct" in properties and "power_factor" not in properties:
-            # HR 5040：无功补偿百分比 -1000~1000 表示 -100%~100%，限制 |q_kvar| 在额定×|pct|/100 内；若已设功率因数(5041)则不再封顶，由功率因数控制 Q
+        if device_type == "Pv" and "reactive_comp_pct" in properties:
+            # HR 5040：无功补偿百分比 -1000~1000 表示 -100%~100%，按百分比计算 Q = 额定×pct/100（与功率因数互斥，事件触发二选一）
             raw_pct = int(properties["reactive_comp_pct"])
             raw_pct = raw_pct if raw_pct <= 32767 else raw_pct - 65536
             pct = raw_pct / 10.0  # -100 ~ 100
@@ -703,8 +708,7 @@ class SimulationEngine:
                 or 0
             )
             if nominal_kw > 0 and -100 <= pct <= 100:
-                q_limit = nominal_kw * abs(pct) / 100.0
-                q_kvar = max(-q_limit, min(q_limit, q_kvar))
+                q_kvar = nominal_kw * pct / 100.0
         return p_kw, q_kvar
 
     def _apply_manual_power_values(self) -> None:
