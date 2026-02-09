@@ -248,7 +248,7 @@ impl ModbusService {
                 None => return,
             }
         };
-        let (rated_power_kw, rated_capacity_kwh) = if device_type == "static_generator" || device_type == "charger" {
+        let (rated_power_kw, rated_capacity_kwh) = if device_type == "static_generator" || device_type == "charger" || device_type == "Charger" {
             let kw = properties
                 .get("rated_power_kw")
                 .or_else(|| properties.get("max_power_kw"))
@@ -276,7 +276,7 @@ impl ModbusService {
                 let v = (kwh * 10.0_f64).round().clamp(0.0, 65535.0) as u16;
                 ctx.set_input_register(39, v);
             }
-        } else if device_type == "charger" {
+        } else if device_type == "charger" || device_type == "Charger" {
             if let Some(kw) = rated_power_kw {
                 let v = (kw * 10.0_f64).round().clamp(0.0, 65535.0) as u16;
                 ctx.set_input_register(4, v);

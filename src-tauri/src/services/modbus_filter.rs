@@ -151,7 +151,7 @@ fn apply_hr_write_inner(
         }
         ("storage", HrCommandId::Other(5095)) => Some(json!({ "grid_mode": value })),
         ("storage", HrCommandId::Other(5033)) => Some(json!({ "pcs_charge_discharge_state": value })),
-        ("charger", HrCommandId::PowerLimitRaw) => {
+        ("charger", HrCommandId::PowerLimitRaw) | ("Charger", HrCommandId::PowerLimitRaw) => {
             state.seq += 1;
             state.power_limit_raw = Some((value, state.seq));
             Some(state.effective_properties())

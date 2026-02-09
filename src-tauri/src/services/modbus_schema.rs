@@ -54,7 +54,7 @@ pub fn input_register_updates(device_type: &str) -> &'static [(u16, IrUpdateKey)
             (420, IrUpdateKey::ActivePowerLow),
             (421, IrUpdateKey::ActivePowerHigh),
         ],
-        "charger" => &[(0, IrUpdateKey::ActivePower)],
+        "charger" | "Charger" => &[(0, IrUpdateKey::ActivePower)],
         _ => &[],
     }
 }
@@ -75,7 +75,7 @@ pub fn holding_register_commands(device_type: &str) -> &'static [(u16, HrCommand
             (5095, HrCommandId::Other(5095)),
             (5033, HrCommandId::Other(5033)),
         ],
-        "charger" => &[(0, HrCommandId::PowerLimitRaw)],
+        "charger" | "Charger" => &[(0, HrCommandId::PowerLimitRaw)],
         _ => &[],
     }
 }
@@ -96,7 +96,7 @@ pub fn holding_register_default_key(device_type: &str, address: u16) -> Option<&
             (5095, "grid_mode"),
             (5033, "pcs_charge_discharge_state"),
         ],
-        "charger" => &[(0, "power_limit_raw")],
+        "charger" | "Charger" => &[(0, "power_limit_raw")],
         _ => return None,
     };
     keys.iter().find(|(a, _)| *a == address).map(|(_, k)| *k)

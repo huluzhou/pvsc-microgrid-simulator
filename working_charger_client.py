@@ -13,7 +13,7 @@ from pymodbus.client import ModbusTcpClient
 class MultiChargerClient:
     """多充电桩客户端"""
     
-    def __init__(self, base_port=702, charger_count=4):
+    def __init__(self, base_port=702, charger_count=1):
         self.base_port = base_port
         self.charger_count = charger_count
         self.charger_ports = list(range(base_port, base_port + charger_count))
@@ -57,7 +57,7 @@ class MultiChargerClient:
                 # 读取枪状态 (地址100-103)
                 gun_result = client.read_input_registers(address=100, count=4, device_id=1)
                 
-                result = client.write_registers(address=0, values=[888], device_id=1)
+                result = client.write_registers(address=0, values=[3300], device_id=1)
                 if not power_result.isError() and not gun_result.isError():
                 # if not power_result.isError():
                     data = self.charger_data[charger_name]
@@ -71,9 +71,9 @@ class MultiChargerClient:
                     demand_power_raw = power_result.registers[2]
                     data['demand_power'] = demand_power_raw / 10.0  # 除以10还原实际值
                     
-                    # 额定功率：地址4(低16位) + 地址5(高16位)
+                    # 额定功率：IR 4，单位 0.1 kW（仅加载拓扑/属性编辑时更新）
                     rated_power_raw = power_result.registers[4]
-                    data['rated_power'] = rated_power_raw # 除以10还原实际值
+                    data['rated_power'] = rated_power_raw / 10.0
                     
                     # 枪状态（单16位值）
                     data['gun1_status'] = gun_result.registers[0]  # 枪1状态
@@ -130,7 +130,7 @@ def main():
     print("📊 开始监控... 按 Ctrl+C 停止")
     print()
     
-    multi_client = MultiChargerClient(base_port=702, charger_count=4)
+    multi_client = MultiChargerClient(base_port=702+10000, charger_count=1)
     
     try:
         if not multi_client.connect_all_chargers():
