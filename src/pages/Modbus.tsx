@@ -112,7 +112,8 @@ export default function Modbus() {
           remoteControlAllowed: true,
           ipAddress: device.ip,
           port: device.port,
-          slaveId: index + 1,
+          // 当前后端仅按端口区分设备，未真正使用从站ID，这里统一默认 1，避免递增编号造成误解
+          slaveId: 1,
           registers,
         };
       }
@@ -278,8 +279,8 @@ export default function Modbus() {
                       <input type="number" value={selectedConfig.port} onChange={(e) => updateConfig(selectedDevice!, { port: Number(e.target.value) })} className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-sm" />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">从站ID</label>
-                      <input type="number" value={selectedConfig.slaveId} onChange={(e) => updateConfig(selectedDevice!, { slaveId: Number(e.target.value) })} className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-sm" />
+                      <label className="block text-xs text-gray-600 mb-1" title="当前服务端按端口区分设备，未校验从站ID；客户端请求时通常使用 1">从站ID</label>
+                      <input type="number" min={1} max={255} value={selectedConfig.slaveId} onChange={(e) => updateConfig(selectedDevice!, { slaveId: Number(e.target.value) || 1 })} className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-sm" />
                     </div>
                   </div>
                 </div>

@@ -11,9 +11,14 @@ use crate::services::modbus::ModbusService;
 pub struct StartModbusConfig {
     pub ip_address: String,
     pub port: u16,
-    #[serde(default)]
+    /// 从站 ID（Unit ID）：当前后端未使用，每设备独立端口，客户端通常用 1；默认 1
+    #[serde(default = "default_slave_id")]
     pub slave_id: u8,
     pub registers: Option<Vec<ModbusRegisterEntry>>,
+}
+
+fn default_slave_id() -> u8 {
+    1
 }
 
 #[tauri::command]
