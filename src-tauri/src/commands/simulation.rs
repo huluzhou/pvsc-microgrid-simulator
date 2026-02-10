@@ -176,6 +176,23 @@ pub async fn update_device_properties_for_simulation(
         .await
 }
 
+/// 更新开关状态（同时更新 Python 仿真、Rust 元数据与拓扑，保证再次打开面板时显示实际状态）
+#[tauri::command]
+pub async fn update_switch_state(
+    device_id: String,
+    is_closed: bool,
+    engine: State<'_, Arc<SimulationEngine>>,
+    metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
+) -> Result<(), String> {
+    engine.update_switch_state(device_id.clone(), is_closed).await?;
+    // 同步更新元数据中的 is_closed，使 get_all_devices 与再次打开开关面板时显示实际状态
+    if let Some(mut device) = metadata_store.lock().unwrap().get_device(&device_id) {
+        device.properties.insert("is_closed".to_string(), serde_json::json!(is_closed));
+        metadata_store.lock().unwrap().update_device(device)?;
+    }
+    Ok(())
+}
+
 /// 读取 SQLite 数据库中的设备列表（device_data 表中的 distinct device_id）
 #[tauri::command]
 pub async fn list_sqlite_devices(file_path: String) -> Result<Vec<String>, String> {

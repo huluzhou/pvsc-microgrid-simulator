@@ -231,6 +231,38 @@ class SimulationEngine:
             "max_power": float(max_power),
         }
 
+    def update_switch_state(self, device_id: str, is_closed: bool) -> None:
+        """
+        更新开关的闭合/断开状态，同时更新 topology_data 和 pandapower 网络。
+        """
+        if not self.topology_data:
+            return
+        
+        # 更新 topology_data 中的 properties
+        devices = self.topology_data.get("devices", {})
+        if isinstance(devices, list):
+            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
+        else:
+            devices_dict = devices
+        
+        device = devices_dict.get(device_id)
+        if not device:
+            return
+        
+        props = device.setdefault("properties", {})
+        props["is_closed"] = is_closed
+        
+        # 更新 pandapower 网络中的开关状态
+        if self.cached_network and self.cached_device_map:
+            device_map = self.cached_device_map.get("switches", {})
+            switch_idx = device_map.get(device_id)
+            if switch_idx is not None:
+                try:
+                    # pandapower 网络中 switch 表的 closed 列控制开关状态
+                    self.cached_network.switch.at[switch_idx, "closed"] = is_closed
+                except Exception as e:
+                    print(f"更新开关 {device_id} 状态失败: {e}")
+
     def _parse_power_from_properties(self, properties: Dict[str, Any]) -> Optional[tuple]:
         """从 properties 解析 (p_kw, q_kvar)，无功率字段时返回 None。"""
         if "rated_power" in properties:

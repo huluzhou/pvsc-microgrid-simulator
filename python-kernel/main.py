@@ -134,6 +134,14 @@ class PythonKernel:
                 return {"status": "ok"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
+        elif method == "simulation.update_switch_state":
+            device_id = params.get("device_id")
+            is_closed = params.get("is_closed", True)
+            try:
+                self.simulation_engine.update_switch_state(device_id, is_closed)
+                return {"status": "ok"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
         elif method == "simulation.update_device_properties":
             device_id = params.get("device_id")
             properties = params.get("properties") or {}

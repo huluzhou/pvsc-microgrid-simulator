@@ -48,6 +48,9 @@ pub struct DeviceStatus {
     /// 仅储能有值：并离网模式，从 Modbus HR 5095 读取，0=并网 1=离网
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grid_mode: Option<u16>,
+    /// 仅开关有值：开关闭合状态，true=闭合 false=断开
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_closed: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -280,6 +283,17 @@ pub async fn get_all_devices_status(
             None
         };
 
+        // 开关设备：从 device.properties 读取 is_closed，默认 true（闭合）
+        let is_closed = if device.device_type == DeviceType::Switch {
+            Some(
+                device.properties.get("is_closed")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true)
+            )
+        } else {
+            None
+        };
+
         statuses.push(DeviceStatus {
             device_id: device.id.clone(),
             name: device.name.clone(),
@@ -292,6 +306,7 @@ pub async fn get_all_devices_status(
             energy_export_kwh,
             energy_import_kwh,
             energy_total_kwh,
+            is_closed,
             energy_reactive_export_kvarh,
             energy_reactive_import_kvarh,
             grid_mode,
@@ -309,11 +324,16 @@ pub async fn get_device_status(
     engine: State<'_, Arc<SimulationEngine>>,
     modbus: State<'_, ModbusService>,
 ) -> Result<DeviceStatus, String> {
-    let (name, device_type_str, device_type) = {
+    let (name, device_type_str, device_type, is_closed) = {
         let store = metadata_store.lock().unwrap();
         let device = store.get_device(&device_id)
             .ok_or_else(|| format!("Device {} not found", device_id))?;
-        (device.name.clone(), device_type_to_string(&device.device_type), device.device_type.clone())
+        let closed = if device.device_type == DeviceType::Switch {
+            Some(device.properties.get("is_closed").and_then(|v| v.as_bool()).unwrap_or(true))
+        } else {
+            None
+        };
+        (device.name.clone(), device_type_to_string(&device.device_type), device.device_type.clone(), closed)
     };
 
     let (p_active, p_reactive, last_update) = if let Some((t, p_a, p_r)) = engine.get_last_device_power(&device_id) {
@@ -406,5 +426,6 @@ pub async fn get_device_status(
         energy_reactive_export_kvarh,
         energy_reactive_import_kvarh,
         grid_mode,
+        is_closed,
     })
 }

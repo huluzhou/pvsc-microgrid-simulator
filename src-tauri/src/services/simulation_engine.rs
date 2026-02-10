@@ -1360,6 +1360,24 @@ impl SimulationEngine {
         *self.topology.lock().await = Some(topology);
     }
 
+    /// 更新开关状态（同时更新 topology 和 Python 仿真引擎）
+    pub async fn update_switch_state(
+        &self,
+        device_id: String,
+        is_closed: bool,
+    ) -> Result<(), String> {
+        let rpc_params = serde_json::json!({
+            "device_id": device_id,
+            "is_closed": is_closed,
+        });
+        let mut bridge = self.python_bridge.lock().await;
+        bridge
+            .call("simulation.update_switch_state", rpc_params)
+            .await
+            .map_err(|e| format!("更新开关状态失败: {}", e))?;
+        Ok(())
+    }
+
     /// 事件驱动远程控制：将设备属性增量立即写入仿真，下一拍计算即生效。先检查全局与按设备是否允许远程控制。
     pub async fn update_device_properties_for_simulation(
         &self,

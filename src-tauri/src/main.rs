@@ -154,6 +154,7 @@ fn main() {
             commands::simulation::set_remote_control_enabled,
             commands::simulation::set_device_remote_control_enabled,
             commands::simulation::update_device_properties_for_simulation,
+            commands::simulation::update_switch_state,
             commands::simulation::set_device_mode,
             commands::simulation::set_device_random_config,
             commands::simulation::set_device_manual_setpoint,

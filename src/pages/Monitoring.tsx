@@ -37,6 +37,8 @@ interface DeviceStatus {
   energy_reactive_import_kvarh?: number | null;
   /** 仅储能有值：并离网模式，0=并网 1=离网（来自 Modbus HR 5095） */
   grid_mode?: number | null;
+  /** 仅开关有值：闭合状态 */
+  is_closed?: boolean | null;
 }
 
 interface DeviceDataPoint {
@@ -84,7 +86,15 @@ function DeviceIcon({ type, size = 24 }: { type: DeviceType; size?: number }) {
           <line x1="4" y1="14" x2="20" y2="14" stroke={color} strokeWidth="1" />
         </>
       )}
-      {!['static_generator', 'storage', 'load', 'charger', 'external_grid'].includes(type) && (
+      {type === 'switch' && (
+        <>
+          <line x1="6" y1="12" x2="11" y2="12" stroke={color} strokeWidth="2" />
+          <line x1="13" y1="12" x2="18" y2="12" stroke={color} strokeWidth="2" />
+          <circle cx="11" cy="12" r="2" fill={color} />
+          <circle cx="13" cy="12" r="2" fill={color} />
+        </>
+      )}
+      {!['static_generator', 'storage', 'load', 'charger', 'external_grid', 'switch'].includes(type) && (
         <rect x="4" y="4" width="16" height="16" fill="none" stroke={color} strokeWidth="2" />
       )}
     </svg>
@@ -100,6 +110,18 @@ export default function Monitoring() {
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [simulationState, setSimulationState] = useState<'Stopped' | 'Running' | 'Paused'>('Stopped');
+
+  /** 一键切换开关状态 */
+  const handleToggleSwitch = useCallback(async (deviceId: string, currentClosed: boolean) => {
+    try {
+      await invoke('update_switch_state', { deviceId, isClosed: !currentClosed });
+      // 刷新设备列表以获取最新状态
+      const statuses = await invoke<DeviceStatus[]>('get_all_devices_status');
+      setDevices(Array.isArray(statuses) ? statuses : []);
+    } catch (e) {
+      console.error('切换开关状态失败:', e);
+    }
+  }, []);
 
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
@@ -311,14 +333,38 @@ export default function Monitoring() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1">
                         <span className={`text-sm font-medium truncate ${isSelected ? 'text-white' : 'text-gray-800'}`}>{device.name}</span>
-                        {device.is_online ? (
+                        {device.device_type === 'switch' ? (
+                          <span className={`text-xs px-1 rounded ${device.is_closed !== false
+                            ? (isSelected ? 'bg-green-300 text-green-800' : 'bg-green-100 text-green-700')
+                            : (isSelected ? 'bg-red-300 text-red-800' : 'bg-red-100 text-red-700')}`}>
+                            {device.is_closed !== false ? '闭合' : '断开'}
+                          </span>
+                        ) : device.is_online ? (
                           <CheckCircle className={`w-3 h-3 ${isSelected ? 'text-green-200' : 'text-green-500'}`} />
                         ) : (
                           <XCircle className={`w-3 h-3 ${isSelected ? 'text-red-200' : 'text-red-500'}`} />
                         )}
                       </div>
-                      <div className={`text-xs ${isSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                        {DEVICE_TYPES[device.device_type]?.name ?? device.device_type}
+                      <div className="flex items-center gap-1">
+                        <span className={`text-xs ${isSelected ? 'text-blue-100' : 'text-gray-500'}`}>
+                          {DEVICE_TYPES[device.device_type]?.name ?? device.device_type}
+                        </span>
+                        {device.device_type === 'switch' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleSwitch(device.device_id, device.is_closed !== false);
+                            }}
+                            className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
+                              device.is_closed !== false
+                                ? (isSelected ? 'bg-red-400 text-white hover:bg-red-300' : 'bg-red-100 text-red-700 hover:bg-red-200')
+                                : (isSelected ? 'bg-green-400 text-white hover:bg-green-300' : 'bg-green-100 text-green-700 hover:bg-green-200')
+                            }`}
+                            title={device.is_closed !== false ? '点击断开开关' : '点击闭合开关'}
+                          >
+                            {device.is_closed !== false ? '断开' : '闭合'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -9,9 +9,10 @@ import ManualSetpointForm from '../components/device-control/ManualSetpointForm'
 import RandomConfigForm from '../components/device-control/RandomConfigForm';
 import HistoricalConfigForm from '../components/device-control/HistoricalConfigForm';
 import SimParamsForm from '../components/device-control/SimParamsForm';
+import SwitchControl from '../components/device-control/SwitchControl';
 import { useDeviceControlStore } from '../stores/deviceControl';
 import { DeviceType } from '../constants/deviceTypes';
-import { DataSourceType, ManualSetpoint, DeviceControlConfig, HistoricalConfig, DeviceSimParams } from '../types/dataSource';
+import { DataSourceType, ManualSetpoint, DeviceControlConfig, HistoricalConfig, DeviceSimParams, RandomConfig } from '../types/dataSource';
 
 interface DeviceInfo {
   id: string;
@@ -21,8 +22,9 @@ interface DeviceInfo {
   properties?: Record<string, unknown>;
 }
 
-// 设备控制不包含外部电网（外部电网不需用户控制）
+// 设备控制：功率设备 + 开关，不包含外部电网（外部电网不需用户控制）
 const POWER_DEVICE_TYPES: DeviceType[] = ['static_generator', 'storage', 'load', 'charger'];
+const CONTROLLABLE_DEVICE_TYPES: DeviceType[] = [...POWER_DEVICE_TYPES, 'switch'];
 
 /** 从设备属性取额定功率（kW），用于手动设定滑块范围。储能用 max_power_kw，其余用 rated_power_kw */
 function getRatedPowerKw(device: DeviceInfo): number | undefined {
@@ -41,7 +43,7 @@ export default function DeviceControl() {
   const [modbusDevices, setModbusDevices] = useState<Array<{ id: string; name: string; device_type: string; ip: string; port: number }>>([]);
   const [runningModbusIds, setRunningModbusIds] = useState<string[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<DeviceInfo | null>(null);
-  const [configMode, setConfigMode] = useState<DataSourceType | 'sim_params' | null>(null);
+  const [configMode, setConfigMode] = useState<DataSourceType | 'sim_params' | 'switch' | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const { deviceConfigs, deviceSimParams, selectedDeviceIds, setSelectedDevices, setDataSourceType, setManualSetpoint, setRandomConfig, setHistoricalConfig, setDeviceSimParams, batchSetDataSource } = useDeviceControlStore();
@@ -107,7 +109,7 @@ export default function DeviceControl() {
         invoke<string[]>('get_running_modbus_device_ids').catch(() => []),
       ]);
       const powerDevices: DeviceInfo[] = devicesMetadata
-        .filter((d) => POWER_DEVICE_TYPES.includes(d.device_type as DeviceType))
+        .filter((d) => CONTROLLABLE_DEVICE_TYPES.includes(d.device_type as DeviceType))
         .map((d) => ({
           id: d.id,
           name: d.name,
@@ -122,7 +124,7 @@ export default function DeviceControl() {
       try {
         const topologyData = await invoke<{ devices: Array<{ id: string; name: string; device_type: string; properties?: Record<string, unknown> }> }>('load_topology', { path: 'topology.json' });
         const powerDevices: DeviceInfo[] = (topologyData.devices ?? [])
-          .filter((d) => POWER_DEVICE_TYPES.includes(d.device_type as DeviceType))
+          .filter((d) => CONTROLLABLE_DEVICE_TYPES.includes(d.device_type as DeviceType))
           .map((d) => ({
             id: d.id,
             name: d.name,
@@ -198,8 +200,13 @@ export default function DeviceControl() {
 
   const handleConfigureDevice = useCallback((device: DeviceInfo) => {
     setSelectedDevice(device);
-    const config = deviceConfigs[device.id];
-    setConfigMode(config?.dataSourceType || 'manual');
+    // 开关设备默认使用开关控制模式，其他设备使用手动设定
+    if (device.deviceType === 'switch') {
+      setConfigMode('switch');
+    } else {
+      const config = deviceConfigs[device.id];
+      setConfigMode(config?.dataSourceType || 'manual');
+    }
   }, [deviceConfigs]);
 
   const handleCloseConfig = useCallback(() => {
@@ -233,7 +240,7 @@ export default function DeviceControl() {
   }, [selectedDevice, setManualSetpoint, handleCloseConfig]);
 
   const handleSaveRandom = useCallback(
-    async (config: { minPower: number; maxPower: number; updateInterval?: number; volatility?: number }) => {
+    async (config: RandomConfig) => {
       if (!selectedDevice) return;
       setRandomConfig(selectedDevice.id, config);
       try {
@@ -283,6 +290,41 @@ export default function DeviceControl() {
       handleCloseConfig();
     },
     [selectedDevice, setDeviceSimParams, handleCloseConfig]
+  );
+
+  /** 表格中开关设备一键切换（不打开侧面板） */
+  const handleToggleSwitchInline = useCallback(
+    async (deviceId: string, isClosed: boolean) => {
+      try {
+        await invoke('update_switch_state', { deviceId, isClosed });
+        await loadDevices();
+      } catch (e) {
+        console.error('切换开关状态失败:', e);
+        alert('操作失败: ' + e);
+      }
+    },
+    [loadDevices]
+  );
+
+  const handleSaveSwitch = useCallback(
+    async (isClosed: boolean) => {
+      if (!selectedDevice) return;
+      try {
+        // 调用专用的开关状态更新方法，同时更新 topology 和 pandapower 网络
+        await invoke('update_switch_state', {
+          deviceId: selectedDevice.id,
+          isClosed,
+        });
+        // 刷新设备列表以更新开关状态
+        await loadDevices();
+      } catch (e) {
+        console.error('更新开关状态失败:', e);
+        alert('操作失败: ' + e);
+        return;
+      }
+      handleCloseConfig();
+    },
+    [selectedDevice, handleCloseConfig, loadDevices]
   );
 
   /** 批量设置数据源：先更新 store，再逐个同步到后端（热切换） */
@@ -374,6 +416,7 @@ export default function DeviceControl() {
             modbusDeviceIds={modbusDevices.map((d) => d.id)}
             runningModbusIds={runningModbusIds}
             onToggleModbus={handleToggleModbus}
+            onToggleSwitch={handleToggleSwitchInline}
           />
         </div>
       </div>
@@ -382,22 +425,33 @@ export default function DeviceControl() {
       {selectedDevice && configMode && (
         <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
           <div className="px-3 py-2 border-b border-gray-200">
-            <div className="flex gap-1">
-              <button onClick={() => setConfigMode('manual')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'manual' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                <Zap className="w-3 h-3 inline mr-1" />手动
-              </button>
-              <button onClick={() => setConfigMode('random')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'random' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                <Dice5 className="w-3 h-3 inline mr-1" />随机
-              </button>
-              <button onClick={() => setConfigMode('historical')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'historical' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                <History className="w-3 h-3 inline mr-1" />历史
-              </button>
-              <button onClick={() => setConfigMode('sim_params')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'sim_params' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                <Settings className="w-3 h-3 inline mr-1" />参数
-              </button>
-            </div>
+            {selectedDevice.deviceType === 'switch' ? (
+              <div className="text-sm font-medium text-gray-700">开关控制</div>
+            ) : (
+              <div className="flex gap-1">
+                <button onClick={() => setConfigMode('manual')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'manual' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  <Zap className="w-3 h-3 inline mr-1" />手动
+                </button>
+                <button onClick={() => setConfigMode('random')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'random' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  <Dice5 className="w-3 h-3 inline mr-1" />随机
+                </button>
+                <button onClick={() => setConfigMode('historical')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'historical' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  <History className="w-3 h-3 inline mr-1" />历史
+                </button>
+                <button onClick={() => setConfigMode('sim_params')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'sim_params' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  <Settings className="w-3 h-3 inline mr-1" />参数
+                </button>
+              </div>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto p-3">
+            {configMode === 'switch' && (
+              <SwitchControl
+                initialClosed={selectedDevice.properties?.is_closed !== false}
+                onSave={handleSaveSwitch}
+                onCancel={handleCloseConfig}
+              />
+            )}
             {configMode === 'manual' && (
               <ManualSetpointForm
                 deviceName={selectedDevice.name}
