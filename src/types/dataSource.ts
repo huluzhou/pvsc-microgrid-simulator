@@ -38,15 +38,29 @@ export interface LoadCalculation {
   chargerPower?: ColumnSource;  // 充电桩功率列(可选)
 }
 
+// 历史数据源类型
+export type HistoricalSourceType = 'csv' | 'sqlite';
+
 // 历史数据源配置
 export interface HistoricalConfig {
-  filePath: string;         // CSV文件路径
-  timeColumn: string;       // 时间列名
-  timeFormat: string;       // 时间格式 (如 %Y-%m-%d %H:%M:%S)
-  powerColumn?: ColumnSource;    // 功率数据列(直接使用)
-  loadCalculation?: LoadCalculation;  // 负载计算配置(用于负载设备)
+  sourceType: HistoricalSourceType;  // 数据源类型
+  filePath: string;         // 文件路径（CSV 或 SQLite）
+  timeColumn: string;       // 时间列名（CSV 用）
+  timeFormat: string;       // 时间格式 (如 %Y-%m-%d %H:%M:%S)（CSV 用）
+  powerColumn?: ColumnSource;    // 功率数据列(直接使用，CSV 非负载设备)
+  loadCalculation?: LoadCalculation;  // 负载计算配置(用于负载设备，CSV)
+  sourceDeviceId?: string;  // SQLite 中的源设备 ID
+  startTime?: number;       // 数据起始时间（Unix 秒）
+  endTime?: number;         // 数据结束时间（Unix 秒）
   playbackSpeed: number;    // 回放速度倍率
   loop: boolean;            // 是否循环播放
+}
+
+// 设备级仿真参数
+export interface DeviceSimParams {
+  samplingIntervalMs: number;     // 采集频率（毫秒），0 = 每步更新
+  responseDelayMs: number;        // 响应延迟（毫秒），0 = 无延迟
+  measurementErrorPct: number;    // 测量误差百分比，0 = 无误差
 }
 
 // 设备控制配置

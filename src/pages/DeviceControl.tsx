@@ -3,14 +3,15 @@
  */
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Zap, Dice5, History, RefreshCw } from 'lucide-react';
+import { Zap, Dice5, History, RefreshCw, Settings } from 'lucide-react';
 import DeviceControlTable from '../components/device-control/DeviceControlTable';
 import ManualSetpointForm from '../components/device-control/ManualSetpointForm';
 import RandomConfigForm from '../components/device-control/RandomConfigForm';
 import HistoricalConfigForm from '../components/device-control/HistoricalConfigForm';
+import SimParamsForm from '../components/device-control/SimParamsForm';
 import { useDeviceControlStore } from '../stores/deviceControl';
 import { DeviceType } from '../constants/deviceTypes';
-import { DataSourceType, ManualSetpoint, DeviceControlConfig, HistoricalConfig } from '../types/dataSource';
+import { DataSourceType, ManualSetpoint, DeviceControlConfig, HistoricalConfig, DeviceSimParams } from '../types/dataSource';
 
 interface DeviceInfo {
   id: string;
@@ -40,10 +41,10 @@ export default function DeviceControl() {
   const [modbusDevices, setModbusDevices] = useState<Array<{ id: string; name: string; device_type: string; ip: string; port: number }>>([]);
   const [runningModbusIds, setRunningModbusIds] = useState<string[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<DeviceInfo | null>(null);
-  const [configMode, setConfigMode] = useState<DataSourceType | null>(null);
+  const [configMode, setConfigMode] = useState<DataSourceType | 'sim_params' | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const { deviceConfigs, selectedDeviceIds, setSelectedDevices, setDataSourceType, setManualSetpoint, setRandomConfig, setHistoricalConfig, batchSetDataSource } = useDeviceControlStore();
+  const { deviceConfigs, deviceSimParams, selectedDeviceIds, setSelectedDevices, setDataSourceType, setManualSetpoint, setRandomConfig, setHistoricalConfig, setDeviceSimParams, batchSetDataSource } = useDeviceControlStore();
 
   /** 将单设备数据源配置同步到仿真后端（仿真运行中热切换生效） */
   const syncDeviceDataSourceToBackend = useCallback(async (deviceId: string, type: DataSourceType, config: DeviceControlConfig | undefined) => {
@@ -267,6 +268,23 @@ export default function DeviceControl() {
     [selectedDevice, setHistoricalConfig, syncDeviceDataSourceToBackend, handleCloseConfig]
   );
 
+  const handleSaveSimParams = useCallback(
+    async (params: DeviceSimParams) => {
+      if (!selectedDevice) return;
+      setDeviceSimParams(selectedDevice.id, params);
+      try {
+        await invoke('set_device_sim_params', {
+          deviceId: selectedDevice.id,
+          params,
+        });
+      } catch (e) {
+        console.warn('同步仿真参数到后端失败:', selectedDevice.id, e);
+      }
+      handleCloseConfig();
+    },
+    [selectedDevice, setDeviceSimParams, handleCloseConfig]
+  );
+
   /** 批量设置数据源：先更新 store，再逐个同步到后端（热切换） */
   const handleBatchSetDataSource = useCallback(
     async (type: DataSourceType) => {
@@ -374,6 +392,9 @@ export default function DeviceControl() {
               <button onClick={() => setConfigMode('historical')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'historical' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                 <History className="w-3 h-3 inline mr-1" />历史
               </button>
+              <button onClick={() => setConfigMode('sim_params')} className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${configMode === 'sim_params' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                <Settings className="w-3 h-3 inline mr-1" />参数
+              </button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3">
@@ -388,6 +409,7 @@ export default function DeviceControl() {
             )}
             {configMode === 'random' && <RandomConfigForm deviceName={selectedDevice.name} initialValue={deviceConfigs[selectedDevice.id]?.randomConfig} onSave={handleSaveRandom} onCancel={handleCloseConfig} />}
             {configMode === 'historical' && <HistoricalConfigForm deviceName={selectedDevice.name} deviceType={selectedDevice.deviceType} initialValue={deviceConfigs[selectedDevice.id]?.historicalConfig} onSave={handleSaveHistorical} onCancel={handleCloseConfig} />}
+            {configMode === 'sim_params' && <SimParamsForm deviceName={selectedDevice.name} initialValue={deviceSimParams[selectedDevice.id]} onSave={handleSaveSimParams} onCancel={handleCloseConfig} />}
           </div>
         </div>
       )}

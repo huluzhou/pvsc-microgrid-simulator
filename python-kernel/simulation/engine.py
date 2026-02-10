@@ -51,8 +51,19 @@ class SimulationEngine:
         self.device_manual_setpoint: Dict[str, Dict[str, float]] = {}
         # 远程控制设定（如 Modbus 写入）：device_id -> {"p_kw": float, "q_kvar": float}，最后应用以覆盖随机/历史
         self.device_remote_setpoint: Dict[str, Dict[str, float]] = {}
-        # 历史模式配置占位：device_id -> config dict，具体字段与回放逻辑后期给定
+        # 历史模式配置：device_id -> config dict
         self.device_historical_config: Dict[str, Dict[str, Any]] = {}
+        # 历史数据 Provider 缓存：device_id -> HistoricalDataProvider 实例
+        self.device_historical_providers: Dict[str, Any] = {}
+        # 历史回放已用时间（秒）：device_id -> elapsed_seconds（按 playbackSpeed 累积）
+        self.device_historical_elapsed: Dict[str, float] = {}
+
+        # 设备级仿真参数：device_id -> {"samplingIntervalMs", "responseDelayMs", "measurementErrorPct"}
+        self.device_sim_params: Dict[str, Dict[str, float]] = {}
+        # 设备响应延迟 pending 队列：device_id -> [{target_props, apply_at}]
+        self.device_pending_commands: Dict[str, List[Dict[str, Any]]] = {}
+        # 仿真累计时间（秒），每步累加
+        self.sim_elapsed_seconds: float = 0.0
     
     def set_topology(self, topology_data: Dict[str, Any], kernel_type: str = "pandapower"):
         """
@@ -79,6 +90,11 @@ class SimulationEngine:
         self.device_manual_setpoint.clear()
         self.device_remote_setpoint.clear()
         self.device_historical_config.clear()
+        self.device_historical_providers.clear()
+        self.device_historical_elapsed.clear()
+        self.device_sim_params.clear()
+        self.device_pending_commands.clear()
+        self.sim_elapsed_seconds = 0.0
 
         # 使用工厂同时创建计算内核和适配器（如果可用）
         try:
@@ -175,9 +191,31 @@ class SimulationEngine:
 
     def set_device_historical_config(self, device_id: str, config: Dict[str, Any]) -> None:
         """
-        设置历史模式设备配置（占位）。具体字段与回放逻辑后期给定，当前仅存储。
+        设置历史模式设备配置并创建 Provider 实例。
+        config 中 sourceType='csv'|'sqlite'，filePath 等字段传给 Provider。
         """
+        from .historical_data import create_provider
         self.device_historical_config[device_id] = dict(config) if config else {}
+        self.device_historical_elapsed[device_id] = 0.0
+        if config:
+            provider = create_provider(config)
+            if provider:
+                self.device_historical_providers[device_id] = provider
+            else:
+                self.device_historical_providers.pop(device_id, None)
+        else:
+            self.device_historical_providers.pop(device_id, None)
+
+    def set_device_sim_params(self, device_id: str, params: Dict[str, Any]) -> None:
+        """
+        设置设备级仿真参数。
+        params: {"samplingIntervalMs": float, "responseDelayMs": float, "measurementErrorPct": float}
+        """
+        self.device_sim_params[device_id] = {
+            "samplingIntervalMs": float(params.get("samplingIntervalMs", 0)),
+            "responseDelayMs": float(params.get("responseDelayMs", 0)),
+            "measurementErrorPct": float(params.get("measurementErrorPct", 0)),
+        }
 
     def set_device_random_config(self, device_id: str, min_power: float, max_power: float) -> None:
         """
@@ -220,6 +258,17 @@ class SimulationEngine:
         devices_dict = {d.get("id", ""): d for d in devices if d.get("id")} if isinstance(devices, list) else devices
         if device_id not in devices_dict:
             return
+
+        # 响应延迟：如果该设备配置了 responseDelayMs > 0，将属性放入 pending 队列延迟生效
+        delay_ms = self.device_sim_params.get(device_id, {}).get("responseDelayMs", 0)
+        if delay_ms > 0:
+            apply_at = self.sim_elapsed_seconds + delay_ms / 1000.0
+            self.device_pending_commands.setdefault(device_id, []).append({
+                "target_props": dict(properties),
+                "apply_at": apply_at,
+            })
+            return  # 延迟生效，不立即写入
+
         device = devices_dict[device_id]
         props = device.setdefault("properties", {})
         # 有功功率限制与百分比限制互斥：只响应最新一条，写入一种时清除另一种
@@ -531,6 +580,15 @@ class SimulationEngine:
             if hasattr(self.topology_adapter, 'get_device_map'):
                 self.cached_device_map = self.topology_adapter.get_device_map()
         
+        # 仿真时间累加（秒），用于历史回放和响应延迟
+        dt_sec = self.calculation_interval_ms / 1000.0
+        self.sim_elapsed_seconds += dt_sec
+        # 累加历史回放已用时间（乘以 playbackSpeed）
+        for device_id, cfg in self.device_historical_config.items():
+            speed = float(cfg.get("playbackSpeed", 1))
+            self.device_historical_elapsed[device_id] = self.device_historical_elapsed.get(device_id, 0.0) + dt_sec * speed
+        # 处理响应延迟 pending 队列：到时间的命令写入 properties
+        self._flush_pending_commands()
         # 第1阶段：应用三类原始数据源（手动 -> 随机 -> 历史）
         self._apply_device_power_sources()
         # 第2阶段：应用 Modbus 远程控制指令（set_power + 限制过滤）
@@ -588,6 +646,10 @@ class SimulationEngine:
                 else:
                     print("检测到计算未收敛，已自动暂停仿真")
             
+            # 第5阶段：潮流计算后按设备叠加测量误差到 properties（噪声不影响潮流本身）
+            if converged:
+                self._apply_measurement_noise()
+
             return {
                 "converged": converged,
                 "errors": errors,
@@ -757,10 +819,94 @@ class SimulationEngine:
 
     def _apply_historical_power_values(self) -> None:
         """
-        历史模式设备：按仿真时间从历史数据取功率并写 properties。实现细节后期给定，当前占位不写。
+        历史模式设备：按仿真已用时间从 Provider 取功率并写 properties。
+        playbackSpeed 在累积 elapsed 时已乘入（perform_calculation 中累加）。
         """
-        # 占位：后期根据 device_historical_config 与当前仿真时间/步数实现回放
-        pass
+        if not self.topology_data or not self.device_historical_providers:
+            return
+        devices = self.topology_data.get("devices", {})
+        if isinstance(devices, list):
+            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
+        else:
+            devices_dict = devices
+        for device_id, provider in self.device_historical_providers.items():
+            if self.device_modes.get(device_id) != "historical_data":
+                continue
+            device = devices_dict.get(device_id)
+            if not device:
+                continue
+            elapsed = self.device_historical_elapsed.get(device_id, 0.0)
+            p_kw, q_kvar = provider.get_power_at(elapsed)
+            props = device.setdefault("properties", {})
+            props["p_kw"] = p_kw
+            props["q_kvar"] = q_kvar
+
+    def _flush_pending_commands(self) -> None:
+        """
+        处理响应延迟 pending 队列：将到期的命令写入设备 properties。
+        """
+        if not self.device_pending_commands or not self.topology_data:
+            return
+        devices = self.topology_data.get("devices", {})
+        if isinstance(devices, list):
+            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
+        else:
+            devices_dict = devices
+        now = self.sim_elapsed_seconds
+        for device_id in list(self.device_pending_commands.keys()):
+            queue = self.device_pending_commands[device_id]
+            remaining = []
+            for item in queue:
+                if item["apply_at"] <= now:
+                    device = devices_dict.get(device_id)
+                    if device:
+                        props = device.setdefault("properties", {})
+                        target = item["target_props"]
+                        # 互斥逻辑（与 update_device_properties 保持一致）
+                        if "power_limit_raw" in target:
+                            props.pop("power_limit_pct", None)
+                        if "power_limit_pct" in target:
+                            props.pop("power_limit_raw", None)
+                        if "power_factor" in target:
+                            props.pop("reactive_comp_pct", None)
+                        if "reactive_comp_pct" in target:
+                            props.pop("power_factor", None)
+                        props.update(target)
+                else:
+                    remaining.append(item)
+            if remaining:
+                self.device_pending_commands[device_id] = remaining
+            else:
+                del self.device_pending_commands[device_id]
+
+    def _apply_measurement_noise(self) -> None:
+        """
+        第5阶段：潮流计算后，按设备叠加测量误差到 properties.p_kw / q_kvar。
+        误差为 Gaussian 随机扰动，标准差 = |value| * measurementErrorPct / 100。
+        这样 Modbus 寄存器和前端元数据都自动带上噪声。
+        """
+        if not self.device_sim_params or not self.topology_data:
+            return
+        devices = self.topology_data.get("devices", {})
+        if isinstance(devices, list):
+            devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
+        else:
+            devices_dict = devices
+        for device_id, params in self.device_sim_params.items():
+            error_pct = params.get("measurementErrorPct", 0)
+            if error_pct <= 0:
+                continue
+            device = devices_dict.get(device_id)
+            if not device:
+                continue
+            props = device.get("properties", {})
+            p_kw = float(props.get("p_kw", 0.0))
+            q_kvar = float(props.get("q_kvar", 0.0))
+            sigma_ratio = error_pct / 100.0
+            if p_kw != 0:
+                props["p_kw"] = p_kw * (1 + random.gauss(0, sigma_ratio))
+            if q_kvar != 0:
+                props["q_kvar"] = q_kvar * (1 + random.gauss(0, sigma_ratio))
 
     def _update_network_power_values(self):
         """
@@ -872,6 +1018,11 @@ class SimulationEngine:
         self.device_manual_setpoint.clear()
         self.device_remote_setpoint.clear()
         self.device_historical_config.clear()
+        self.device_historical_providers.clear()
+        self.device_historical_elapsed.clear()
+        self.device_sim_params.clear()
+        self.device_pending_commands.clear()
+        self.sim_elapsed_seconds = 0.0
 
         # 等待计算线程结束
         if self.calculation_thread and self.calculation_thread.is_alive():

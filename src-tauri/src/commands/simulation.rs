@@ -5,6 +5,7 @@ use crate::services::simulation_engine::SimulationEngine;
 use crate::domain::simulation::{SimulationStatus, SimulationError};
 use crate::domain::metadata::DeviceMetadataStore;
 use std::sync::{Arc, Mutex};
+use rusqlite::Connection;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SimulationConfig {
@@ -118,6 +119,15 @@ pub async fn set_device_historical_config(
 }
 
 #[tauri::command]
+pub async fn set_device_sim_params(
+    device_id: String,
+    params: serde_json::Value,
+    engine: State<'_, Arc<SimulationEngine>>,
+) -> Result<(), String> {
+    engine.set_device_sim_params(device_id, params).await
+}
+
+#[tauri::command]
 pub async fn get_device_data(
     device_id: String,
     engine: State<'_, Arc<SimulationEngine>>,
@@ -164,4 +174,51 @@ pub async fn update_device_properties_for_simulation(
     engine
         .update_device_properties_for_simulation(device_id, properties)
         .await
+}
+
+/// 读取 SQLite 数据库中的设备列表（device_data 表中的 distinct device_id）
+#[tauri::command]
+pub async fn list_sqlite_devices(file_path: String) -> Result<Vec<String>, String> {
+    let conn = Connection::open(&file_path)
+        .map_err(|e| format!("无法打开 SQLite 文件: {}", e))?;
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT device_id FROM device_data ORDER BY device_id")
+        .map_err(|e| format!("查询失败: {}", e))?;
+    let devices: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .map_err(|e| format!("查询失败: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(devices)
+}
+
+/// 获取 SQLite/CSV 中指定设备的时间范围（返回 Unix 秒 [min, max]）
+#[tauri::command]
+pub async fn get_historical_time_range(
+    file_path: String,
+    source_type: String,
+    source_device_id: Option<String>,
+) -> Result<(f64, f64), String> {
+    match source_type.as_str() {
+        "sqlite" => {
+            let conn = Connection::open(&file_path)
+                .map_err(|e| format!("无法打开 SQLite 文件: {}", e))?;
+            let sql = if let Some(ref did) = source_device_id {
+                format!(
+                    "SELECT MIN(timestamp), MAX(timestamp) FROM device_data WHERE device_id = '{}'",
+                    did.replace('\'', "''")
+                )
+            } else {
+                "SELECT MIN(timestamp), MAX(timestamp) FROM device_data".to_string()
+            };
+            let (t_min, t_max): (f64, f64) = conn
+                .query_row(&sql, [], |row| Ok((row.get(0)?, row.get(1)?)))
+                .map_err(|e| format!("查询时间范围失败: {}", e))?;
+            Ok((t_min, t_max))
+        }
+        _ => {
+            // CSV: 需要遍历文件读取时间列，这里暂返回占位，前端可根据文件内容做预览
+            Err("CSV 时间范围查询请在前端解析".to_string())
+        }
+    }
 }

@@ -35,6 +35,8 @@ pub struct SimulationEngine {
     calculation_loop_started: Arc<AtomicBool>,
     /// 停止时发送一次，让计算循环退出（停止时真正结束循环，避免空转）
     cancel_tx: Arc<tokio::sync::Mutex<Option<mpsc::Sender<()>>>>,
+    /// 设备级仿真参数（采集频率 samplingIntervalMs 等），用于 Modbus IR 更新节流
+    device_sim_params: Arc<tokio::sync::Mutex<HashMap<String, serde_json::Value>>>,
 }
 
 impl SimulationEngine {
@@ -57,6 +59,7 @@ impl SimulationEngine {
             storage_state: Arc::new(StdMutex::new(HashMap::new())),
             calculation_loop_started: Arc::new(AtomicBool::new(false)),
             cancel_tx: Arc::new(tokio::sync::Mutex::new(None)),
+            device_sim_params: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -275,10 +278,14 @@ impl SimulationEngine {
         let last_device_power = self.last_device_power.clone();
         let storage_state = self.storage_state.clone();
         let calculation_loop_started = self.calculation_loop_started.clone();
+        let device_sim_params = self.device_sim_params.clone();
         
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(calculation_interval_ms));
             let mut calculation_times: Vec<f64> = Vec::new();
+            // 设备级 Modbus 采样间隔节流：device_id -> 上次更新的仿真步计数
+            let mut last_modbus_update_step: HashMap<String, u64> = HashMap::new();
+            let mut step_count: u64 = 0;
             
             loop {
                 tokio::select! {
@@ -435,14 +442,38 @@ impl SimulationEngine {
                                     .as_secs_f64();
                                 
                                 let dt_seconds = calculation_interval_ms as f64 / 1000.0;
+                                step_count += 1;
                                 // 处理并存储计算结果（传入完整拓扑、储能状态与步长；更新功率缓存与储能 SOC/日/累计电量）
                                 Self::process_calculation_results_inline(&app, devices, t, &database, &last_device_power, &storage_state, timestamp, dt_seconds);
                                 // 仿真结果同步到运行中的 Modbus 设备寄存器（v1.5.0 update_* 逻辑）；额定功率等不可变数据仅在加载拓扑启动时写入
+                                // 按设备采样间隔节流：只有当距离上次更新已过采样间隔时才更新该设备的 Modbus IR
                                 if let Some(modbus) = app.try_state::<crate::services::modbus::ModbusService>() {
-                                    let power_snapshot: HashMap<String, (f64, Option<f64>, Option<f64>)> =
+                                    let full_power_snapshot: HashMap<String, (f64, Option<f64>, Option<f64>)> =
                                         last_device_power.lock().unwrap().clone();
+                                    // 按设备过滤：仅保留采样间隔到期的设备
+                                    let sim_params_guard = device_sim_params.lock().await;
+                                    let mut filtered_power: HashMap<String, (f64, Option<f64>, Option<f64>)> = HashMap::new();
+                                    for (did, val) in &full_power_snapshot {
+                                        let sampling_ms = sim_params_guard
+                                            .get(did)
+                                            .and_then(|p| p.get("samplingIntervalMs"))
+                                            .and_then(|v| v.as_f64())
+                                            .unwrap_or(0.0);
+                                        if sampling_ms > 0.0 {
+                                            let interval_steps = (sampling_ms / (calculation_interval_ms as f64)).max(1.0).ceil() as u64;
+                                            let last_step = last_modbus_update_step.get(did).copied().unwrap_or(0);
+                                            if step_count - last_step >= interval_steps {
+                                                filtered_power.insert(did.clone(), val.clone());
+                                                last_modbus_update_step.insert(did.clone(), step_count);
+                                            }
+                                        } else {
+                                            // 无采样间隔限制：每步更新
+                                            filtered_power.insert(did.clone(), val.clone());
+                                        }
+                                    }
+                                    drop(sim_params_guard);
                                     let storage_states = storage_state.lock().unwrap().clone();
-                                    let _ = modbus.update_all_devices_from_simulation(&power_snapshot, dt_seconds, Some(&storage_states)).await;
+                                    let _ = modbus.update_all_devices_from_simulation(&filtered_power, dt_seconds, Some(&storage_states)).await;
                                     // 推送寄存器快照到前端，联动更新 Modbus 页面的寄存器值显示
                                     for device_id in modbus.running_device_ids() {
                                         if let Some((ir, hr)) = modbus.get_device_register_snapshot(&device_id).await {
@@ -1294,6 +1325,30 @@ impl SimulationEngine {
             .call("simulation.set_device_historical_config", params)
             .await
             .map_err(|e| format!("设置设备历史配置失败: {}", e))?;
+        Ok(())
+    }
+
+    /// 设置设备级仿真参数（采集频率/响应延迟/测量误差）；同时写 Rust 端（用于 Modbus IR 节流）和 Python 端（用于延迟/噪声）
+    pub async fn set_device_sim_params(
+        &self,
+        device_id: String,
+        params: serde_json::Value,
+    ) -> Result<(), String> {
+        // 1) 存 Rust 端
+        {
+            let mut m = self.device_sim_params.lock().await;
+            m.insert(device_id.clone(), params.clone());
+        }
+        // 2) 转发 Python 端
+        let mut bridge = self.python_bridge.lock().await;
+        let rpc_params = serde_json::json!({
+            "device_id": device_id,
+            "params": params
+        });
+        bridge
+            .call("simulation.set_device_sim_params", rpc_params)
+            .await
+            .map_err(|e| format!("设置设备仿真参数失败: {}", e))?;
         Ok(())
     }
 

@@ -8,11 +8,15 @@ import {
   ManualSetpoint,
   RandomConfig,
   HistoricalConfig,
+  DeviceSimParams,
 } from '../types/dataSource';
 
 interface DeviceControlState {
   // 设备控制配置
   deviceConfigs: Record<string, DeviceControlConfig>;
+  
+  // 设备级仿真参数
+  deviceSimParams: Record<string, DeviceSimParams>;
   
   // 选中的设备
   selectedDeviceIds: string[];
@@ -23,6 +27,7 @@ interface DeviceControlState {
   setManualSetpoint: (deviceId: string, setpoint: ManualSetpoint) => void;
   setRandomConfig: (deviceId: string, config: RandomConfig) => void;
   setHistoricalConfig: (deviceId: string, config: HistoricalConfig) => void;
+  setDeviceSimParams: (deviceId: string, params: DeviceSimParams) => void;
   
   // 批量操作
   setSelectedDevices: (ids: string[]) => void;
@@ -50,6 +55,7 @@ const defaultManualSetpoint: ManualSetpoint = {
 
 export const useDeviceControlStore = create<DeviceControlState>((set, get) => ({
   deviceConfigs: {},
+  deviceSimParams: {},
   selectedDeviceIds: [],
 
   setDeviceConfig: (deviceId, config) => {
@@ -125,6 +131,15 @@ export const useDeviceControlStore = create<DeviceControlState>((set, get) => ({
     }));
   },
 
+  setDeviceSimParams: (deviceId, params) => {
+    set((state) => ({
+      deviceSimParams: {
+        ...state.deviceSimParams,
+        [deviceId]: params,
+      },
+    }));
+  },
+
   setSelectedDevices: (ids) => {
     set({ selectedDeviceIds: ids });
   },
@@ -147,6 +162,6 @@ export const useDeviceControlStore = create<DeviceControlState>((set, get) => ({
   },
 
   clearAllConfigs: () => {
-    set({ deviceConfigs: {}, selectedDeviceIds: [] });
+    set({ deviceConfigs: {}, deviceSimParams: {}, selectedDeviceIds: [] });
   },
 }));
