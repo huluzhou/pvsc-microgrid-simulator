@@ -25,6 +25,24 @@ function formatTimestamp(ts: number): string {
   return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+/** Unix 秒 → 'YYYY-MM-DD HH:mm' 格式文本 */
+function timestampToText(ts: number): string {
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 'YYYY-MM-DD HH:mm' 或 'YYYY-MM-DD HH:mm:ss' → Unix 秒，解析失败返回 undefined */
+function textToTimestamp(text: string): number | undefined {
+  if (!text.trim()) return undefined;
+  // 尝试解析常见格式
+  const m = text.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
+  if (!m) return undefined;
+  const dt = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], m[6] ? +m[6] : 0);
+  if (isNaN(dt.getTime())) return undefined;
+  return Math.floor(dt.getTime() / 1000);
+}
+
 export default function HistoricalConfigForm({ deviceName, deviceType, initialValue, onSave, onCancel }: HistoricalConfigFormProps) {
   const [sourceType, setSourceType] = useState<HistoricalSourceType>(initialValue?.sourceType ?? 'csv');
   const [filePath, setFilePath] = useState(initialValue?.filePath ?? '');
@@ -35,7 +53,7 @@ export default function HistoricalConfigForm({ deviceName, deviceType, initialVa
   const [sourceDeviceId, setSourceDeviceId] = useState(initialValue?.sourceDeviceId ?? '');
   const [startTime, setStartTime] = useState<number | undefined>(initialValue?.startTime);
   const [endTime, setEndTime] = useState<number | undefined>(initialValue?.endTime);
-  const [playbackSpeed, setPlaybackSpeed] = useState(initialValue?.playbackSpeed ?? 1);
+  const [playbackIntervalMs, setPlaybackIntervalMs] = useState(initialValue?.playbackIntervalMs ?? 1000);
   const [loop, setLoop] = useState(initialValue?.loop ?? true);
   const [showColumnMapping, setShowColumnMapping] = useState(false);
   const [csvColumns] = useState<string[]>([]);
@@ -59,7 +77,12 @@ export default function HistoricalConfigForm({ deviceName, deviceType, initialVa
       setSourceDeviceId(initialValue.sourceDeviceId ?? '');
       setStartTime(initialValue.startTime);
       setEndTime(initialValue.endTime);
-      setPlaybackSpeed(initialValue.playbackSpeed);
+      if (initialValue.playbackIntervalMs) {
+        setPlaybackIntervalMs(initialValue.playbackIntervalMs);
+      } else {
+        const oldSpeed = (initialValue as any).playbackSpeed;
+        setPlaybackIntervalMs(typeof oldSpeed === 'number' && oldSpeed > 0 ? Math.round(1000 * oldSpeed) : 1000);
+      }
       setLoop(initialValue.loop);
     }
   }, [initialValue]);
@@ -148,10 +171,10 @@ export default function HistoricalConfigForm({ deviceName, deviceType, initialVa
       sourceDeviceId: isSqlite ? sourceDeviceId : undefined,
       startTime,
       endTime,
-      playbackSpeed,
+      playbackIntervalMs,
       loop,
     });
-  }, [sourceType, filePath, timeColumn, timeFormat, powerColumn, loadCalculation, sourceDeviceId, startTime, endTime, playbackSpeed, loop, isSqlite, isLoadDevice, onSave]);
+  }, [sourceType, filePath, timeColumn, timeFormat, powerColumn, loadCalculation, sourceDeviceId, startTime, endTime, playbackIntervalMs, loop, isSqlite, isLoadDevice, onSave]);
 
   const isConfigValid = filePath && (isSqlite ? sourceDeviceId : (timeColumn && (isLoadDevice ? loadCalculation?.gridMeter?.columnName : powerColumn?.columnName)));
 
@@ -264,45 +287,72 @@ export default function HistoricalConfigForm({ deviceName, deviceType, initialVa
           </div>
         )}
 
-        {/* 时间范围（SQLite 支持） */}
+        {/* 时间范围（SQLite 支持）：纯文本输入，不使用浏览器原生日期/时间选择器 */}
         {isSqlite && timeRange && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               数据时间范围
-              <span className="ml-2 font-normal text-gray-400">
-                {formatTimestamp(timeRange[0])} ~ {formatTimestamp(timeRange[1])}
-              </span>
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <p className="text-xs text-gray-400 mb-1.5">
+              可选范围：{formatTimestamp(timeRange[0])} ~ {formatTimestamp(timeRange[1])}
+            </p>
+            <div className="space-y-2">
               <div>
-                <label className="block text-xs text-gray-500 mb-0.5">起始</label>
+                <label className="block text-xs text-gray-500 mb-0.5">起始时间</label>
                 <input
-                  type="datetime-local"
-                  value={startTime ? new Date(startTime * 1000).toISOString().slice(0, 16) : ''}
-                  onChange={(e) => setStartTime(e.target.value ? new Date(e.target.value).getTime() / 1000 : undefined)}
-                  className="w-full px-2 py-1 bg-white border border-gray-300 rounded text-xs"
+                  type="text"
+                  placeholder="YYYY-MM-DD HH:mm"
+                  defaultValue={startTime ? timestampToText(startTime) : ''}
+                  onBlur={(e) => {
+                    const ts = textToTimestamp(e.target.value);
+                    if (ts !== undefined) {
+                      setStartTime(ts);
+                    } else if (e.target.value.trim() === '') {
+                      setStartTime(undefined);
+                    }
+                  }}
+                  className="w-full px-2 py-1 bg-white border border-gray-300 rounded text-xs font-mono"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-0.5">结束</label>
+                <label className="block text-xs text-gray-500 mb-0.5">结束时间</label>
                 <input
-                  type="datetime-local"
-                  value={endTime ? new Date(endTime * 1000).toISOString().slice(0, 16) : ''}
-                  onChange={(e) => setEndTime(e.target.value ? new Date(e.target.value).getTime() / 1000 : undefined)}
-                  className="w-full px-2 py-1 bg-white border border-gray-300 rounded text-xs"
+                  type="text"
+                  placeholder="YYYY-MM-DD HH:mm"
+                  defaultValue={endTime ? timestampToText(endTime) : ''}
+                  onBlur={(e) => {
+                    const ts = textToTimestamp(e.target.value);
+                    if (ts !== undefined) {
+                      setEndTime(ts);
+                    } else if (e.target.value.trim() === '') {
+                      setEndTime(undefined);
+                    }
+                  }}
+                  className="w-full px-2 py-1 bg-white border border-gray-300 rounded text-xs font-mono"
                 />
               </div>
             </div>
+            <p className="text-xs text-gray-400 mt-1">格式：YYYY-MM-DD HH:mm，留空使用全部数据</p>
           </div>
         )}
 
-        {/* 回放速度与循环播放 - 修复布局：使回放速度占满宽度，循环播放独立一行 */}
+        {/* 回放间隔（毫秒）：仿真中多久读取下一个历史数据点 */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">回放速度</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1">回放间隔</label>
           <div className="flex items-center gap-2">
-            <input type="range" min="0.1" max="10" step="0.1" value={playbackSpeed} onChange={(e) => setPlaybackSpeed(Number(e.target.value))} className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" />
-            <span className="text-gray-700 w-10 text-xs text-right shrink-0">{playbackSpeed}x</span>
+            <input
+              type="number"
+              value={playbackIntervalMs}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setPlaybackIntervalMs(isNaN(val) || val < 1 ? 1000 : val);
+              }}
+              className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-sm"
+              placeholder="1000"
+            />
+            <span className="text-xs text-gray-500 shrink-0">毫秒</span>
           </div>
+          <p className="text-xs text-gray-400 mt-0.5">仿真中每隔多少毫秒从历史数据读取下一个数据点，如 1000 = 每秒读取一次</p>
         </div>
         <div>
           <label className="flex items-center gap-2 cursor-pointer">

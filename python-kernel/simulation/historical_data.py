@@ -42,6 +42,16 @@ class HistoricalDataProvider(ABC):
     def get_duration(self) -> float:
         """返回数据跨度（秒）。"""
         ...
+    
+    @abstractmethod
+    def get_data_count(self) -> int:
+        """返回数据点总数。"""
+        ...
+    
+    @abstractmethod
+    def get_power_at_index(self, idx: int) -> Tuple[float, float]:
+        """按索引获取功率数据 (p_kw, q_kvar)。"""
+        ...
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +88,12 @@ class _TimeSeries:
             return (0.0, 0.0)
         idx = bisect.bisect_right(self.timestamps, t) - 1
         idx = max(0, min(idx, len(self.timestamps) - 1))
+        return (self.p_values[idx], self.q_values[idx])
+    
+    def get_at_index(self, idx: int) -> Tuple[float, float]:
+        """按索引获取 (p_kw, q_kvar)。"""
+        if not self.timestamps or idx < 0 or idx >= len(self.timestamps):
+            return (0.0, 0.0)
         return (self.p_values[idx], self.q_values[idx])
 
 
@@ -188,6 +204,14 @@ class CsvDataProvider(HistoricalDataProvider):
 
     def get_duration(self) -> float:
         return self._duration
+    
+    def get_data_count(self) -> int:
+        return len(self._series)
+    
+    def get_power_at_index(self, idx: int) -> Tuple[float, float]:
+        if self._loop and len(self._series) > 0:
+            idx = idx % len(self._series)
+        return self._series.get_at_index(idx)
 
     @staticmethod
     def _extract_power(row: Dict[str, str], power_col_cfg, load_calc) -> float:
@@ -314,6 +338,14 @@ class SqliteDataProvider(HistoricalDataProvider):
 
     def get_duration(self) -> float:
         return self._duration
+    
+    def get_data_count(self) -> int:
+        return len(self._series)
+    
+    def get_power_at_index(self, idx: int) -> Tuple[float, float]:
+        if self._loop and len(self._series) > 0:
+            idx = idx % len(self._series)
+        return self._series.get_at_index(idx)
 
     @staticmethod
     def _table_exists(conn: sqlite3.Connection) -> set:

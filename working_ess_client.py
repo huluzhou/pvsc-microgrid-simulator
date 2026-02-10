@@ -92,7 +92,7 @@ class MultiESSClient:
                 # client.write_registers(address=4, values=[(-300*10)&0xFFFF], device_id=1)
                 # client.write_registers(address=4, values=[0], device_id=1)
                 # client.write_registers(address=55, values=[243], device_id=1)
-                # client.write_registers(address=5095, values=[0], device_id=1)  # 并网
+                client.write_registers(address=5095, values=[0], device_id=1)  # 并网
 
                 # 检查所有寄存器的读取结果
                 error_registers = []

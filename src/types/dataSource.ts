@@ -52,7 +52,8 @@ export interface HistoricalConfig {
   sourceDeviceId?: string;  // SQLite 中的源设备 ID
   startTime?: number;       // 数据起始时间（Unix 秒）
   endTime?: number;         // 数据结束时间（Unix 秒）
-  playbackSpeed: number;    // 回放速度倍率
+  /** 回放间隔（毫秒）：仿真中每隔多少毫秒从历史数据读取下一个数据点，如 1000 表示每秒读取一次 */
+  playbackIntervalMs: number;
   loop: boolean;            // 是否循环播放
 }
 

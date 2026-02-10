@@ -55,8 +55,10 @@ class SimulationEngine:
         self.device_historical_config: Dict[str, Dict[str, Any]] = {}
         # 历史数据 Provider 缓存：device_id -> HistoricalDataProvider 实例
         self.device_historical_providers: Dict[str, Any] = {}
-        # 历史回放已用时间（秒）：device_id -> elapsed_seconds（按 playbackSpeed 累积）
-        self.device_historical_elapsed: Dict[str, float] = {}
+        # 历史回放当前索引：device_id -> 当前数据点索引
+        self.device_historical_index: Dict[str, int] = {}
+        # 历史回放上次更新时间（秒）：device_id -> 上次从历史数据读取的仿真时间
+        self.device_historical_last_update: Dict[str, float] = {}
 
         # 设备级仿真参数：device_id -> {"samplingIntervalMs", "responseDelayMs", "measurementErrorPct"}
         self.device_sim_params: Dict[str, Dict[str, float]] = {}
@@ -91,7 +93,8 @@ class SimulationEngine:
         self.device_remote_setpoint.clear()
         self.device_historical_config.clear()
         self.device_historical_providers.clear()
-        self.device_historical_elapsed.clear()
+        self.device_historical_index.clear()
+        self.device_historical_last_update.clear()
         self.device_sim_params.clear()
         self.device_pending_commands.clear()
         self.sim_elapsed_seconds = 0.0
@@ -196,7 +199,8 @@ class SimulationEngine:
         """
         from .historical_data import create_provider
         self.device_historical_config[device_id] = dict(config) if config else {}
-        self.device_historical_elapsed[device_id] = 0.0
+        self.device_historical_index[device_id] = 0
+        self.device_historical_last_update[device_id] = 0.0
         if config:
             provider = create_provider(config)
             if provider:
@@ -583,10 +587,7 @@ class SimulationEngine:
         # 仿真时间累加（秒），用于历史回放和响应延迟
         dt_sec = self.calculation_interval_ms / 1000.0
         self.sim_elapsed_seconds += dt_sec
-        # 累加历史回放已用时间（乘以 playbackSpeed）
-        for device_id, cfg in self.device_historical_config.items():
-            speed = float(cfg.get("playbackSpeed", 1))
-            self.device_historical_elapsed[device_id] = self.device_historical_elapsed.get(device_id, 0.0) + dt_sec * speed
+        # 历史回放采样控制：按 playbackIntervalMs 间隔更新数据索引（见 _apply_historical_power_values）
         # 处理响应延迟 pending 队列：到时间的命令写入 properties
         self._flush_pending_commands()
         # 第1阶段：应用三类原始数据源（手动 -> 随机 -> 历史）
@@ -785,6 +786,9 @@ class SimulationEngine:
         else:
             devices_dict = devices
         for device_id, cfg in self.device_manual_setpoint.items():
+            # 只处理当前模式为 manual 的设备
+            if self.device_modes.get(device_id) != "manual":
+                continue
             device = devices_dict.get(device_id)
             if not device:
                 continue
@@ -807,6 +811,9 @@ class SimulationEngine:
         else:
             devices_dict = devices
         for device_id, cfg in self.device_random_config.items():
+            # 只处理当前模式为 random_data 的设备
+            if self.device_modes.get(device_id) != "random_data":
+                continue
             device = devices_dict.get(device_id)
             if not device:
                 continue
@@ -819,8 +826,8 @@ class SimulationEngine:
 
     def _apply_historical_power_values(self) -> None:
         """
-        历史模式设备：按仿真已用时间从 Provider 取功率并写 properties。
-        playbackSpeed 在累积 elapsed 时已乘入（perform_calculation 中累加）。
+        历史模式设备：按 playbackIntervalMs 采样间隔从历史数据中读取下一个数据点。
+        playbackIntervalMs: 仿真中每隔多少毫秒从历史数据读取并更新一次。
         """
         if not self.topology_data or not self.device_historical_providers:
             return
@@ -829,17 +836,37 @@ class SimulationEngine:
             devices_dict = {d.get("id", ""): d for d in devices if d.get("id")}
         else:
             devices_dict = devices
+        
         for device_id, provider in self.device_historical_providers.items():
             if self.device_modes.get(device_id) != "historical_data":
                 continue
             device = devices_dict.get(device_id)
             if not device:
                 continue
-            elapsed = self.device_historical_elapsed.get(device_id, 0.0)
-            p_kw, q_kvar = provider.get_power_at(elapsed)
-            props = device.setdefault("properties", {})
-            props["p_kw"] = p_kw
-            props["q_kvar"] = q_kvar
+            
+            # 获取回放间隔配置（毫秒）
+            cfg = self.device_historical_config.get(device_id, {})
+            playback_interval_ms = cfg.get("playbackIntervalMs", 1000)
+            playback_interval_sec = playback_interval_ms / 1000.0
+            
+            # 检查是否到达下次采样时间
+            last_update = self.device_historical_last_update.get(device_id, 0.0)
+            if self.sim_elapsed_seconds - last_update >= playback_interval_sec:
+                # 更新索引并读取数据
+                current_idx = self.device_historical_index.get(device_id, 0)
+                p_kw, q_kvar = provider.get_power_at_index(current_idx)
+                
+                # 写入设备 properties
+                props = device.setdefault("properties", {})
+                props["p_kw"] = p_kw
+                props["q_kvar"] = q_kvar
+                
+                # 更新状态
+                self.device_historical_index[device_id] = current_idx + 1
+                self.device_historical_last_update[device_id] = self.sim_elapsed_seconds
+            else:
+                # 未到采样时间，保持当前值（不更新）
+                pass
 
     def _flush_pending_commands(self) -> None:
         """
@@ -1019,7 +1046,8 @@ class SimulationEngine:
         self.device_remote_setpoint.clear()
         self.device_historical_config.clear()
         self.device_historical_providers.clear()
-        self.device_historical_elapsed.clear()
+        self.device_historical_index.clear()
+        self.device_historical_last_update.clear()
         self.device_sim_params.clear()
         self.device_pending_commands.clear()
         self.sim_elapsed_seconds = 0.0
