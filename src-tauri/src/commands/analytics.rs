@@ -27,6 +27,21 @@ pub struct PriceConfig {
     pub capacity_charge_per_kva_month: Option<f64>,
 }
 
+/// 性能分析：数据角色到 key 的映射
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceDataMapping {
+    /// 实测功率（必填）
+    pub measured_power_key: String,
+    /// 功率指令/参考信号
+    pub reference_power_key: Option<String>,
+    /// 额定功率 kW
+    pub rated_power_kw: Option<f64>,
+    /// 额定容量 kWh
+    pub rated_capacity_kwh: Option<f64>,
+    /// 对齐方式：ffill | linear | valid_only，默认 ffill
+    pub alignment_method: Option<String>,
+}
+
 /// 分析请求（统一数据源 + 类型专用参数）
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AnalysisRequest {
@@ -37,7 +52,7 @@ pub struct AnalysisRequest {
     pub end_time: f64,
     /// "performance" | "revenue"
     pub analysis_type: String,
-    /// 性能分析：待分析的功率数据项 key 列表
+    /// 性能分析：待分析的功率数据项 key 列表；若有 performance_data_mapping 则从其 keys 解析
     pub data_item_keys: Vec<String>,
     /// 收益分析：关口电表有功功率数据项 key
     pub gateway_meter_active_power_key: Option<String>,
@@ -45,6 +60,12 @@ pub struct AnalysisRequest {
     pub price_config: Option<PriceConfig>,
     /// CSV 数据源时由前端传入已加载的序列，避免后端重复解析；key -> 时间序列
     pub series_data: Option<HashMap<String, Vec<TimeSeriesPoint>>>,
+    /// 性能分析：按标准筛选，如 ["GB_T_36548_2024", "GB_T_36549_2018", ...]
+    #[serde(default)]
+    pub performance_standards: Option<Vec<String>>,
+    /// 性能分析：数据角色映射
+    #[serde(default)]
+    pub performance_data_mapping: Option<PerformanceDataMapping>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -76,6 +97,10 @@ pub struct ReportRequest {
     pub format: String,
     /// 报告保存路径（由前端从保存对话框传入）
     pub report_path: Option<String>,
+    #[serde(default)]
+    pub performance_standards: Option<Vec<String>>,
+    #[serde(default)]
+    pub performance_data_mapping: Option<PerformanceDataMapping>,
 }
 
 /// 根据请求解析得到各 key 的时间序列（仅 [start_time, end_time] 内）
@@ -85,21 +110,33 @@ async fn resolve_series(
     let start = request.start_time;
     let end = request.end_time;
 
+    let keys: Vec<String> = match request.analysis_type.as_str() {
+        "performance" => {
+            if let Some(ref mapping) = request.performance_data_mapping {
+                let mut k = vec![mapping.measured_power_key.clone()];
+                if let Some(ref ref_key) = mapping.reference_power_key {
+                    k.push(ref_key.clone());
+                }
+                k
+            } else {
+                request.data_item_keys.clone()
+            }
+        }
+        "revenue" => request
+            .gateway_meter_active_power_key
+            .clone()
+            .map(|k| vec![k])
+            .unwrap_or_default(),
+        _ => request.data_item_keys.clone(),
+    };
+
+    if keys.is_empty() {
+        return Err("未指定数据项 key".to_string());
+    }
+
     let mut series = match &request.data_source {
         DataSourceKind::LocalFile => {
             let path = request.file_path.as_ref().ok_or("本地文件数据源需提供 file_path")?;
-            let keys = match request.analysis_type.as_str() {
-                "performance" => request.data_item_keys.clone(),
-                "revenue" => request
-                    .gateway_meter_active_power_key
-                    .clone()
-                    .map(|k| vec![k])
-                    .unwrap_or_default(),
-                _ => request.data_item_keys.clone(),
-            };
-            if keys.is_empty() {
-                return Err("未指定数据项 key".to_string());
-            }
             dashboard::dashboard_fetch_series_batch(
                 path.clone(),
                 keys,
@@ -114,18 +151,6 @@ async fn resolve_series(
                 .series_data
                 .as_ref()
                 .ok_or("CSV 数据源需在前端传入 series_data")?;
-            let keys: Vec<String> = match request.analysis_type.as_str() {
-                "performance" => request.data_item_keys.clone(),
-                "revenue" => request
-                    .gateway_meter_active_power_key
-                    .clone()
-                    .map(|k| vec![k])
-                    .unwrap_or_default(),
-                _ => request.data_item_keys.clone(),
-            };
-            if keys.is_empty() {
-                return Err("未指定数据项 key".to_string());
-            }
             let mut out = HashMap::new();
             for key in keys {
                 if let Some(pts) = data.get(&key) {
@@ -147,65 +172,403 @@ async fn resolve_series(
     Ok(series)
 }
 
+/// 空值判定
+fn is_valid(v: f64) -> bool {
+    v.is_finite()
+}
+
+/// 对齐方式
+#[derive(Clone, Copy, PartialEq)]
+enum AlignMethod {
+    Ffill,
+    Linear,
+    ValidOnly,
+}
+
+/// 对齐实测与参考功率序列，输出 (ts, p_meas, p_ref)
+fn align_series(
+    measured: &[dashboard::TimeSeriesPoint],
+    reference: Option<&[dashboard::TimeSeriesPoint]>,
+    method: AlignMethod,
+) -> Vec<(f64, f64, f64)> {
+    let ref_pts = reference.unwrap_or(&[]);
+    if ref_pts.is_empty() {
+        return measured
+            .iter()
+            .filter(|p| is_valid(p.value))
+            .map(|p| (p.timestamp, p.value, f64::NAN))
+            .collect();
+    }
+
+    let mut all_ts: Vec<f64> = measured.iter().map(|p| p.timestamp).collect();
+    for p in ref_pts {
+        all_ts.push(p.timestamp);
+    }
+    all_ts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    all_ts.dedup();
+
+    let meas_map: HashMap<i64, f64> = measured
+        .iter()
+        .filter(|p| is_valid(p.value))
+        .map(|p| ((p.timestamp * 1000.0) as i64, p.value))
+        .collect();
+    let ref_map: HashMap<i64, f64> = ref_pts
+        .iter()
+        .filter(|p| is_valid(p.value))
+        .map(|p| ((p.timestamp * 1000.0) as i64, p.value))
+        .collect();
+
+    let mut result = Vec::with_capacity(all_ts.len());
+    let mut last_meas = f64::NAN;
+    let mut last_ref = f64::NAN;
+
+    for &ts in &all_ts {
+        let ts_i = (ts * 1000.0) as i64;
+        let p_meas = if let Some(&v) = meas_map.get(&ts_i) {
+            last_meas = v;
+            v
+        } else {
+            match method {
+                AlignMethod::Ffill => last_meas,
+                AlignMethod::Linear => last_meas,
+                AlignMethod::ValidOnly => f64::NAN,
+            }
+        };
+
+        let p_ref = if let Some(&v) = ref_map.get(&ts_i) {
+            last_ref = v;
+            v
+        } else {
+            match method {
+                AlignMethod::Ffill => last_ref,
+                AlignMethod::Linear => last_ref,
+                AlignMethod::ValidOnly => f64::NAN,
+            }
+        };
+
+        if method == AlignMethod::ValidOnly && (!p_meas.is_finite() || !p_ref.is_finite()) {
+            continue;
+        }
+        result.push((ts, p_meas, p_ref));
+    }
+    result
+}
+
 /// 性能分析：功率相关指标，标注国标/行标/国际标准
 fn run_performance_analysis(
     series: HashMap<String, Vec<dashboard::TimeSeriesPoint>>,
+    mapping: Option<&PerformanceDataMapping>,
+    _standards: Option<&[String]>,
+    start_time: f64,
+    end_time: f64,
 ) -> AnalysisResult {
     let mut summary = serde_json::Map::new();
     let mut details = serde_json::Map::new();
     let mut charts: Vec<ChartData> = Vec::new();
 
-    for (key, pts) in &series {
-        if pts.is_empty() {
-            continue;
-        }
-        let values: Vec<f64> = pts.iter().map(|p| p.value).collect();
-        let n = values.len() as f64;
-        let mean = values.iter().sum::<f64>() / n;
-        let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
-        let std = variance.sqrt();
-
-        let key_summary = serde_json::json!({
-            "mean_kw": mean,
-            "max_kw": max,
-            "min_kw": min,
-            "std_kw": std,
-            "points": pts.len(),
-            "standard_refs": [
-                "GB/T 36548-2024 功率控制与响应",
-                "GB/T 34930-2017 微电网运行控制",
-                "IEEE 2836-2021 光储充储能性能测试",
-                "IEEE 1679-2020 储能表征与评价",
-                "FEMP BESS 效率与性能比"
-            ]
+    let (meas_key, ref_key) = mapping
+        .map(|m| (m.measured_power_key.clone(), m.reference_power_key.clone()))
+        .unwrap_or_else(|| {
+            let k = series.keys().next().cloned().unwrap_or_default();
+            (k.clone(), None)
         });
-        summary.insert(key.clone(), key_summary);
-        details.insert(
-            key.clone(),
-            serde_json::json!({ "timestamps": pts.iter().map(|p| p.timestamp).collect::<Vec<_>>(), "values": values }),
-        );
+
+    let measured = series.get(&meas_key).cloned().unwrap_or_default();
+    let reference = ref_key.as_ref().and_then(|k| series.get(k)).cloned();
+
+    if measured.is_empty() {
+        return AnalysisResult {
+            analysis_type: "performance".to_string(),
+            summary: serde_json::json!({ "error": "无实测功率数据" }),
+            details: serde_json::json!({}),
+            charts: vec![],
+        };
     }
 
-    // 可选：汇总多序列的折线图（ECharts 时间轴格式：series[].data = [[ts_ms, value], ...]）
-    if series.len() <= 8 {
-        let mut series_vec: Vec<serde_json::Value> = Vec::new();
-        for (key, pts) in &series {
-            let data: Vec<Vec<f64>> = pts
-                .iter()
-                .map(|p| vec![p.timestamp * 1000.0, p.value])
-                .collect();
-            series_vec.push(serde_json::json!({ "name": key, "data": data }));
-        }
-        if !series_vec.is_empty() {
-            charts.push(ChartData {
-                title: "功率时序".to_string(),
-                chart_type: "line".to_string(),
-                data: serde_json::json!({ "series": series_vec }),
-            });
+    let align_method = mapping
+        .and_then(|m| m.alignment_method.as_deref())
+        .unwrap_or("ffill");
+    let method = match align_method {
+        "linear" => AlignMethod::Linear,
+        "valid_only" => AlignMethod::ValidOnly,
+        _ => AlignMethod::Ffill,
+    };
+
+    let aligned = align_series(
+        &measured,
+        reference.as_deref(),
+        method,
+    );
+
+    let rated_power = mapping.and_then(|m| m.rated_power_kw);
+    let rated_capacity = mapping.and_then(|m| m.rated_capacity_kwh);
+    let period_hours = (end_time - start_time) / 3600.0;
+
+    // 过滤有效点用于单路指标
+    let valid_pts: Vec<(f64, f64, f64)> = aligned
+        .into_iter()
+        .filter(|(_, p, _)| is_valid(*p))
+        .collect();
+
+    if valid_pts.is_empty() {
+        return AnalysisResult {
+            analysis_type: "performance".to_string(),
+            summary: serde_json::json!({ "error": "无有效功率数据" }),
+            details: serde_json::json!({}),
+            charts: vec![],
+        };
+    }
+
+    let values: Vec<f64> = valid_pts.iter().map(|(_, p, _)| *p).collect();
+    let n = values.len() as f64;
+    let mean = values.iter().sum::<f64>() / n;
+    let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
+    let std = variance.sqrt();
+
+    let mut energy_charge_kwh = 0.0;
+    let mut energy_discharge_kwh = 0.0;
+    for i in 1..valid_pts.len() {
+        let (t0, p0, _) = valid_pts[i - 1];
+        let (t1, p1, _) = valid_pts[i];
+        let dt_h = (t1 - t0) / 3600.0;
+        let p_avg = (p0 + p1) * 0.5;
+        if p_avg < 0.0 {
+            energy_charge_kwh += (-p_avg) * dt_h;
+        } else if p_avg > 0.0 {
+            energy_discharge_kwh += p_avg * dt_h;
         }
     }
+
+    let round_trip_efficiency_pct = if energy_charge_kwh > 1e-6 {
+        (energy_discharge_kwh / energy_charge_kwh * 100.0).min(100.0)
+    } else {
+        f64::NAN
+    };
+
+    let mut ramp_rate_max = 0.0;
+    for i in 1..valid_pts.len() {
+        let (t0, p0, _) = valid_pts[i - 1];
+        let (t1, p1, _) = valid_pts[i];
+        let dt = t1 - t0;
+        if dt > 1e-9 {
+            let dr = (p1 - p0).abs() / dt;
+            if dr.is_finite() && dr > ramp_rate_max {
+                ramp_rate_max = dr;
+            }
+        }
+    }
+
+    let performance_ratio = if max.abs() > 1e-6 {
+        (mean.abs() / max.abs()).min(1.0)
+    } else {
+        f64::NAN
+    };
+
+    let tau = 1.0;
+    let mut time_run = 0.0;
+    let mut time_total = 0.0;
+    for i in 1..valid_pts.len() {
+        let (t0, p0, _) = valid_pts[i - 1];
+        let (t1, p1, _) = valid_pts[i];
+        let dt = t1 - t0;
+        time_total += dt;
+        if p0.abs() > tau || p1.abs() > tau {
+            time_run += dt;
+        }
+    }
+    let time_utilization_pct = if time_total > 1e-9 {
+        (time_run / time_total * 100.0).min(100.0)
+    } else {
+        f64::NAN
+    };
+
+    let capacity_utilization_pct = if let (Some(er), true) = (rated_capacity, period_hours > 1e-6) {
+        let denom = er * period_hours;
+        if denom > 1e-6 {
+            ((energy_charge_kwh + energy_discharge_kwh) / denom * 100.0).min(100.0)
+        } else {
+            f64::NAN
+        }
+    } else {
+        f64::NAN
+    };
+
+    let (power_utilization_pct, power_utilization_max_pct) = if let Some(pr) = rated_power {
+        if pr > 1e-6 {
+            (
+                (mean.abs() / pr * 100.0).min(100.0),
+                (max.abs() / pr * 100.0).min(100.0),
+            )
+        } else {
+            (f64::NAN, f64::NAN)
+        }
+    } else {
+        (f64::NAN, f64::NAN)
+    };
+
+    let eta = if round_trip_efficiency_pct.is_finite() {
+        round_trip_efficiency_pct / 100.0
+    } else {
+        0.85
+    };
+    let mut acc = 0.0;
+    let mut demonstrated_capacity = 0.0;
+    for i in 1..valid_pts.len() {
+        let (t0, p0, _) = valid_pts[i - 1];
+        let (t1, p1, _) = valid_pts[i];
+        let dt_h = (t1 - t0) / 3600.0;
+        let p_avg = (p0 + p1) * 0.5;
+        if p_avg < 0.0 {
+            acc += (-p_avg) * dt_h * eta.sqrt();
+        } else if p_avg > 0.0 {
+            acc -= p_avg * dt_h / eta.sqrt();
+        }
+        if acc > demonstrated_capacity {
+            demonstrated_capacity = acc;
+        }
+    }
+
+    let capacity_ratio = if let Some(er) = rated_capacity {
+        let soc_min = 0.2;
+        let denom = er * (1.0 - soc_min);
+        if denom > 1e-6 {
+            (demonstrated_capacity / denom).min(1.0)
+        } else {
+            f64::NAN
+        }
+    } else {
+        f64::NAN
+    };
+
+    let valid_pairs: Vec<(f64, f64, f64)> = valid_pts
+        .iter()
+        .filter(|(_, pm, pr)| is_valid(*pm) && is_valid(*pr))
+        .cloned()
+        .collect();
+
+    let (control_deviation_pct, rmse_kw, correlation, availability_pct) =
+        if !valid_pairs.is_empty() && rated_power.map(|p| p > 1e-6).unwrap_or(false) {
+            let m = valid_pairs.len() as f64;
+            let p_rated = rated_power.unwrap();
+            let dev: f64 = valid_pairs.iter().map(|(_, pm, pref)| (pm - pref).abs()).sum::<f64>() / m / p_rated * 100.0;
+            let rms: f64 = (valid_pairs.iter().map(|(_, pm, pref)| (pm - pref).powi(2)).sum::<f64>() / m).sqrt();
+            let pm_vec: Vec<f64> = valid_pairs.iter().map(|(_, p, _)| *p).collect();
+            let pr_vec: Vec<f64> = valid_pairs.iter().map(|(_, _, p)| *p).collect();
+            let pm_mean = pm_vec.iter().sum::<f64>() / m;
+            let pr_mean = pr_vec.iter().sum::<f64>() / m;
+            let cov: f64 = pm_vec.iter().zip(pr_vec.iter()).map(|(a, b)| (a - pm_mean) * (b - pr_mean)).sum::<f64>() / m;
+            let std_pm = (pm_vec.iter().map(|x| (x - pm_mean).powi(2)).sum::<f64>() / m).sqrt();
+            let std_pr = (pr_vec.iter().map(|x| (x - pr_mean).powi(2)).sum::<f64>() / m).sqrt();
+            let corr = if std_pm > 1e-9 && std_pr > 1e-9 {
+                (cov / (std_pm * std_pr)).min(1.0).max(-1.0)
+            } else {
+                f64::NAN
+            };
+            let tau_a = (p_rated * 0.01).max(1.0);
+            let mut avail_num = 0.0;
+            let mut avail_den = 0.0;
+            for i in 1..valid_pairs.len() {
+                let (t0, pm0, pr0) = valid_pairs[i - 1];
+                let (t1, pm1, pr1) = valid_pairs[i];
+                let dt = t1 - t0;
+                let ref_avg = (pr0 + pr1) * 0.5;
+                let meas_avg = (pm0 + pm1) * 0.5;
+                if ref_avg > tau_a {
+                    avail_den += dt;
+                    if meas_avg > tau_a {
+                        avail_num += dt;
+                    }
+                }
+            }
+            let avail = if avail_den > 1e-9 {
+                (avail_num / avail_den * 100.0).min(100.0)
+            } else {
+                f64::NAN
+            };
+            (dev, rms, corr, avail)
+        } else {
+            (f64::NAN, f64::NAN, f64::NAN, f64::NAN)
+        };
+
+    let key_summary = serde_json::json!({
+        "mean_kw": mean,
+        "max_kw": max,
+        "min_kw": min,
+        "std_kw": std,
+        "points": values.len(),
+        "energy_charge_kwh": energy_charge_kwh,
+        "energy_discharge_kwh": energy_discharge_kwh,
+        "round_trip_efficiency_pct": round_trip_efficiency_pct,
+        "ramp_rate_max_kw_per_s": ramp_rate_max,
+        "performance_ratio": performance_ratio,
+        "time_utilization_pct": time_utilization_pct,
+        "capacity_utilization_pct": capacity_utilization_pct,
+        "power_utilization_pct": power_utilization_pct,
+        "power_utilization_max_pct": power_utilization_max_pct,
+        "demonstrated_capacity_kwh": demonstrated_capacity,
+        "capacity_ratio": capacity_ratio,
+        "control_deviation_pct": control_deviation_pct,
+        "rmse_kw": rmse_kw,
+        "correlation": correlation,
+        "availability_pct": availability_pct,
+        "indicators_by_standard": {
+            "GB_T_36548_2024": {
+                "ramp_rate_max_kw_per_s": ramp_rate_max,
+                "control_deviation_pct": control_deviation_pct,
+                "note": "功率调节爬升率、控制偏差"
+            },
+            "GB_T_34930_2017": {
+                "power_std_kw": std,
+                "note": "微电网功率波动性"
+            },
+            "GB_T_36549_2018": {
+                "capacity_utilization_pct": capacity_utilization_pct,
+                "power_utilization_pct": power_utilization_pct,
+                "time_utilization_pct": time_utilization_pct,
+                "note": "容量、功率、时间利用率"
+            },
+            "IEEE_2836_2021": {
+                "round_trip_efficiency_pct": round_trip_efficiency_pct,
+                "ramp_rate_max_kw_per_s": ramp_rate_max,
+                "rmse_kw": rmse_kw,
+                "note": "光储充储能往返效率、爬升率、参考信号跟踪"
+            },
+            "IEEE_1679_2020": {
+                "round_trip_efficiency_pct": round_trip_efficiency_pct,
+                "energy_charge_kwh": energy_charge_kwh,
+                "energy_discharge_kwh": energy_discharge_kwh,
+                "note": "储能表征与评价"
+            },
+            "FEMP_BESS": {
+                "round_trip_efficiency_pct": round_trip_efficiency_pct,
+                "availability_pct": availability_pct,
+                "performance_ratio": performance_ratio,
+                "capacity_ratio": capacity_ratio,
+                "demonstrated_capacity_kwh": demonstrated_capacity,
+                "note": "效率η、可用率A、性能比、容量比"
+            }
+        }
+    });
+    summary.insert(meas_key.clone(), key_summary);
+    let timestamps: Vec<f64> = valid_pts.iter().map(|(t, _, _)| *t).collect();
+    details.insert(
+        meas_key.clone(),
+        serde_json::json!({ "timestamps": timestamps, "values": values }),
+    );
+
+    let mut series_vec: Vec<serde_json::Value> = Vec::new();
+    let data: Vec<Vec<f64>> = measured
+        .iter()
+        .map(|p| vec![p.timestamp * 1000.0, p.value])
+        .collect();
+    series_vec.push(serde_json::json!({ "name": meas_key, "data": data }));
+    charts.push(ChartData {
+        title: "功率时序".to_string(),
+        chart_type: "line".to_string(),
+        data: serde_json::json!({ "series": series_vec }),
+    });
 
     AnalysisResult {
         analysis_type: "performance".to_string(),
@@ -332,7 +695,13 @@ fn run_revenue_analysis(
 pub async fn analyze_performance(request: AnalysisRequest) -> Result<AnalysisResult, String> {
     let series = resolve_series(&request).await?;
     let result = match request.analysis_type.as_str() {
-        "performance" => run_performance_analysis(series),
+        "performance" => run_performance_analysis(
+            series,
+            request.performance_data_mapping.as_ref(),
+            request.performance_standards.as_deref(),
+            request.start_time,
+            request.end_time,
+        ),
         "revenue" => {
             let config = request
                 .price_config
@@ -362,6 +731,8 @@ pub async fn generate_report(request: ReportRequest) -> Result<String, String> {
         gateway_meter_active_power_key: request.gateway_meter_active_power_key,
         price_config: request.price_config,
         series_data: request.series_data,
+        performance_standards: request.performance_standards,
+        performance_data_mapping: request.performance_data_mapping,
     };
     let result = analyze_performance(analysis_request).await?;
     let report_path = request.report_path.unwrap_or_else(|| {

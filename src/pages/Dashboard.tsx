@@ -17,6 +17,10 @@ import {
 } from 'lucide-react';
 import MultiSeriesChart, { type SeriesItem } from '../components/monitoring/MultiSeriesChart';
 import ResultCharts from '../components/analytics/ResultCharts';
+import PerformanceDataMappingDialog, {
+  type PerformanceDataMapping,
+  PERFORMANCE_STANDARDS,
+} from '../components/analytics/PerformanceDataMappingDialog';
 
 // ====== 类型定义 ======
 
@@ -78,6 +82,14 @@ interface AnalysisRequestPayload {
   gateway_meter_active_power_key: string | null;
   price_config: PriceConfig | null;
   series_data: Record<string, TimeSeriesPoint[]> | null;
+  performance_standards?: string[] | null;
+  performance_data_mapping?: {
+    measured_power_key: string;
+    reference_power_key?: string | null;
+    rated_power_kw?: number | null;
+    rated_capacity_kwh?: number | null;
+    alignment_method?: string;
+  } | null;
 }
 
 // ====== 常量 ======
@@ -118,6 +130,11 @@ export default function Dashboard() {
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
   // 收益分析：关口电表 key（为空则用当前选中的第一项）
   const [gatewayKeyForRevenue, setGatewayKeyForRevenue] = useState<string | null>(null);
+  // 性能分析：分析标准多选
+  const [performanceStandards, setPerformanceStandards] = useState<string[]>([]);
+  // 性能分析：数据项映射（弹窗确认后保存）
+  const [performanceDataMapping, setPerformanceDataMapping] = useState<PerformanceDataMapping | null>(null);
+  const [showMappingDialog, setShowMappingDialog] = useState(false);
   // 收益分析：电价配置
   const [priceConfig, setPriceConfig] = useState<PriceConfig>({
     tou_prices: Array.from({ length: 24 }, (_, i) => (i >= 8 && i < 12 ? 0.9 : i >= 18 && i < 22 ? 0.9 : 0.4)),
@@ -322,65 +339,113 @@ export default function Dashboard() {
     [dataSource, csvSeries, getTimeRange]
   );
 
-  /** 执行分析 */
-  const runAnalysis = useCallback(async () => {
-    if (selectedAnalysisTypes.length === 0) {
-      setError('请先选择分析类型');
-      return;
-    }
-    if (!dataSource || !filePath) {
-      setError('请先加载本地数据库或 CSV 文件');
-      return;
-    }
-    const { start, end } = getTimeRange();
-    setIsAnalyzing(true);
-    setError(null);
-    setAnalysisResults([]);
-    try {
-      const results: AnalysisResult[] = [];
-      for (const analysisType of selectedAnalysisTypes) {
-        const isRevenue = analysisType === 'revenue';
-        const dataItemKeys = isRevenue ? [] : selectedKeys;
-        const gatewayKey = isRevenue ? (gatewayKeyForRevenue || selectedKeys[0] || null) : null;
-        if (isRevenue && !gatewayKey) {
-          setError('收益分析请至少选择一个关口电表有功功率数据项');
-          continue;
-        }
-        const keysForRequest = isRevenue ? [gatewayKey!] : selectedKeys;
-        if (keysForRequest.length === 0) {
-          setError('请至少选择一个数据项');
-          continue;
-        }
-        const request: AnalysisRequestPayload = {
-          data_source: dataSource,
-          file_path: filePath,
-          start_time: start,
-          end_time: end,
-          analysis_type: analysisType,
-          data_item_keys: dataItemKeys,
-          gateway_meter_active_power_key: gatewayKey,
-          price_config: isRevenue ? priceConfig : null,
-          series_data: dataSource === 'csv' ? buildSeriesData(keysForRequest) : null,
-        };
-        const result = await invoke<AnalysisResult>('analyze_performance', { request });
-        results.push(result);
+  /** 执行分析；mappingOverride 为弹窗确认时传入的映射 */
+  const runAnalysis = useCallback(
+    async (mappingOverride?: PerformanceDataMapping | null) => {
+      if (selectedAnalysisTypes.length === 0) {
+        setError('请先选择分析类型');
+        return;
       }
-      setAnalysisResults(results);
-    } catch (e) {
-      setError(`分析失败: ${String(e)}`);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }, [
-    selectedAnalysisTypes,
-    dataSource,
-    filePath,
-    selectedKeys,
-    gatewayKeyForRevenue,
-    priceConfig,
-    getTimeRange,
-    buildSeriesData,
-  ]);
+      if (!dataSource || !filePath) {
+        setError('请先加载本地数据库或 CSV 文件');
+        return;
+      }
+      const hasPerformance = selectedAnalysisTypes.includes('performance');
+      const mapping = mappingOverride ?? performanceDataMapping;
+
+      if (hasPerformance && !mapping) {
+        setShowMappingDialog(true);
+        return;
+      }
+
+      const { start, end } = getTimeRange();
+      setIsAnalyzing(true);
+      setError(null);
+      setAnalysisResults([]);
+      try {
+        const results: AnalysisResult[] = [];
+        for (const analysisType of selectedAnalysisTypes) {
+          const isRevenue = analysisType === 'revenue';
+          const gatewayKey = isRevenue ? (gatewayKeyForRevenue || selectedKeys[0] || null) : null;
+          if (isRevenue && !gatewayKey) {
+            setError('收益分析请至少选择一个关口电表有功功率数据项');
+            continue;
+          }
+          let dataItemKeys: string[];
+          let keysForRequest: string[];
+          if (isRevenue) {
+            dataItemKeys = [];
+            keysForRequest = [gatewayKey!];
+          } else {
+            if (mapping) {
+              dataItemKeys = [
+                mapping.measured_power_key,
+                ...(mapping.reference_power_key ? [mapping.reference_power_key] : []),
+              ];
+              keysForRequest = dataItemKeys;
+            } else {
+              dataItemKeys = selectedKeys;
+              keysForRequest = selectedKeys;
+            }
+          }
+          if (keysForRequest.length === 0) {
+            setError('请至少选择一个数据项');
+            continue;
+          }
+          const request: AnalysisRequestPayload = {
+            data_source: dataSource,
+            file_path: filePath,
+            start_time: start,
+            end_time: end,
+            analysis_type: analysisType,
+            data_item_keys: dataItemKeys,
+            gateway_meter_active_power_key: gatewayKey,
+            price_config: isRevenue ? priceConfig : null,
+            series_data: dataSource === 'csv' ? buildSeriesData(keysForRequest) : null,
+            performance_standards: hasPerformance ? performanceStandards : null,
+            performance_data_mapping: hasPerformance && mapping
+              ? {
+                  measured_power_key: mapping.measured_power_key,
+                  reference_power_key: mapping.reference_power_key,
+                  rated_power_kw: mapping.rated_power_kw,
+                  rated_capacity_kwh: mapping.rated_capacity_kwh,
+                  alignment_method: mapping.alignment_method,
+                }
+              : null,
+          };
+          const result = await invoke<AnalysisResult>('analyze_performance', { request });
+          results.push(result);
+        }
+        setAnalysisResults(results);
+      } catch (e) {
+        setError(`分析失败: ${String(e)}`);
+      } finally {
+        setIsAnalyzing(false);
+      }
+    },
+    [
+      selectedAnalysisTypes,
+      dataSource,
+      filePath,
+      selectedKeys,
+      gatewayKeyForRevenue,
+      priceConfig,
+      performanceDataMapping,
+      performanceStandards,
+      getTimeRange,
+      buildSeriesData,
+    ]
+  );
+
+  /** 数据映射弹窗确认后执行分析 */
+  const handleMappingConfirm = useCallback(
+    (mapping: PerformanceDataMapping) => {
+      setPerformanceDataMapping(mapping);
+      setShowMappingDialog(false);
+      runAnalysis(mapping);
+    },
+    [runAnalysis]
+  );
 
   /** 导出分析报告 */
   const exportReport = useCallback(async () => {
@@ -402,11 +467,26 @@ export default function Dashboard() {
       for (let i = 0; i < selectedAnalysisTypes.length; i++) {
         const analysisType = selectedAnalysisTypes[i];
         const isRevenue = analysisType === 'revenue';
-        const dataItemKeys = isRevenue ? [] : selectedKeys;
+        const isPerf = analysisType === 'performance';
         const gatewayKey = isRevenue ? (gatewayKeyForRevenue || selectedKeys[0] || null) : null;
-        const keysForRequest = isRevenue && gatewayKey ? [gatewayKey] : selectedKeys;
+        let dataItemKeys: string[];
+        let keysForRequest: string[];
+        if (isRevenue) {
+          dataItemKeys = [];
+          keysForRequest = gatewayKey ? [gatewayKey] : [];
+        } else if (isPerf && performanceDataMapping) {
+          dataItemKeys = [
+            performanceDataMapping.measured_power_key,
+            ...(performanceDataMapping.reference_power_key ? [performanceDataMapping.reference_power_key] : []),
+          ];
+          keysForRequest = dataItemKeys;
+        } else {
+          dataItemKeys = selectedKeys;
+          keysForRequest = selectedKeys;
+        }
         const reportPath =
           selectedAnalysisTypes.length === 1 ? savePath : `${base}_${analysisType}.json`;
+        const hasPerf = analysisType === 'performance';
         const reportRequest = {
           report_type: analysisType,
           data_source: dataSource,
@@ -419,6 +499,16 @@ export default function Dashboard() {
           series_data: dataSource === 'csv' ? buildSeriesData(keysForRequest) : null,
           format: 'json',
           report_path: reportPath,
+          performance_standards: hasPerf ? performanceStandards : null,
+          performance_data_mapping: hasPerf && performanceDataMapping
+            ? {
+                measured_power_key: performanceDataMapping.measured_power_key,
+                reference_power_key: performanceDataMapping.reference_power_key,
+                rated_power_kw: performanceDataMapping.rated_power_kw,
+                rated_capacity_kwh: performanceDataMapping.rated_capacity_kwh,
+                alignment_method: performanceDataMapping.alignment_method,
+              }
+            : null,
         };
         await invoke<string>('generate_report', { request: reportRequest });
         setError(null);
@@ -435,6 +525,8 @@ export default function Dashboard() {
     selectedKeys,
     gatewayKeyForRevenue,
     priceConfig,
+    performanceDataMapping,
+    performanceStandards,
     getTimeRange,
     buildSeriesData,
   ]);
@@ -503,6 +595,11 @@ export default function Dashboard() {
     }
     return [];
   }, [dataSource, csvColumns, dbColumns]);
+
+  /** 所有可选列（用于数据映射弹窗） */
+  const availableColumns = useMemo(() => {
+    return columnGroups.flatMap((g) => g.items.map((i) => ({ key: i.key, label: i.label || i.dataItem })));
+  }, [columnGroups]);
 
   // ====== 渲染 ======
 
@@ -678,6 +775,31 @@ export default function Dashboard() {
                 </label>
               ))}
             </div>
+            {selectedAnalysisTypes.includes('performance') && (
+              <div className="space-y-1 border-t border-gray-200 pt-2 mt-2">
+                <label className="text-xs text-gray-500 block mb-1">分析标准</label>
+                <div className="space-y-0.5 max-h-24 overflow-y-auto">
+                  {PERFORMANCE_STANDARDS.map((st) => (
+                    <label
+                      key={st.id}
+                      className="flex items-center gap-2 px-2 py-0.5 rounded text-xs cursor-pointer hover:bg-gray-100"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={performanceStandards.includes(st.id)}
+                        onChange={() => {
+                          setPerformanceStandards((prev) =>
+                            prev.includes(st.id) ? prev.filter((x) => x !== st.id) : [...prev, st.id]
+                          );
+                        }}
+                        className="w-3 h-3 rounded border-gray-300 text-green-600"
+                      />
+                      <span className="truncate" title={st.label}>{st.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             {selectedAnalysisTypes.includes('revenue') && (
               <div className="space-y-1.5 border-t border-gray-200 pt-2 mt-2">
                 <div>
@@ -749,7 +871,7 @@ export default function Dashboard() {
             )}
             <div className="flex gap-1">
               <button
-                onClick={runAnalysis}
+                onClick={() => runAnalysis()}
                 disabled={isAnalyzing || selectedAnalysisTypes.length === 0}
                 className="flex-1 px-2 py-1.5 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded text-xs flex items-center justify-center gap-1 transition-colors"
               >
@@ -821,6 +943,16 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* 性能分析数据项映射弹窗 */}
+      <PerformanceDataMappingDialog
+        open={showMappingDialog}
+        onClose={() => setShowMappingDialog(false)}
+        onConfirm={handleMappingConfirm}
+        availableColumns={availableColumns}
+        selectedStandards={performanceStandards}
+        initialMapping={performanceDataMapping}
+      />
     </div>
   );
 }
