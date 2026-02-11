@@ -185,6 +185,7 @@ fn main() {
             commands::dashboard::dashboard_parse_wide_csv,
             commands::dashboard::dashboard_list_db_columns,
             commands::dashboard::dashboard_query_db_series,
+            commands::dashboard::dashboard_fetch_series_batch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

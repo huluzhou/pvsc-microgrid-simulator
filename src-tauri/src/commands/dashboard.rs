@@ -472,28 +472,65 @@ pub async fn dashboard_list_db_columns(db_path: String) -> Result<Vec<DbColumnMe
     Ok(columns)
 }
 
-/// 从本地 DB 查询指定设备指定字段的时间序列
+/// 从本地 DB 批量按 key（格式 device_id:field_name）拉取时间序列，用于分析
 #[tauri::command]
-pub async fn dashboard_query_db_series(
+pub async fn dashboard_fetch_series_batch(
     db_path: String,
+    keys: Vec<String>,
+    start_time: Option<f64>,
+    end_time: Option<f64>,
+    max_points_per_series: Option<usize>,
+) -> Result<HashMap<String, Vec<TimeSeriesPoint>>, String> {
+    let mut out: HashMap<String, Vec<TimeSeriesPoint>> = HashMap::new();
+    for key in keys {
+        if let Some((device_id, field_name)) = key.split_once(':') {
+            let pts = dashboard_query_db_series_impl(
+                &db_path,
+                device_id.to_string(),
+                field_name.to_string(),
+                start_time,
+                end_time,
+                max_points_per_series.unwrap_or(5000),
+            )?;
+            out.insert(key, pts);
+        }
+    }
+    Ok(out)
+}
+
+/// 从本地 DB 查询指定设备指定字段的时间序列（内部实现，支持时间范围）
+fn dashboard_query_db_series_impl(
+    db_path: &str,
     device_id: String,
     field_name: String,
-    max_points: Option<usize>,
+    start_time: Option<f64>,
+    end_time: Option<f64>,
+    max_points: usize,
 ) -> Result<Vec<TimeSeriesPoint>, String> {
-    let conn = rusqlite::Connection::open(&db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
 
     let is_basic_field = field_name == "p_active" || field_name == "p_reactive";
 
     let mut results: Vec<TimeSeriesPoint> = Vec::new();
 
     if is_basic_field {
-        let query = format!(
-            "SELECT timestamp, {} FROM device_data WHERE device_id = ?1 AND {} IS NOT NULL ORDER BY timestamp",
+        let mut query = format!(
+            "SELECT timestamp, {} FROM device_data WHERE device_id = ?1 AND {} IS NOT NULL",
             field_name, field_name
         );
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(device_id.clone())];
+        if let Some(st) = start_time {
+            query.push_str(" AND timestamp >= ?2");
+            params.push(Box::new(st));
+        }
+        if let Some(et) = end_time {
+            query.push_str(if start_time.is_some() { " AND timestamp <= ?3" } else { " AND timestamp <= ?2" });
+            params.push(Box::new(et));
+        }
+        query.push_str(" ORDER BY timestamp");
         let mut stmt = conn.prepare(&query).map_err(|e| format!("查询失败: {}", e))?;
         let rows = stmt
-            .query_map(rusqlite::params![device_id], |row| {
+            .query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
                 Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?))
             })
             .map_err(|e| format!("查询失败: {}", e))?;
@@ -505,11 +542,20 @@ pub async fn dashboard_query_db_series(
         }
     } else {
         // 从 data_json 中提取字段
-        let mut stmt = conn
-            .prepare("SELECT timestamp, data_json FROM device_data WHERE device_id = ?1 AND data_json IS NOT NULL ORDER BY timestamp")
-            .map_err(|e| format!("查询失败: {}", e))?;
+        let mut query = "SELECT timestamp, data_json FROM device_data WHERE device_id = ?1 AND data_json IS NOT NULL".to_string();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(device_id)];
+        if let Some(st) = start_time {
+            query.push_str(" AND timestamp >= ?2");
+            params.push(Box::new(st));
+        }
+        if let Some(et) = end_time {
+            query.push_str(if start_time.is_some() { " AND timestamp <= ?3" } else { " AND timestamp <= ?2" });
+            params.push(Box::new(et));
+        }
+        query.push_str(" ORDER BY timestamp");
+        let mut stmt = conn.prepare(&query).map_err(|e| format!("查询失败: {}", e))?;
         let rows = stmt
-            .query_map(rusqlite::params![device_id], |row| {
+            .query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
                 Ok((row.get::<_, f64>(0)?, row.get::<_, String>(1)?))
             })
             .map_err(|e| format!("查询失败: {}", e))?;
@@ -525,9 +571,24 @@ pub async fn dashboard_query_db_series(
         }
     }
 
-    // 降采样
-    let max_pts = max_points.unwrap_or(5000);
-    downsample(&mut results, max_pts);
-
+    downsample(&mut results, max_points);
     Ok(results)
+}
+
+/// 从本地 DB 查询指定设备指定字段的时间序列（对外 Tauri 命令）
+#[tauri::command]
+pub async fn dashboard_query_db_series(
+    db_path: String,
+    device_id: String,
+    field_name: String,
+    max_points: Option<usize>,
+) -> Result<Vec<TimeSeriesPoint>, String> {
+    dashboard_query_db_series_impl(
+        &db_path,
+        device_id,
+        field_name,
+        None,
+        None,
+        max_points.unwrap_or(5000),
+    )
 }

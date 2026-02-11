@@ -58,15 +58,34 @@ interface AnalysisResult {
   charts: Array<{ title: string; chart_type: string; data: unknown }>;
 }
 
+/** 电价配置（收益分析） */
+interface PriceConfig {
+  tou_prices: number[];
+  voltage_level: string;
+  tariff_type: string;
+  demand_charge_per_kw_month?: number;
+  capacity_charge_per_kva_month?: number;
+}
+
+/** 分析请求（与 Rust AnalysisRequest 一致） */
+interface AnalysisRequestPayload {
+  data_source: 'local_file' | 'csv';
+  file_path: string | null;
+  start_time: number;
+  end_time: number;
+  analysis_type: string;
+  data_item_keys: string[];
+  gateway_meter_active_power_key: string | null;
+  price_config: PriceConfig | null;
+  series_data: Record<string, TimeSeriesPoint[]> | null;
+}
+
 // ====== 常量 ======
 
 const MAX_SELECTED_COLUMNS = 8;
 
 const ANALYSIS_TYPES = [
   { value: 'performance', label: '性能分析' },
-  { value: 'fault', label: '故障分析' },
-  { value: 'regulation', label: '调节性能' },
-  { value: 'utilization', label: '利用率分析' },
   { value: 'revenue', label: '收益分析' },
 ];
 
@@ -97,6 +116,14 @@ export default function Dashboard() {
   const [selectedAnalysisTypes, setSelectedAnalysisTypes] = useState<string[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
+  // 收益分析：关口电表 key（为空则用当前选中的第一项）
+  const [gatewayKeyForRevenue, setGatewayKeyForRevenue] = useState<string | null>(null);
+  // 收益分析：电价配置
+  const [priceConfig, setPriceConfig] = useState<PriceConfig>({
+    tou_prices: Array.from({ length: 24 }, (_, i) => (i >= 8 && i < 12 ? 0.9 : i >= 18 && i < 22 ? 0.9 : 0.4)),
+    voltage_level: '1_10kv',
+    tariff_type: 'single',
+  });
 
   // ====== 数据源加载 ======
 
@@ -252,26 +279,90 @@ export default function Dashboard() {
     );
   }, []);
 
+  /** 从当前已加载数据推断时间范围 */
+  const getTimeRange = useCallback(() => {
+    let start = Date.now() / 1000 - 3600;
+    let end = Date.now() / 1000;
+    if (dataSource === 'csv') {
+      for (const key of selectedKeys) {
+        const pts = csvSeries[key] || [];
+        for (const p of pts) {
+          if (p.timestamp > 0) {
+            start = Math.min(start, p.timestamp);
+            end = Math.max(end, p.timestamp);
+          }
+        }
+      }
+    } else if (dataSource === 'local_file') {
+      for (const key of selectedKeys) {
+        const pts = dbSeries[key] || [];
+        for (const p of pts) {
+          if (p.timestamp > 0) {
+            start = Math.min(start, p.timestamp);
+            end = Math.max(end, p.timestamp);
+          }
+        }
+      }
+    }
+    return { start, end };
+  }, [dataSource, selectedKeys, csvSeries, dbSeries]);
+
+  /** 构建分析请求的 series_data（仅 CSV 时传入） */
+  const buildSeriesData = useCallback(
+    (keys: string[]): Record<string, TimeSeriesPoint[]> | null => {
+      if (dataSource !== 'csv' || keys.length === 0) return null;
+      const out: Record<string, TimeSeriesPoint[]> = {};
+      const { start, end } = getTimeRange();
+      for (const key of keys) {
+        const pts = (csvSeries[key] || []).filter((p) => p.timestamp >= start && p.timestamp <= end);
+        out[key] = pts;
+      }
+      return out;
+    },
+    [dataSource, csvSeries, getTimeRange]
+  );
+
   /** 执行分析 */
   const runAnalysis = useCallback(async () => {
     if (selectedAnalysisTypes.length === 0) {
       setError('请先选择分析类型');
       return;
     }
+    if (!dataSource || !filePath) {
+      setError('请先加载本地数据库或 CSV 文件');
+      return;
+    }
+    const { start, end } = getTimeRange();
     setIsAnalyzing(true);
     setError(null);
     setAnalysisResults([]);
     try {
       const results: AnalysisResult[] = [];
       for (const analysisType of selectedAnalysisTypes) {
-        const result = await invoke<AnalysisResult>('analyze_performance', {
-          request: {
-            device_ids: [],
-            start_time: Date.now() / 1000 - 3600,
-            end_time: Date.now() / 1000,
-            analysis_type: analysisType,
-          },
-        });
+        const isRevenue = analysisType === 'revenue';
+        const dataItemKeys = isRevenue ? [] : selectedKeys;
+        const gatewayKey = isRevenue ? (gatewayKeyForRevenue || selectedKeys[0] || null) : null;
+        if (isRevenue && !gatewayKey) {
+          setError('收益分析请至少选择一个关口电表有功功率数据项');
+          continue;
+        }
+        const keysForRequest = isRevenue ? [gatewayKey!] : selectedKeys;
+        if (keysForRequest.length === 0) {
+          setError('请至少选择一个数据项');
+          continue;
+        }
+        const request: AnalysisRequestPayload = {
+          data_source: dataSource,
+          file_path: filePath,
+          start_time: start,
+          end_time: end,
+          analysis_type: analysisType,
+          data_item_keys: dataItemKeys,
+          gateway_meter_active_power_key: gatewayKey,
+          price_config: isRevenue ? priceConfig : null,
+          series_data: dataSource === 'csv' ? buildSeriesData(keysForRequest) : null,
+        };
+        const result = await invoke<AnalysisResult>('analyze_performance', { request });
         results.push(result);
       }
       setAnalysisResults(results);
@@ -280,37 +371,73 @@ export default function Dashboard() {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [selectedAnalysisTypes]);
+  }, [
+    selectedAnalysisTypes,
+    dataSource,
+    filePath,
+    selectedKeys,
+    gatewayKeyForRevenue,
+    priceConfig,
+    getTimeRange,
+    buildSeriesData,
+  ]);
 
   /** 导出分析报告 */
   const exportReport = useCallback(async () => {
+    if (!dataSource || !filePath) {
+      setError('请先加载数据后再导出报告');
+      return;
+    }
+    const { start, end } = getTimeRange();
     try {
-      const path = await saveDialog({
+      const savePath = await saveDialog({
         title: '导出分析报告',
-        defaultPath: `analysis_report_${new Date().toISOString().slice(0, 10)}.pdf`,
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        defaultPath: `analysis_report_${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
       });
-      if (!path || typeof path !== 'string') return;
+      if (!savePath || typeof savePath !== 'string') return;
+      const base = savePath.replace(/\.json$/i, '');
       setIsLoading(true);
 
-      for (const analysisType of selectedAnalysisTypes) {
-        await invoke<string>('generate_report', {
-          request: {
-            report_type: analysisType,
-            device_ids: [],
-            start_time: Date.now() / 1000 - 3600,
-            end_time: Date.now() / 1000,
-            format: 'pdf',
-          },
-        });
+      for (let i = 0; i < selectedAnalysisTypes.length; i++) {
+        const analysisType = selectedAnalysisTypes[i];
+        const isRevenue = analysisType === 'revenue';
+        const dataItemKeys = isRevenue ? [] : selectedKeys;
+        const gatewayKey = isRevenue ? (gatewayKeyForRevenue || selectedKeys[0] || null) : null;
+        const keysForRequest = isRevenue && gatewayKey ? [gatewayKey] : selectedKeys;
+        const reportPath =
+          selectedAnalysisTypes.length === 1 ? savePath : `${base}_${analysisType}.json`;
+        const reportRequest = {
+          report_type: analysisType,
+          data_source: dataSource,
+          file_path: filePath,
+          start_time: start,
+          end_time: end,
+          data_item_keys: dataItemKeys,
+          gateway_meter_active_power_key: gatewayKey,
+          price_config: isRevenue ? priceConfig : null,
+          series_data: dataSource === 'csv' ? buildSeriesData(keysForRequest) : null,
+          format: 'json',
+          report_path: reportPath,
+        };
+        await invoke<string>('generate_report', { request: reportRequest });
+        setError(null);
       }
-      setError(null);
     } catch (e) {
       setError(`导出报告失败: ${String(e)}`);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedAnalysisTypes]);
+  }, [
+    selectedAnalysisTypes,
+    dataSource,
+    filePath,
+    selectedKeys,
+    gatewayKeyForRevenue,
+    priceConfig,
+    getTimeRange,
+    buildSeriesData,
+  ]);
 
   // ====== 构建图表数据 ======
 
@@ -551,6 +678,75 @@ export default function Dashboard() {
                 </label>
               ))}
             </div>
+            {selectedAnalysisTypes.includes('revenue') && (
+              <div className="space-y-1.5 border-t border-gray-200 pt-2 mt-2">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-0.5">关口电表有功</label>
+                  <select
+                    value={gatewayKeyForRevenue || selectedKeys[0] || ''}
+                    onChange={(e) => setGatewayKeyForRevenue(e.target.value || null)}
+                    className="w-full text-xs border border-gray-300 rounded px-1.5 py-1 bg-white"
+                  >
+                    {selectedKeys.length === 0 ? (
+                      <option value="">请先选择数据项</option>
+                    ) : (
+                      selectedKeys.map((k) => {
+                      const col = csvColumns.find((c) => c.key === k) || dbColumns.find((c) => c.key === k);
+                      return (
+                        <option key={k} value={k}>
+                          {col?.short_label ?? k}
+                        </option>
+                      );
+                    })
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-0.5">电压等级</label>
+                  <select
+                    value={priceConfig.voltage_level}
+                    onChange={(e) => setPriceConfig((c) => ({ ...c, voltage_level: e.target.value }))}
+                    className="w-full text-xs border border-gray-300 rounded px-1.5 py-1 bg-white"
+                  >
+                    <option value="under_1kv">不满 1kV</option>
+                    <option value="1_10kv">1–10(20)kV</option>
+                    <option value="35kv">35kV</option>
+                    <option value="110kv">110kV</option>
+                    <option value="220kv">220kV 及以上</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-0.5">计费方式</label>
+                  <select
+                    value={priceConfig.tariff_type}
+                    onChange={(e) => setPriceConfig((c) => ({ ...c, tariff_type: e.target.value }))}
+                    className="w-full text-xs border border-gray-300 rounded px-1.5 py-1 bg-white"
+                  >
+                    <option value="single">单一制</option>
+                    <option value="two_part">两部制</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-3 gap-0.5">
+                  <label className="text-xs text-gray-500 col-span-3">分时电价(元/kWh, 0–23时)</label>
+                  {priceConfig.tou_prices.slice(0, 24).map((v, i) => (
+                    <input
+                      key={i}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={v}
+                      onChange={(e) => {
+                        const next = [...priceConfig.tou_prices];
+                        next[i] = Number(e.target.value) || 0;
+                        setPriceConfig((c) => ({ ...c, tou_prices: next }));
+                      }}
+                      className="w-full text-xs border border-gray-300 rounded px-0.5 py-0.5"
+                      title={`${i}时`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex gap-1">
               <button
                 onClick={runAnalysis}

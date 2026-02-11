@@ -19,9 +19,37 @@ export default function ResultCharts({ charts }: ResultChartsProps) {
     );
   }
 
+  const colors = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b"];
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {charts.map((chart, index) => {
+        const d = chart.data || {};
+        let series: Array<{ name: string; type: string; data: number[]; smooth?: boolean; itemStyle?: { color: string } }>;
+        if (Array.isArray(d.series)) {
+          series = d.series.map((s: { name: string; data: number[] }, i: number) => ({
+            name: s.name,
+            type: chart.chart_type === "bar" ? "bar" : "line",
+            data: s.data,
+            smooth: chart.chart_type === "line",
+            itemStyle: { color: colors[i % colors.length] },
+          }));
+        } else if (d.energy && d.cost) {
+          series = [
+            { name: "电量(kWh)", type: "bar", data: d.energy, itemStyle: { color: colors[0] } },
+            { name: "电费(元)", type: "bar", data: d.cost, itemStyle: { color: colors[1] } },
+          ];
+        } else {
+          series = [
+            {
+              name: chart.title,
+              type: chart.chart_type === "bar" ? "bar" : "line",
+              data: d.y || d.values || [],
+              smooth: chart.chart_type === "line",
+              itemStyle: { color: colors[0] },
+            },
+          ];
+        }
         const option = {
           title: {
             text: chart.title,
@@ -44,8 +72,8 @@ export default function ResultCharts({ charts }: ResultChartsProps) {
             containLabel: true,
           },
           xAxis: {
-            type: chart.chart_type === "line" ? "time" : "category",
-            data: chart.data?.x || [],
+            type: (chart.chart_type === "line" && (Array.isArray(d.series) || !d.x?.length)) ? "time" : "category",
+            data: d.x || [],
             axisLine: {
               lineStyle: {
                 color: "#666",
@@ -66,17 +94,7 @@ export default function ResultCharts({ charts }: ResultChartsProps) {
               color: "#999",
             },
           },
-          series: [
-            {
-              name: chart.title,
-              type: chart.chart_type === "bar" ? "bar" : "line",
-              data: chart.data?.y || chart.data?.values || [],
-              smooth: chart.chart_type === "line",
-              itemStyle: {
-                color: "#3b82f6",
-              },
-            },
-          ],
+          series,
           backgroundColor: "transparent",
         };
 
