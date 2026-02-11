@@ -293,14 +293,15 @@ fn parse_column_name(col: &str) -> (String, String) {
     }
 }
 
-/// 生成简化的图例标签：取 SN 后 3-4 位作为短 ID
+/// 生成简化的图例标签：取 SN 尾部若干字符 + 字段名，格式为 sn尾部_字段名，便于与设备树对应
 fn make_short_label(device_sn: &str, data_item: &str) -> String {
     if device_sn.is_empty() {
         return data_item.to_string();
     }
-    // 取 SN 最后 3 位数字作为短 ID
-    let short_id: String = device_sn.chars().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect();
-    format!("{}-{}", short_id, data_item)
+    // 取 SN 尾部 8 个字符（与设备树中设备标识对应）
+    let tail_len = 8.min(device_sn.len());
+    let sn_tail = &device_sn[device_sn.len() - tail_len..];
+    format!("{}_{}", sn_tail, data_item)
 }
 
 /// 均匀降采样：保留首尾点，中间均匀选取
@@ -428,24 +429,22 @@ pub async fn dashboard_list_db_columns(db_path: String) -> Result<Vec<DbColumnMe
     let mut columns: Vec<DbColumnMeta> = Vec::new();
 
     for device_id in &device_ids {
-        let short_id = if device_id.len() > 6 {
-            &device_id[device_id.len() - 3..]
-        } else {
-            device_id
-        };
+        // 取设备 ID 尾部 8 个字符，格式为 sn尾部_字段名，便于与设备树对应
+        let tail_len = 8.min(device_id.len());
+        let sn_tail = &device_id[device_id.len() - tail_len..];
 
         // 基本字段
         columns.push(DbColumnMeta {
             key: format!("{}:p_active", device_id),
             device_id: device_id.clone(),
             field_name: "p_active".to_string(),
-            short_label: format!("{}-p_active", short_id),
+            short_label: format!("{}_p_active", sn_tail),
         });
         columns.push(DbColumnMeta {
             key: format!("{}:p_reactive", device_id),
             device_id: device_id.clone(),
             field_name: "p_reactive".to_string(),
-            short_label: format!("{}-p_reactive", short_id),
+            short_label: format!("{}_p_reactive", sn_tail),
         });
 
         // 尝试读取一行 data_json，解析出额外字段
@@ -463,7 +462,7 @@ pub async fn dashboard_list_db_columns(db_path: String) -> Result<Vec<DbColumnMe
                         key: format!("{}:{}", device_id, field_key),
                         device_id: device_id.clone(),
                         field_name: field_key.clone(),
-                        short_label: format!("{}-{}", short_id, field_key),
+                        short_label: format!("{}_{}", sn_tail, field_key),
                     });
                 }
             }
