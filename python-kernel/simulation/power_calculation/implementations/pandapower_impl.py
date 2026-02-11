@@ -63,10 +63,11 @@ class PandapowerKernel(PowerCalculationKernel):
             else:
                 raise ValueError(f"不支持的输入类型: {type(topology_data_or_net)}。期望pandapower网络对象。")
             
-            # 执行潮流计算
+            # 执行潮流计算（check_connectivity=True：自动检测并跳过断联孤岛母线，
+            # 避免开关断开后产生的隔离区域导致整体计算不收敛）
             calculation_failed = False
             try:
-                self.pp.runpp(self.net)
+                self.pp.runpp(self.net, check_connectivity=True)
             except Exception as calc_error:
                 calculation_failed = True
                 errors.append({

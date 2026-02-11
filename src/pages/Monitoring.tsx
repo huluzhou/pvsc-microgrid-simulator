@@ -111,26 +111,49 @@ export default function Monitoring() {
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [simulationState, setSimulationState] = useState<'Stopped' | 'Running' | 'Paused'>('Stopped');
 
-  /** 一键切换开关状态 */
-  const handleToggleSwitch = useCallback(async (deviceId: string, currentClosed: boolean) => {
-    try {
-      await invoke('update_switch_state', { deviceId, isClosed: !currentClosed });
-      // 刷新设备列表以获取最新状态
-      const statuses = await invoke<DeviceStatus[]>('get_all_devices_status');
-      setDevices(Array.isArray(statuses) ? statuses : []);
-    } catch (e) {
-      console.error('切换开关状态失败:', e);
-    }
-  }, []);
-
+  /**
+   * 从拓扑元数据加载设备列表（主数据源），再叠加运行时状态。
+   * 设备树始终以拓扑为准，不依赖 pandapower 返回的数据，
+   * 避免开关断开导致计算失败/仿真自动停止后切换标签时设备消失。
+   */
   const loadDevices = useCallback(async () => {
     setIsLoading(true);
     try {
-      const statuses = await invoke<DeviceStatus[]>('get_all_devices_status');
-      setDevices(Array.isArray(statuses) ? statuses : []);
+      // 第1步：从拓扑元数据获取完整设备列表（轻量、可靠，不依赖仿真状态）
+      const topoDevices = await invoke<Array<{ id: string; name: string; device_type: string; properties?: Record<string, unknown> }>>('get_all_devices');
+      // 构建拓扑基准设备列表（所有设备始终显示，默认离线）
+      const baseDevices: DeviceStatus[] = (Array.isArray(topoDevices) ? topoDevices : []).map((d) => ({
+        device_id: d.id,
+        name: d.name,
+        device_type: d.device_type as DeviceType,
+        is_online: false,
+        is_closed: d.device_type === 'switch' ? (d.properties?.is_closed !== false) : undefined,
+      }));
+
+      // 第2步：尝试获取运行时状态（功率、在线状态等），失败时仍保留拓扑基准列表
+      try {
+        const statuses = await invoke<DeviceStatus[]>('get_all_devices_status');
+        if (Array.isArray(statuses) && statuses.length > 0) {
+          // 以运行时状态为主，但确保拓扑中的设备不会丢失
+          const statusMap = new Map(statuses.map((s) => [s.device_id, s]));
+          const merged = baseDevices.map((base) => statusMap.get(base.device_id) ?? base);
+          // 追加运行时状态中存在但拓扑中不存在的设备（如动态添加的）
+          for (const s of statuses) {
+            if (!baseDevices.some((b) => b.device_id === s.device_id)) {
+              merged.push(s);
+            }
+          }
+          setDevices(merged);
+        } else {
+          setDevices(baseDevices);
+        }
+      } catch (statusError) {
+        console.warn('获取运行时设备状态失败，使用拓扑基准列表:', statusError);
+        setDevices(baseDevices);
+      }
     } catch (error) {
-      console.error('Failed to load devices:', error);
-      setDevices([]);
+      console.error('从拓扑加载设备失败:', error);
+      // 连拓扑元数据都获取失败时，保留当前设备列表，不清空
     } finally {
       setIsLoading(false);
     }
@@ -349,22 +372,6 @@ export default function Monitoring() {
                         <span className={`text-xs ${isSelected ? 'text-blue-100' : 'text-gray-500'}`}>
                           {DEVICE_TYPES[device.device_type]?.name ?? device.device_type}
                         </span>
-                        {device.device_type === 'switch' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleSwitch(device.device_id, device.is_closed !== false);
-                            }}
-                            className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
-                              device.is_closed !== false
-                                ? (isSelected ? 'bg-red-400 text-white hover:bg-red-300' : 'bg-red-100 text-red-700 hover:bg-red-200')
-                                : (isSelected ? 'bg-green-400 text-white hover:bg-green-300' : 'bg-green-100 text-green-700 hover:bg-green-200')
-                            }`}
-                            title={device.is_closed !== false ? '点击断开开关' : '点击闭合开关'}
-                          >
-                            {device.is_closed !== false ? '断开' : '闭合'}
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>

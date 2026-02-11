@@ -26,8 +26,6 @@ interface DeviceControlTableProps {
   /** 当前 Modbus 服务器已启动的设备 id */
   runningModbusIds?: string[];
   onToggleModbus?: (deviceId: string, turnOn: boolean) => Promise<void>;
-  /** 开关设备一键切换回调 */
-  onToggleSwitch?: (deviceId: string, isClosed: boolean) => Promise<void>;
 }
 
 // 数据源类型图标
@@ -99,7 +97,6 @@ const DeviceRow = memo(function DeviceRow({
   hasModbus,
   modbusRunning,
   onToggleModbus,
-  onToggleSwitch,
 }: {
   device: DeviceInfo;
   config?: DeviceControlConfig;
@@ -110,7 +107,6 @@ const DeviceRow = memo(function DeviceRow({
   hasModbus: boolean;
   modbusRunning: boolean;
   onToggleModbus?: (deviceId: string, turnOn: boolean) => Promise<void>;
-  onToggleSwitch?: (deviceId: string, isClosed: boolean) => Promise<void>;
 }) {
   const deviceInfo = DEVICE_TYPES[device.deviceType];
   const [toggling, setToggling] = useState(false);
@@ -123,18 +119,8 @@ const DeviceRow = memo(function DeviceRow({
       setToggling(false);
     }
   }, [onToggleModbus, device.id, modbusRunning]);
-  // 开关设备一键切换
+  // 开关设备状态（只读）
   const isClosed = device.properties?.is_closed !== false;
-  const [switchToggling, setSwitchToggling] = useState(false);
-  const handleSwitchToggle = useCallback(async () => {
-    if (!onToggleSwitch) return;
-    setSwitchToggling(true);
-    try {
-      await onToggleSwitch(device.id, !isClosed);
-    } finally {
-      setSwitchToggling(false);
-    }
-  }, [onToggleSwitch, device.id, isClosed]);
 
   return (
     <tr className={`border-b border-gray-200 ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
@@ -182,25 +168,9 @@ const DeviceRow = memo(function DeviceRow({
       {/* 数据源类型 */}
       <td className="px-4 py-3">
         {device.deviceType === 'switch' ? (
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${isClosed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-              {isClosed ? '闭合' : '断开'}
-            </span>
-            {onToggleSwitch && (
-              <button
-                onClick={handleSwitchToggle}
-                disabled={switchToggling}
-                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  isClosed
-                    ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                    : 'bg-green-100 text-green-700 hover:bg-green-200'
-                } disabled:opacity-50`}
-                title={isClosed ? '点击断开开关' : '点击闭合开关'}
-              >
-                {switchToggling ? '…' : isClosed ? '断开' : '闭合'}
-              </button>
-            )}
-          </div>
+          <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${isClosed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+            {isClosed ? '闭合' : '断开'}
+          </span>
         ) : (
           <div className="flex items-center gap-2">
             <DataSourceIcon type={config?.dataSourceType} />
@@ -258,7 +228,6 @@ export default function DeviceControlTable({
   modbusDeviceIds = [],
   runningModbusIds = [],
   onToggleModbus,
-  onToggleSwitch,
 }: DeviceControlTableProps) {
   const handleSelectAll = useCallback(() => {
     if (selectedIds.length === devices.length) {
@@ -325,7 +294,6 @@ export default function DeviceControlTable({
                 hasModbus={modbusDeviceIds?.includes(device.id) ?? false}
                 modbusRunning={runningModbusIds?.includes(device.id) ?? false}
                 onToggleModbus={onToggleModbus}
-                onToggleSwitch={onToggleSwitch}
               />
             ))
           )}

@@ -177,6 +177,7 @@ pub async fn update_device_properties_for_simulation(
 }
 
 /// 更新开关状态（同时更新 Python 仿真、Rust 元数据与拓扑，保证再次打开面板时显示实际状态）
+/// 即使 Python 侧调用失败（如仿真未启动），也会更新 Rust 元数据，确保设备树始终显示正确的开关状态。
 #[tauri::command]
 pub async fn update_switch_state(
     device_id: String,
@@ -184,11 +185,20 @@ pub async fn update_switch_state(
     engine: State<'_, Arc<SimulationEngine>>,
     metadata_store: State<'_, Mutex<DeviceMetadataStore>>,
 ) -> Result<(), String> {
-    engine.update_switch_state(device_id.clone(), is_closed).await?;
-    // 同步更新元数据中的 is_closed，使 get_all_devices 与再次打开开关面板时显示实际状态
-    if let Some(mut device) = metadata_store.lock().unwrap().get_device(&device_id) {
+    // 先更新 Rust 元数据（无论 Python 侧是否成功，设备树都能正确显示开关状态）
+    // 【修复】将第一次锁获取放入独立作用域，确保 MutexGuard 在第二次加锁前释放，
+    // 避免 Rust 2021 edition 中 if-let 临时变量生命周期延伸导致的同线程死锁。
+    let device_opt = {
+        let store = metadata_store.lock().unwrap();
+        store.get_device(&device_id)
+    }; // MutexGuard 在此处释放
+    if let Some(mut device) = device_opt {
         device.properties.insert("is_closed".to_string(), serde_json::json!(is_closed));
         metadata_store.lock().unwrap().update_device(device)?;
+    }
+    // 尝试同步到 Python 仿真引擎；如果仿真未启动或桥接未连接，仅打印警告而不阻断
+    if let Err(e) = engine.update_switch_state(device_id.clone(), is_closed).await {
+        eprintln!("同步开关状态到 Python 仿真失败（不影响元数据）: {}", e);
     }
     Ok(())
 }

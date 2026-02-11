@@ -134,7 +134,7 @@ export default function DeviceControl() {
         setDevices(powerDevices);
       } catch (fallbackError) {
         console.error('Failed to load from topology file:', fallbackError);
-        setDevices([]);
+        // 保留当前设备列表，不清空，避免开关断开等场景下设备消失
       }
     } finally {
       setIsLoading(false);
@@ -292,20 +292,6 @@ export default function DeviceControl() {
     [selectedDevice, setDeviceSimParams, handleCloseConfig]
   );
 
-  /** 表格中开关设备一键切换（不打开侧面板） */
-  const handleToggleSwitchInline = useCallback(
-    async (deviceId: string, isClosed: boolean) => {
-      try {
-        await invoke('update_switch_state', { deviceId, isClosed });
-        await loadDevices();
-      } catch (e) {
-        console.error('切换开关状态失败:', e);
-        alert('操作失败: ' + e);
-      }
-    },
-    [loadDevices]
-  );
-
   const handleSaveSwitch = useCallback(
     async (isClosed: boolean) => {
       if (!selectedDevice) return;
@@ -416,7 +402,6 @@ export default function DeviceControl() {
             modbusDeviceIds={modbusDevices.map((d) => d.id)}
             runningModbusIds={runningModbusIds}
             onToggleModbus={handleToggleModbus}
-            onToggleSwitch={handleToggleSwitchInline}
           />
         </div>
       </div>
