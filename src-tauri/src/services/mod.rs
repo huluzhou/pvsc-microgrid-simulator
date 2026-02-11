@@ -10,6 +10,5 @@ pub mod modbus_filter;
 pub mod modbus_schema;
 pub mod modbus_server;
 pub mod database;
-pub mod ssh;
 
 // pub use modbus::ModbusService; // 已移除 modbus 模块

@@ -205,7 +205,8 @@ pub async fn dashboard_parse_csv(file_path: String) -> Result<DashboardCsvData, 
 }
 
 fn parse_timestamp(s: &str) -> Option<f64> {
-    let s = s.trim();
+    // 去除前后空格，以及前导单引号（宽表 CSV 中常见）
+    let s = s.trim().trim_start_matches('\'').trim_start_matches('"');
     if s.is_empty() {
         return None;
     }
@@ -235,4 +236,299 @@ fn parse_timestamp(s: &str) -> Option<f64> {
                 .ok()
                 .and_then(|dt| dt.and_local_timezone(chrono::Utc).single().map(|dtu| dtu.timestamp_millis() as f64 / 1000.0))
         })
+}
+
+// ====== 宽表 CSV 解析 ======
+
+/// 宽表列元信息
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ColumnMeta {
+    /// 原始列名
+    pub key: String,
+    /// 设备 SN（从列名解析）
+    pub device_sn: String,
+    /// 数据项名称（从列名解析）
+    pub data_item: String,
+    /// 简化的图例标签
+    pub short_label: String,
+}
+
+/// 时间序列数据点
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TimeSeriesPoint {
+    pub timestamp: f64,
+    pub value: f64,
+}
+
+/// 宽表 CSV 解析结果
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WideTableData {
+    /// 所有数据列的元信息
+    pub columns: Vec<ColumnMeta>,
+    /// 每列的时间序列数据（key = 原始列名）
+    pub series: HashMap<String, Vec<TimeSeriesPoint>>,
+}
+
+/// 从宽表列名中解析设备 SN 和数据项
+/// 列名格式: {SN}_{dataItem}，其中 SN 为大写字母+数字
+fn parse_column_name(col: &str) -> (String, String) {
+    // 尝试匹配模式：SN 全为大写字母或数字，后跟 _ 和数据项
+    // 例：TESAR125261GT00CN251225002_activePowerLimit → (TESAR125261GT00CN251225002, activePowerLimit)
+    // 例：TMEAD35K050EI00CN251209001_active_power → (TMEAD35K050EI00CN251209001, active_power)
+    let bytes = col.as_bytes();
+    let mut split_pos = None;
+    for i in 0..bytes.len() {
+        if bytes[i] == b'_' && i > 0 {
+            // 检查 _ 之前是否全部为大写字母/数字
+            let prefix_valid = bytes[..i].iter().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
+            if prefix_valid && i + 1 < bytes.len() {
+                split_pos = Some(i);
+                break;
+            }
+        }
+    }
+    match split_pos {
+        Some(pos) => (col[..pos].to_string(), col[pos + 1..].to_string()),
+        None => (String::new(), col.to_string()),
+    }
+}
+
+/// 生成简化的图例标签：取 SN 后 3-4 位作为短 ID
+fn make_short_label(device_sn: &str, data_item: &str) -> String {
+    if device_sn.is_empty() {
+        return data_item.to_string();
+    }
+    // 取 SN 最后 3 位数字作为短 ID
+    let short_id: String = device_sn.chars().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect();
+    format!("{}-{}", short_id, data_item)
+}
+
+/// 均匀降采样：保留首尾点，中间均匀选取
+fn downsample(data: &mut Vec<TimeSeriesPoint>, max_points: usize) {
+    if data.len() <= max_points || max_points < 2 {
+        return;
+    }
+    let n = data.len();
+    let step = (n - 1) as f64 / (max_points - 1) as f64;
+    let mut sampled = Vec::with_capacity(max_points);
+    for i in 0..max_points {
+        let idx = (i as f64 * step).round() as usize;
+        sampled.push(data[idx.min(n - 1)].clone());
+    }
+    *data = sampled;
+}
+
+/// 解析宽表 CSV 文件
+/// 列格式：local_timestamp, {SN}_{dataItem}, {SN}_{dataItem}, ...
+/// 数据稀疏，大部分单元格为空
+/// 每列最多保留 MAX_POINTS_PER_SERIES 个点（自动降采样）
+#[tauri::command]
+pub async fn dashboard_parse_wide_csv(file_path: String) -> Result<WideTableData, String> {
+    const MAX_POINTS_PER_SERIES: usize = 5000;
+
+    let file = File::open(&file_path).map_err(|e| format!("打开文件失败: {}", e))?;
+    let mut rdr = csv::Reader::from_reader(BufReader::new(file));
+    let headers = rdr.headers().map_err(|e| format!("读取表头失败: {}", e))?;
+    let headers: Vec<String> = headers.iter().map(|h| h.trim().trim_matches('"').to_string()).collect();
+
+    // 找到时间戳列
+    let ts_idx = headers.iter().position(|h| {
+        h.eq_ignore_ascii_case("local_timestamp") || h.eq_ignore_ascii_case("timestamp")
+    }).ok_or("CSV 缺少 local_timestamp 或 timestamp 列")?;
+
+    // 解析其余列为数据列
+    let mut columns: Vec<ColumnMeta> = Vec::new();
+    let mut col_indices: Vec<usize> = Vec::new(); // 对应 headers 中的索引
+
+    for (i, header) in headers.iter().enumerate() {
+        if i == ts_idx {
+            continue;
+        }
+        let (device_sn, data_item) = parse_column_name(header);
+        let short_label = make_short_label(&device_sn, &data_item);
+        columns.push(ColumnMeta {
+            key: header.clone(),
+            device_sn,
+            data_item,
+            short_label,
+        });
+        col_indices.push(i);
+    }
+
+    // 为每列初始化时间序列
+    let mut series: HashMap<String, Vec<TimeSeriesPoint>> = HashMap::new();
+    for col in &columns {
+        series.insert(col.key.clone(), Vec::new());
+    }
+
+    // 逐行解析
+    for result in rdr.records() {
+        let record = result.map_err(|e| format!("解析行失败: {}", e))?;
+        let ts_str = record.get(ts_idx).unwrap_or("").trim().to_string();
+        let timestamp = match parse_timestamp(&ts_str) {
+            Some(ts) => ts,
+            None => continue,
+        };
+
+        for (col_meta, &col_idx) in columns.iter().zip(col_indices.iter()) {
+            let cell = record.get(col_idx).unwrap_or("").trim();
+            if cell.is_empty() {
+                continue;
+            }
+            if let Ok(value) = cell.parse::<f64>() {
+                if let Some(vec) = series.get_mut(&col_meta.key) {
+                    vec.push(TimeSeriesPoint { timestamp, value });
+                }
+            }
+        }
+    }
+
+    // 对每列降采样
+    for (_key, data) in series.iter_mut() {
+        downsample(data, MAX_POINTS_PER_SERIES);
+    }
+
+    Ok(WideTableData {
+        columns,
+        series,
+    })
+}
+
+// ====== 本地 DB 数据列查询 ======
+
+/// 本地 DB 可选的数据列信息
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbColumnMeta {
+    /// 列 key（格式：{device_id}:{field_name}）
+    pub key: String,
+    /// 设备 ID
+    pub device_id: String,
+    /// 字段名
+    pub field_name: String,
+    /// 简化标签
+    pub short_label: String,
+}
+
+/// 从本地 DB 列出所有可选的数据列
+/// 返回每个设备的基本字段（p_active, p_reactive）以及 data_json 中的额外字段
+#[tauri::command]
+pub async fn dashboard_list_db_columns(db_path: String) -> Result<Vec<DbColumnMeta>, String> {
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
+
+    // 获取所有设备 ID
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT device_id FROM device_data ORDER BY device_id")
+        .map_err(|e| format!("查询失败: {}", e))?;
+    let device_ids: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("查询失败: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut columns: Vec<DbColumnMeta> = Vec::new();
+
+    for device_id in &device_ids {
+        let short_id = if device_id.len() > 6 {
+            &device_id[device_id.len() - 3..]
+        } else {
+            device_id
+        };
+
+        // 基本字段
+        columns.push(DbColumnMeta {
+            key: format!("{}:p_active", device_id),
+            device_id: device_id.clone(),
+            field_name: "p_active".to_string(),
+            short_label: format!("{}-p_active", short_id),
+        });
+        columns.push(DbColumnMeta {
+            key: format!("{}:p_reactive", device_id),
+            device_id: device_id.clone(),
+            field_name: "p_reactive".to_string(),
+            short_label: format!("{}-p_reactive", short_id),
+        });
+
+        // 尝试读取一行 data_json，解析出额外字段
+        let mut stmt = conn
+            .prepare("SELECT data_json FROM device_data WHERE device_id = ?1 AND data_json IS NOT NULL AND data_json != '' LIMIT 1")
+            .map_err(|e| format!("查询失败: {}", e))?;
+        let json_str: Option<String> = stmt
+            .query_row(rusqlite::params![device_id], |row| row.get::<_, Option<String>>(0))
+            .unwrap_or(None);
+
+        if let Some(json_str) = json_str {
+            if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                for field_key in map.keys() {
+                    columns.push(DbColumnMeta {
+                        key: format!("{}:{}", device_id, field_key),
+                        device_id: device_id.clone(),
+                        field_name: field_key.clone(),
+                        short_label: format!("{}-{}", short_id, field_key),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(columns)
+}
+
+/// 从本地 DB 查询指定设备指定字段的时间序列
+#[tauri::command]
+pub async fn dashboard_query_db_series(
+    db_path: String,
+    device_id: String,
+    field_name: String,
+    max_points: Option<usize>,
+) -> Result<Vec<TimeSeriesPoint>, String> {
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
+
+    let is_basic_field = field_name == "p_active" || field_name == "p_reactive";
+
+    let mut results: Vec<TimeSeriesPoint> = Vec::new();
+
+    if is_basic_field {
+        let query = format!(
+            "SELECT timestamp, {} FROM device_data WHERE device_id = ?1 AND {} IS NOT NULL ORDER BY timestamp",
+            field_name, field_name
+        );
+        let mut stmt = conn.prepare(&query).map_err(|e| format!("查询失败: {}", e))?;
+        let rows = stmt
+            .query_map(rusqlite::params![device_id], |row| {
+                Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?))
+            })
+            .map_err(|e| format!("查询失败: {}", e))?;
+        for row in rows.flatten() {
+            results.push(TimeSeriesPoint {
+                timestamp: row.0,
+                value: row.1,
+            });
+        }
+    } else {
+        // 从 data_json 中提取字段
+        let mut stmt = conn
+            .prepare("SELECT timestamp, data_json FROM device_data WHERE device_id = ?1 AND data_json IS NOT NULL ORDER BY timestamp")
+            .map_err(|e| format!("查询失败: {}", e))?;
+        let rows = stmt
+            .query_map(rusqlite::params![device_id], |row| {
+                Ok((row.get::<_, f64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("查询失败: {}", e))?;
+        for row in rows.flatten() {
+            if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(&row.1) {
+                if let Some(val) = map.get(&field_name).and_then(|v| v.as_f64()) {
+                    results.push(TimeSeriesPoint {
+                        timestamp: row.0,
+                        value: val,
+                    });
+                }
+            }
+        }
+    }
+
+    // 降采样
+    let max_pts = max_points.unwrap_or(5000);
+    downsample(&mut results, max_pts);
+
+    Ok(results)
 }

@@ -11,7 +11,6 @@ use services::python_bridge::PythonBridge;
 use services::database::Database;
 use services::simulation_engine::SimulationEngine;
 use services::modbus::ModbusService;
-use services::ssh::SshClient;
 use domain::metadata::DeviceMetadataStore;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::{mpsc, Mutex as TokioMutex};
@@ -125,9 +124,6 @@ fn main() {
                     }));
                 }
             });
-            // SSH 客户端（数据看板远程数据源）
-            let ssh_client = Arc::new(TokioMutex::new(SshClient::new()));
-
             // 将服务存储到应用状态
             app.manage(python_bridge_arc);
             app.manage(db_arc);
@@ -135,7 +131,6 @@ fn main() {
             app.manage(StdMutex::new(metadata_store));
             app.manage(simulation_engine);
             app.manage(modbus_service);
-            app.manage(ssh_client);
 
             Ok(())
         })
@@ -165,8 +160,6 @@ fn main() {
             commands::simulation::get_historical_time_range,
             commands::monitoring::record_device_data,
             commands::monitoring::get_latest_simulation_start_time,
-            commands::monitoring::get_app_database_path,
-            commands::monitoring::get_dashboard_device_ids,
             commands::monitoring::query_device_data,
             commands::monitoring::get_all_devices_status,
             commands::monitoring::get_device_status,
@@ -186,13 +179,12 @@ fn main() {
             commands::ai::get_ai_recommendations,
             commands::analytics::analyze_performance,
             commands::analytics::generate_report,
-            commands::ssh::ssh_connect,
-            commands::ssh::ssh_disconnect,
-            commands::ssh::ssh_is_connected,
-            commands::ssh::ssh_query_remote_device_data,
             commands::dashboard::dashboard_parse_csv,
             commands::dashboard::dashboard_list_devices_from_path,
             commands::dashboard::query_device_data_from_path,
+            commands::dashboard::dashboard_parse_wide_csv,
+            commands::dashboard::dashboard_list_db_columns,
+            commands::dashboard::dashboard_query_db_series,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
