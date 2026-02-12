@@ -19,7 +19,7 @@ import MultiSeriesChart, { type SeriesItem } from '../components/monitoring/Mult
 import ResultCharts from '../components/analytics/ResultCharts';
 import PerformanceDataMappingDialog, {
   type PerformanceDataMapping,
-  PERFORMANCE_STANDARDS,
+  PERFORMANCE_INDICATORS,
 } from '../components/analytics/PerformanceDataMappingDialog';
 
 // ====== 类型定义 ======
@@ -130,11 +130,14 @@ export default function Dashboard() {
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
   // 收益分析：关口电表 key（为空则用当前选中的第一项）
   const [gatewayKeyForRevenue, setGatewayKeyForRevenue] = useState<string | null>(null);
-  // 性能分析：分析标准多选
-  const [performanceStandards, setPerformanceStandards] = useState<string[]>([]);
-  // 性能分析：数据项映射（弹窗确认后保存）
+  // 性能分析：指标多选（默认全选），每个指标旁标注来源标准
+  const [performanceIndicators, setPerformanceIndicators] = useState<string[]>(
+    () => PERFORMANCE_INDICATORS.map((i) => i.id)
+  );
+  // 性能分析：数据项映射（弹窗确认后保存，可随时修改）
   const [performanceDataMapping, setPerformanceDataMapping] = useState<PerformanceDataMapping | null>(null);
   const [showMappingDialog, setShowMappingDialog] = useState(false);
+  const [mappingDialogReason, setMappingDialogReason] = useState<'analyze' | 'modify'>('analyze');
   // 收益分析：电价配置
   const [priceConfig, setPriceConfig] = useState<PriceConfig>({
     tou_prices: Array.from({ length: 24 }, (_, i) => (i >= 8 && i < 12 ? 0.9 : i >= 18 && i < 22 ? 0.9 : 0.4)),
@@ -353,7 +356,12 @@ export default function Dashboard() {
       const hasPerformance = selectedAnalysisTypes.includes('performance');
       const mapping = mappingOverride ?? performanceDataMapping;
 
+      if (hasPerformance && performanceIndicators.length === 0) {
+        setError('请至少选择一个性能分析指标');
+        return;
+      }
       if (hasPerformance && !mapping) {
+        setMappingDialogReason('analyze');
         setShowMappingDialog(true);
         return;
       }
@@ -402,7 +410,7 @@ export default function Dashboard() {
             gateway_meter_active_power_key: gatewayKey,
             price_config: isRevenue ? priceConfig : null,
             series_data: dataSource === 'csv' ? buildSeriesData(keysForRequest) : null,
-            performance_standards: hasPerformance ? performanceStandards : null,
+            performance_standards: hasPerformance ? performanceIndicators : null,
             performance_data_mapping: hasPerformance && mapping
               ? {
                   measured_power_key: mapping.measured_power_key,
@@ -431,21 +439,29 @@ export default function Dashboard() {
       gatewayKeyForRevenue,
       priceConfig,
       performanceDataMapping,
-      performanceStandards,
+      performanceIndicators,
       getTimeRange,
       buildSeriesData,
     ]
   );
 
-  /** 数据映射弹窗确认后执行分析 */
+  /** 数据映射弹窗确认：保存映射，若从「开始分析」打开则继续执行分析 */
   const handleMappingConfirm = useCallback(
     (mapping: PerformanceDataMapping) => {
       setPerformanceDataMapping(mapping);
       setShowMappingDialog(false);
-      runAnalysis(mapping);
+      if (mappingDialogReason === 'analyze') {
+        runAnalysis(mapping);
+      }
     },
-    [runAnalysis]
+    [runAnalysis, mappingDialogReason]
   );
+
+  /** 打开数据映射弹窗以修改配置 */
+  const openMappingDialogToModify = useCallback(() => {
+    setMappingDialogReason('modify');
+    setShowMappingDialog(true);
+  }, []);
 
   /** 导出分析报告 */
   const exportReport = useCallback(async () => {
@@ -499,7 +515,7 @@ export default function Dashboard() {
           series_data: dataSource === 'csv' ? buildSeriesData(keysForRequest) : null,
           format: 'json',
           report_path: reportPath,
-          performance_standards: hasPerf ? performanceStandards : null,
+          performance_standards: hasPerf ? performanceIndicators : null,
           performance_data_mapping: hasPerf && performanceDataMapping
             ? {
                 measured_power_key: performanceDataMapping.measured_power_key,
@@ -526,7 +542,7 @@ export default function Dashboard() {
     gatewayKeyForRevenue,
     priceConfig,
     performanceDataMapping,
-    performanceStandards,
+    performanceIndicators,
     getTimeRange,
     buildSeriesData,
   ]);
@@ -777,27 +793,50 @@ export default function Dashboard() {
             </div>
             {selectedAnalysisTypes.includes('performance') && (
               <div className="space-y-1 border-t border-gray-200 pt-2 mt-2">
-                <label className="text-xs text-gray-500 block mb-1">分析标准</label>
-                <div className="space-y-0.5 max-h-24 overflow-y-auto">
-                  {PERFORMANCE_STANDARDS.map((st) => (
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-gray-500">分析指标（默认全选）</label>
+                  <button
+                    onClick={() =>
+                      setPerformanceIndicators((prev) =>
+                        prev.length === PERFORMANCE_INDICATORS.length
+                          ? []
+                          : PERFORMANCE_INDICATORS.map((i) => i.id)
+                      )
+                    }
+                    className="text-xs text-blue-500 hover:text-blue-700"
+                  >
+                    {performanceIndicators.length === PERFORMANCE_INDICATORS.length ? '全不选' : '全选'}
+                  </button>
+                </div>
+                <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                  {PERFORMANCE_INDICATORS.map((ind) => (
                     <label
-                      key={st.id}
+                      key={ind.id}
                       className="flex items-center gap-2 px-2 py-0.5 rounded text-xs cursor-pointer hover:bg-gray-100"
                     >
                       <input
                         type="checkbox"
-                        checked={performanceStandards.includes(st.id)}
+                        checked={performanceIndicators.includes(ind.id)}
                         onChange={() => {
-                          setPerformanceStandards((prev) =>
-                            prev.includes(st.id) ? prev.filter((x) => x !== st.id) : [...prev, st.id]
+                          setPerformanceIndicators((prev) =>
+                            prev.includes(ind.id) ? prev.filter((x) => x !== ind.id) : [...prev, ind.id]
                           );
                         }}
                         className="w-3 h-3 rounded border-gray-300 text-green-600"
                       />
-                      <span className="truncate" title={st.label}>{st.label}</span>
+                      <span className="truncate flex-1" title={ind.label}>{ind.label}</span>
+                      <span className="text-gray-400 flex-shrink-0" title={ind.standard}>{ind.standard}</span>
                     </label>
                   ))}
                 </div>
+                {performanceDataMapping && (
+                  <button
+                    onClick={openMappingDialogToModify}
+                    className="mt-2 w-full text-xs text-blue-600 hover:text-blue-700 border border-blue-200 rounded py-1 hover:bg-blue-50"
+                  >
+                    修改数据项
+                  </button>
+                )}
               </div>
             )}
             {selectedAnalysisTypes.includes('revenue') && (
@@ -950,7 +989,7 @@ export default function Dashboard() {
         onClose={() => setShowMappingDialog(false)}
         onConfirm={handleMappingConfirm}
         availableColumns={availableColumns}
-        selectedStandards={performanceStandards}
+        selectedIndicatorIds={performanceIndicators}
         initialMapping={performanceDataMapping}
       />
     </div>
