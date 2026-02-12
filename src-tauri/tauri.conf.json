@@ -4,7 +4,7 @@
   "identifier": "com.pvsc.microgrid-simulator",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run ensure-kernel-dir && npm run build",
+    "beforeBuildCommand": "npm run ensure-kernel-dir",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
