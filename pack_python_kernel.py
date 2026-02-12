@@ -265,12 +265,29 @@ def build_executable(python_exe):
         subprocess.run(cmd, check=True)
         
         # 检查生成的文件
-        exe_name = "python-kernel.exe" if sys.platform == "win32" else "python-kernel"
-        exe_path = output_dir / exe_name
+        exe_ext = ".exe" if sys.platform == "win32" else ""
+        
+        if use_onefile:
+            # Onefile 模式：单个可执行文件
+            exe_name = f"python-kernel{exe_ext}"
+            exe_path = output_dir / exe_name
+            dist_dir = None
+        else:
+            # Standalone 目录模式：main.dist 目录下的 main 可执行文件
+            exe_name = f"main{exe_ext}"
+            dist_dir = output_dir / "main.dist"
+            exe_path = dist_dir / exe_name
         
         if exe_path.exists():
-            print(f"\n✓ 构建成功! 可执行文件: {exe_path}")
-            print(f"  文件大小: {exe_path.stat().st_size / (1024*1024):.2f} MB")
+            if use_onefile:
+                print(f"\n✓ 构建成功! 可执行文件: {exe_path}")
+                print(f"  文件大小: {exe_path.stat().st_size / (1024*1024):.2f} MB")
+            else:
+                # 计算目录总大小
+                total_size = sum(f.stat().st_size for f in dist_dir.rglob('*') if f.is_file())
+                print(f"\n✓ 构建成功! 输出目录: {dist_dir}")
+                print(f"  目录总大小: {total_size / (1024*1024):.2f} MB")
+                print(f"  可执行文件: {exe_path}")
             
             # 同时复制到Tauri的target目录（如果存在）
             tauri_release_dir = Path("src-tauri/target/release/python-kernel")
@@ -278,12 +295,20 @@ def build_executable(python_exe):
             
             for tauri_dir in [tauri_release_dir, tauri_debug_dir]:
                 if tauri_dir.parent.exists():
-                    tauri_dir.mkdir(parents=True, exist_ok=True)
-                    tauri_exe = tauri_dir / exe_name
-                    if tauri_exe.exists():
-                        tauri_exe.unlink()
-                    shutil.copy2(exe_path, tauri_exe)
-                    print(f"  已复制到: {tauri_exe}")
+                    if use_onefile:
+                        # Onefile 模式：复制单个文件
+                        tauri_dir.mkdir(parents=True, exist_ok=True)
+                        tauri_exe = tauri_dir / "python-kernel" + exe_ext
+                        if tauri_exe.exists():
+                            tauri_exe.unlink()
+                        shutil.copy2(exe_path, tauri_exe)
+                        print(f"  已复制到: {tauri_exe}")
+                    else:
+                        # Standalone 目录模式：复制整个目录
+                        if tauri_dir.exists():
+                            shutil.rmtree(tauri_dir)
+                        shutil.copytree(dist_dir, tauri_dir)
+                        print(f"  已复制目录到: {tauri_dir}")
             
             end_time = time.time()
             duration = end_time - start_time
@@ -291,6 +316,11 @@ def build_executable(python_exe):
             return True
         else:
             print(f"\n✗ 错误: 未找到生成的可执行文件 {exe_path}")
+            # 列出输出目录内容以便调试
+            if output_dir.exists():
+                print(f"  输出目录 {output_dir} 内容:")
+                for item in output_dir.iterdir():
+                    print(f"    - {item.name}")
             return False
             
     except subprocess.CalledProcessError as e:
@@ -338,10 +368,21 @@ def main():
     print("\n" + "=" * 60)
     print("打包完成!")
     print("=" * 60)
-    print("可执行文件位置:")
-    print(f"  - dist/python-kernel/{'python-kernel.exe' if sys.platform == 'win32' else 'python-kernel'}")
+    
+    # 根据模式显示输出位置
+    onefile_env = os.getenv("PYTHON_KERNEL_ONEFILE", "1").strip().lower()
+    use_onefile = onefile_env not in ("0", "false", "no")
+    exe_ext = ".exe" if sys.platform == "win32" else ""
+    
+    if use_onefile:
+        print("可执行文件位置:")
+        print(f"  - dist/python-kernel/python-kernel{exe_ext}")
+    else:
+        print("输出目录位置:")
+        print(f"  - dist/python-kernel/main.dist/")
+        print(f"  - 可执行文件: dist/python-kernel/main.dist/main{exe_ext}")
     print("=" * 60)
-    print("\n提示: 在Tauri构建时，此可执行文件将被包含在应用包中")
+    print("\n提示: 在Tauri构建时，此输出将被包含在应用包中")
     print("=" * 60)
     
     return True

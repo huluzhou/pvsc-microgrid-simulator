@@ -38,13 +38,14 @@ jobs:
 
       - name: Pack Python kernel (Nuitka)
         env:
-          NUITKA_JOBS: 1
-          # 单文件模式便于分发；若 CI 内存不足可改为 PYTHON_KERNEL_ONEFILE=0
-          PYTHON_KERNEL_ONEFILE: 1
+          # 使用 2 个并行任务加速编译（平衡速度与内存占用）
+          NUITKA_JOBS: 2
+          # 使用目录模式（非单文件），加快打包速度
+          PYTHON_KERNEL_ONEFILE: 0
           # 确保 Python 在 Windows 上使用 UTF-8 编码输出中文
           PYTHONIOENCODING: utf-8
         run: python pack_python_kernel.py
-        timeout-minutes: 45
+        timeout-minutes: 90
 
       - name: Build frontend
         run: npm run build
