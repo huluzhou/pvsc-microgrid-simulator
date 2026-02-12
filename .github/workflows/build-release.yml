@@ -39,7 +39,7 @@ jobs:
       - name: Pack Python kernel (Nuitka)
         env:
           # 使用 2 个并行任务加速编译（平衡速度与内存占用）
-          NUITKA_JOBS: 2
+          NUITKA_JOBS: 4
           # 使用目录模式（非单文件），加快打包速度
           PYTHON_KERNEL_ONEFILE: 0
           # 确保 Python 在 Windows 上使用 UTF-8 编码输出中文
