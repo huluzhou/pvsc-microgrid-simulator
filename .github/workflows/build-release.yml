@@ -28,6 +28,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Install frontend dependencies
         run: npm ci
 
@@ -43,7 +48,7 @@ jobs:
       # 前端构建完成后再打包 Python 内核，避免被 Vite 清空
       - name: Pack Python kernel (Nuitka)
         env:
-          # 使用 2 个并行任务加速编译（平衡速度与内存占用）
+          # 使用 4 个并行任务加速编译
           NUITKA_JOBS: 4
           # 使用目录模式（非单文件），加快打包速度
           PYTHON_KERNEL_ONEFILE: 0

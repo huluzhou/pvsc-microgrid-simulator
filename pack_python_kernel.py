@@ -232,20 +232,45 @@ def build_executable(python_exe):
         "--include-module=pandas",
     ])
     
-    # 排除不必要的模块以减小体积
+    # 排除不必要的模块以减小体积和加快编译速度
     excludes = [
+        # GUI 相关
         "tkinter",
-        "matplotlib.backends.backend_tkagg",
-        "matplotlib.backends.backend_webagg",
+        "matplotlib",  # 整个 matplotlib，如果不需要图表
+        # 交互式环境
         "IPython",
         "jupyter",
         "notebook",
+        # 测试框架
         "pytest",
         "unittest",
         "doctest",
+        # 包管理
         "setuptools",
         "distutils",
         "pkg_resources",
+        "pip",
+        # 测试目录（减少编译量）
+        "scipy.tests",
+        "numpy.tests", 
+        "pandas.tests",
+        "numpy.testing",
+        "scipy.testing",
+        # 不常用的 scipy 子模块
+        "scipy.io.matlab",
+        "scipy.io.arff",
+        "scipy.io.wavfile",
+        "scipy.signal",
+        "scipy.ndimage",
+        "scipy.interpolate",
+        "scipy.integrate",
+        "scipy.fft",
+        # 其他
+        "xml.etree.ElementTree",
+        "email",
+        "html.parser",
+        "http.server",
+        "xmlrpc",
     ]
     
     for module in excludes:
