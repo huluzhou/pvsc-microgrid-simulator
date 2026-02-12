@@ -212,15 +212,14 @@ def build_executable(python_exe):
     
     # 平台特定选项
     if sys.platform == "win32":
-        cmd.append("--windows-disable-console")  # Windows下禁用控制台窗口
+        cmd.append("--windows-console-mode=disable")  # Windows下禁用控制台窗口
     elif sys.platform == "darwin":
         cmd.append("--macos-create-app-bundle")  # macOS创建应用包
     
-    # 包含必要的包
+    # 包含必要的包（仅包含 python-kernel 目录中实际存在的包）
     include_packages = [
         "simulation",
-        "data",
-        "modbus",
+        "ai",
     ]
     for pkg in include_packages:
         cmd.append(f"--include-package={pkg}")
