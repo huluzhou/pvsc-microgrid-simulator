@@ -41,6 +41,8 @@ jobs:
           NUITKA_JOBS: 1
           # 单文件模式便于分发；若 CI 内存不足可改为 PYTHON_KERNEL_ONEFILE=0
           PYTHON_KERNEL_ONEFILE: 1
+          # 确保 Python 在 Windows 上使用 UTF-8 编码输出中文
+          PYTHONIOENCODING: utf-8
         run: python pack_python_kernel.py
         timeout-minutes: 45
 
