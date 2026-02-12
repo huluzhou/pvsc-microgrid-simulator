@@ -130,14 +130,21 @@ def _parse_timestamp(raw: str, fmt: str) -> Optional[float]:
     return None
 
 
-def _convert_power(value: float, unit: str) -> float:
-    """将功率值转为 kW。"""
+def _convert_power(value: float, unit: str, scale_to_standard: Optional[float] = None) -> float:
+    """将功率值转为 kW。unit 为 custom 时使用 scale_to_standard。"""
     unit = (unit or "kW").strip()
+    if unit == "custom" and scale_to_standard is not None:
+        return value * scale_to_standard
     if unit == "W":
         return value / 1000.0
     elif unit == "MW":
         return value * 1000.0
     return value  # kW
+
+
+def _apply_invert(value: float, invert: bool) -> float:
+    """按配置取反方向。"""
+    return -value if invert else value
 
 
 class CsvDataProvider(HistoricalDataProvider):
@@ -215,12 +222,15 @@ class CsvDataProvider(HistoricalDataProvider):
 
     @staticmethod
     def _extract_power(row: Dict[str, str], power_col_cfg, load_calc) -> float:
-        """从 CSV 行中提取有功功率（kW）。"""
+        """从 CSV 行中提取有功功率（kW）。应用单位换算与方向取反。"""
         if power_col_cfg:
             col = power_col_cfg.get("columnName", "")
             unit = power_col_cfg.get("unit", "kW")
+            scale = power_col_cfg.get("scaleToStandard")
+            invert = power_col_cfg.get("invertDirection", False)
             try:
-                return _convert_power(float(row.get(col, "0")), unit)
+                v = _convert_power(float(row.get(col, "0")), unit, scale)
+                return _apply_invert(v, invert)
             except (ValueError, TypeError):
                 return 0.0
         if load_calc:
@@ -230,7 +240,12 @@ class CsvDataProvider(HistoricalDataProvider):
                 if not cfg:
                     return 0.0
                 try:
-                    return _convert_power(float(row.get(cfg["columnName"], "0")), cfg.get("unit", "kW"))
+                    v = _convert_power(
+                        float(row.get(cfg["columnName"], "0")),
+                        cfg.get("unit", "kW"),
+                        cfg.get("scaleToStandard"),
+                    )
+                    return _apply_invert(v, cfg.get("invertDirection", False))
                 except (ValueError, TypeError):
                     return 0.0
             grid = _read("gridMeter")
@@ -269,6 +284,15 @@ class SqliteDataProvider(HistoricalDataProvider):
         start_time = config.get("startTime")
         end_time = config.get("endTime")
         self._loop = config.get("loop", True)
+        power_cfg = config.get("sqlitePowerConfig")  # {unit, scaleToStandard?, invertDirection?}
+
+        def to_kw(p: float) -> float:
+            if not power_cfg:
+                return p
+            unit = power_cfg.get("unit", "kW")
+            scale = power_cfg.get("scaleToStandard")
+            v = _convert_power(p, unit, scale)
+            return _apply_invert(v, power_cfg.get("invertDirection", False))
 
         try:
             conn = sqlite3.connect(file_path)
@@ -312,7 +336,7 @@ class SqliteDataProvider(HistoricalDataProvider):
                 ts = float(row[0])
                 p = float(row[1]) if row[1] is not None else 0.0
                 q = float(row[2]) if row[2] is not None else 0.0
-                self._series.append(ts, p, q)
+                self._series.append(ts, to_kw(p), q)
 
             conn.close()
         except Exception:

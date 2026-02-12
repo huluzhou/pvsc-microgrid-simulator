@@ -14,14 +14,18 @@ import {
   BarChart3,
   Download,
   Loader2,
+  Settings2,
 } from 'lucide-react';
 import MultiSeriesChart, { type SeriesItem } from '../components/monitoring/MultiSeriesChart';
 import ResultCharts from '../components/analytics/ResultCharts';
 import AnalysisSummaryView from '../components/analytics/AnalysisSummaryView';
+import DataItemConfigDialog from '../components/dashboard/DataItemConfigDialog';
 import PerformanceDataMappingDialog, {
   type PerformanceDataMapping,
   PERFORMANCE_INDICATORS,
 } from '../components/analytics/PerformanceDataMappingDialog';
+import type { DataItemDisplayConfig } from '../types/dataItemConfig';
+import { transformValue } from '../types/dataItemConfig';
 
 // ====== 类型定义 ======
 
@@ -139,6 +143,9 @@ export default function Dashboard() {
   const [performanceDataMapping, setPerformanceDataMapping] = useState<PerformanceDataMapping | null>(null);
   const [showMappingDialog, setShowMappingDialog] = useState(false);
   const [mappingDialogReason, setMappingDialogReason] = useState<'analyze' | 'modify'>('analyze');
+  // 数据项单位与方向配置（key -> config）
+  const [dataItemConfig, setDataItemConfig] = useState<Record<string, DataItemDisplayConfig>>({});
+  const [configDialogKey, setConfigDialogKey] = useState<string | null>(null);
   // 收益分析：电价配置
   const [priceConfig, setPriceConfig] = useState<PriceConfig>({
     tou_prices: Array.from({ length: 24 }, (_, i) => (i >= 8 && i < 12 ? 0.9 : i >= 18 && i < 22 ? 0.9 : 0.4)),
@@ -166,6 +173,7 @@ export default function Dashboard() {
       setCsvColumns([]);
       setCsvSeries({});
       setSelectedKeys([]);
+      setDataItemConfig({});
       setDataSource('local_file');
       setAnalysisResults([]);
 
@@ -200,6 +208,7 @@ export default function Dashboard() {
       setDbColumns([]);
       setDbSeries({});
       setSelectedKeys([]);
+      setDataItemConfig({});
       setDataSource('csv');
       setAnalysisResults([]);
 
@@ -592,12 +601,17 @@ export default function Dashboard() {
   // ====== 构建图表数据 ======
 
   const chartSeries: SeriesItem[] = useMemo(() => {
+    const cfg = (key: string) => dataItemConfig[key];
     if (dataSource === 'csv') {
       return selectedKeys
         .map((key) => {
           const col = csvColumns.find((c) => c.key === key);
-          const data = csvSeries[key] || [];
-          if (!col || data.length === 0) return null;
+          const rawData = csvSeries[key] || [];
+          if (!col || rawData.length === 0) return null;
+          const data = rawData.map((p) => ({
+            timestamp: p.timestamp,
+            value: transformValue(p.value, cfg(key)),
+          }));
           return {
             key: col.key,
             label: col.key,
@@ -610,8 +624,12 @@ export default function Dashboard() {
       return selectedKeys
         .map((key) => {
           const col = dbColumns.find((c) => c.key === key);
-          const data = dbSeries[key] || [];
-          if (!col || data.length === 0) return null;
+          const rawData = dbSeries[key] || [];
+          if (!col || rawData.length === 0) return null;
+          const data = rawData.map((p) => ({
+            timestamp: p.timestamp,
+            value: transformValue(p.value, cfg(key)),
+          }));
           return {
             key: col.key,
             label: col.key,
@@ -621,7 +639,7 @@ export default function Dashboard() {
         .filter((s): s is SeriesItem => s !== null);
     }
     return [];
-  }, [dataSource, selectedKeys, csvColumns, csvSeries, dbColumns, dbSeries]);
+  }, [dataSource, selectedKeys, csvColumns, csvSeries, dbColumns, dbSeries, dataItemConfig]);
 
   // ====== 构建列分组 ======
 
@@ -781,23 +799,36 @@ export default function Dashboard() {
                             const isChecked = selectedKeys.includes(item.key);
                             const isDisabled = !isChecked && selectedKeys.length >= MAX_SELECTED_COLUMNS;
                             return (
-                              <label
+                              <div
                                 key={item.key}
-                                className={`flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${
+                                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
                                   isChecked ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50 text-gray-600'
-                                } ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                } ${isDisabled ? 'opacity-50' : ''}`}
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  disabled={isDisabled}
-                                  onChange={() => toggleColumn(item.key)}
-                                  className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                <span className="break-words line-clamp-2" title={item.key}>
-                                  {item.label}
-                                </span>
-                              </label>
+                                <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={isDisabled}
+                                    onChange={() => toggleColumn(item.key)}
+                                    className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                                  />
+                                  <span className="break-words line-clamp-2 truncate" title={item.key}>
+                                    {item.label}
+                                  </span>
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfigDialogKey(item.key);
+                                  }}
+                                  className="p-0.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                  title="配置单位与方向"
+                                >
+                                  <Settings2 className="w-3 h-3" />
+                                </button>
+                              </div>
                             );
                           })}
                         </div>
@@ -1035,6 +1066,23 @@ export default function Dashboard() {
         availableColumns={availableColumns}
         selectedIndicatorIds={performanceIndicators}
         initialMapping={performanceDataMapping}
+      />
+      <DataItemConfigDialog
+        open={configDialogKey != null}
+        onClose={() => setConfigDialogKey(null)}
+        onSave={(config) => {
+          if (configDialogKey) {
+            setDataItemConfig((prev) => ({ ...prev, [configDialogKey]: config }));
+            setConfigDialogKey(null);
+          }
+        }}
+        dataItemKey={configDialogKey ?? ''}
+        dataItemName={
+          configDialogKey
+            ? (columnGroups.flatMap((g) => g.items).find((i) => i.key === configDialogKey)?.dataItem ?? undefined)
+            : undefined
+        }
+        initialConfig={configDialogKey ? dataItemConfig[configDialogKey] : undefined}
       />
     </div>
   );

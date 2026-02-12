@@ -5,8 +5,8 @@
 // 数据源类型
 export type DataSourceType = 'random' | 'manual' | 'historical';
 
-// 功率单位
-export type PowerUnit = 'W' | 'kW' | 'MW';
+// 功率单位（custom 时使用 scaleToStandard 换算为 kW）
+export type PowerUnit = 'W' | 'kW' | 'MW' | 'custom';
 
 // 手动设定值
 export interface ManualSetpoint {
@@ -26,6 +26,10 @@ export interface RandomConfig {
 export interface ColumnSource {
   columnName: string;       // 列名
   unit: PowerUnit;          // 单位
+  /** 自定义：原始值 * scaleToStandard = kW，当 unit 为 custom 时使用 */
+  scaleToStandard?: number;
+  /** 取反方向，用于校正与默认（流入为正）相反的数据 */
+  invertDirection?: boolean;
 }
 
 // 负载计算配置 - 用于从其他数据计算负载
@@ -55,6 +59,8 @@ export interface HistoricalConfig {
   /** 回放间隔（毫秒）：仿真中每隔多少毫秒从历史数据读取下一个数据点，如 1000 表示每秒读取一次 */
   playbackIntervalMs: number;
   loop: boolean;            // 是否循环播放
+  /** SQLite 模式下的功率单位与方向配置 */
+  sqlitePowerConfig?: { unit: PowerUnit; scaleToStandard?: number; invertDirection?: boolean };
 }
 
 // 设备级仿真参数
@@ -80,12 +86,13 @@ export interface BatchSetConfig {
   config: ManualSetpoint | RandomConfig | HistoricalConfig;
 }
 
-// 功率单位转换
+// 功率单位转换（custom 需结合 scaleToStandard 使用，此处默认为 1）
 export function convertPower(value: number, fromUnit: PowerUnit, toUnit: PowerUnit): number {
   const toKw: Record<PowerUnit, number> = {
     'W': 0.001,
     'kW': 1,
     'MW': 1000,
+    'custom': 1,
   };
   const kwValue = value * toKw[fromUnit];
   return kwValue / toKw[toUnit];
@@ -93,7 +100,7 @@ export function convertPower(value: number, fromUnit: PowerUnit, toUnit: PowerUn
 
 // 获取单位显示文本
 export function getUnitLabel(unit: PowerUnit): string {
-  return unit;
+  return unit === 'custom' ? '自定义' : unit;
 }
 
 // 数据源类型显示名称

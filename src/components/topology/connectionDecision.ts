@@ -651,7 +651,7 @@ function linkageSwitchToBus(
  */
 function linkageSwitchToLineOrTransformer(
   updatedNodes: Node[],
-  connection: Connection,
+  _connection: Connection,
   sourceNode: Node,
   targetNode: Node,
   sourceType: DeviceType,
@@ -903,12 +903,12 @@ function reverseLinkageMeter(
  */
 function reverseLinkageSwitchToBus(
   updatedNodes: Node[],
-  deletedEdge: Edge,
+  _deletedEdge: Edge,
   sourceNode: Node,
   targetNode: Node,
   sourceType: DeviceType,
   targetType: DeviceType,
-  edges: Edge[]
+  _edges: Edge[]
 ): Node[] {
   // 处理 开关 ↔ 母线 的情况
   if ((sourceType !== 'switch' || targetType !== 'bus') && 

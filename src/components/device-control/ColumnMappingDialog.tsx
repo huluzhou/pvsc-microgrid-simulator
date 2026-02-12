@@ -23,6 +23,7 @@ interface ColumnInputProps {
 }
 
 function ColumnInput({ label, description, color, columns, value, onChange, required = false }: ColumnInputProps) {
+  const hasColumn = !!value?.columnName;
   return (
     <div className="p-2 bg-gray-50 rounded border border-gray-200">
       <div className="flex items-center justify-between mb-1">
@@ -32,17 +33,65 @@ function ColumnInput({ label, description, color, columns, value, onChange, requ
         </label>
       </div>
       <div className="text-xs text-gray-500 mb-1">{description}</div>
-      <div className="flex gap-2">
-        <select value={value?.columnName ?? ''} onChange={(e) => { if (e.target.value) onChange({ columnName: e.target.value, unit: value?.unit ?? 'kW' }); else onChange(undefined); }} className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs">
+      <div className="flex gap-2 flex-wrap">
+        <select
+          value={value?.columnName ?? ''}
+          onChange={(e) => {
+            if (e.target.value) {
+              onChange({ columnName: e.target.value, unit: value?.unit ?? 'kW', invertDirection: value?.invertDirection });
+            } else {
+              onChange(undefined);
+            }
+          }}
+          className="flex-1 min-w-0 px-2 py-1 bg-white border border-gray-300 rounded text-xs"
+        >
           <option value="">-- 不使用 --</option>
-          {columns.map((col) => <option key={col} value={col}>{col}</option>)}
+          {columns.map((col) => (
+            <option key={col} value={col}>{col}</option>
+          ))}
         </select>
-        <select value={value?.unit ?? 'kW'} onChange={(e) => { if (value?.columnName) onChange({ columnName: value.columnName, unit: e.target.value as PowerUnit }); }} disabled={!value?.columnName} className="w-14 px-1 py-1 bg-white border border-gray-300 rounded text-xs disabled:opacity-50">
+        <select
+          value={value?.unit ?? 'kW'}
+          onChange={(e) => {
+            if (value?.columnName) {
+              onChange({ ...value, unit: e.target.value as PowerUnit });
+            }
+          }}
+          disabled={!hasColumn}
+          className="w-14 px-1 py-1 bg-white border border-gray-300 rounded text-xs disabled:opacity-50"
+        >
           <option value="W">W</option>
           <option value="kW">kW</option>
           <option value="MW">MW</option>
+          <option value="custom">自定义</option>
         </select>
       </div>
+      {hasColumn && value?.unit === 'custom' && (
+        <div className="mt-1">
+          <input
+            type="number"
+            step="any"
+            placeholder="系数：原始值×系数=kW"
+            value={value?.scaleToStandard ?? ''}
+            onChange={(e) => {
+              const v = e.target.value ? parseFloat(e.target.value) : undefined;
+              onChange({ ...value, scaleToStandard: v });
+            }}
+            className="w-full px-2 py-1 text-xs border border-gray-300 rounded mt-0.5"
+          />
+        </div>
+      )}
+      {hasColumn && (
+        <label className="flex items-center gap-1 mt-1 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={value?.invertDirection ?? false}
+            onChange={(e) => onChange({ ...value!, invertDirection: e.target.checked })}
+            className="w-3 h-3 rounded border-gray-300 text-blue-600"
+          />
+          <span className="text-xs text-gray-600">取反方向</span>
+        </label>
+      )}
     </div>
   );
 }

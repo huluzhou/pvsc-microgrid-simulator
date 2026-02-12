@@ -2,7 +2,7 @@
  * 设备面板组件 - 浅色主题
  * 显示所有可用设备类型，支持拖拽到画布
  */
-import { memo, DragEvent, useRef, useEffect } from 'react';
+import { memo, DragEvent } from 'react';
 import { 
   DEVICE_CATEGORIES, 
   DEVICE_TYPES, 
@@ -112,8 +112,7 @@ const DeviceItem = memo(function DeviceItem({
   onSelect?: (type: DeviceType) => void;
 }) {
   const info = DEVICE_TYPES[type];
-  const dragImageRef = useRef<HTMLDivElement | null>(null);
-  
+
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
     e.dataTransfer.setData('application/device-type', type);
     e.dataTransfer.effectAllowed = 'copy';

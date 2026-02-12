@@ -62,6 +62,7 @@ export default function HistoricalConfigForm({ deviceName, deviceType, initialVa
   const [sqliteDevices, setSqliteDevices] = useState<string[]>([]);
   const [timeRange, setTimeRange] = useState<[number, number] | null>(null);
   const [loadingDevices, setLoadingDevices] = useState(false);
+  const [sqlitePowerConfig, setSqlitePowerConfig] = useState<{ unit: PowerUnit; scaleToStandard?: number; invertDirection?: boolean } | undefined>(initialValue?.sqlitePowerConfig);
 
   const isLoadDevice = deviceType === 'load';
   const isSqlite = sourceType === 'sqlite';
@@ -84,6 +85,7 @@ export default function HistoricalConfigForm({ deviceName, deviceType, initialVa
         setPlaybackIntervalMs(typeof oldSpeed === 'number' && oldSpeed > 0 ? Math.round(1000 * oldSpeed) : 1000);
       }
       setLoop(initialValue.loop);
+      setSqlitePowerConfig(initialValue.sqlitePowerConfig);
     }
   }, [initialValue]);
 
@@ -173,8 +175,9 @@ export default function HistoricalConfigForm({ deviceName, deviceType, initialVa
       endTime,
       playbackIntervalMs,
       loop,
+      sqlitePowerConfig: isSqlite ? sqlitePowerConfig : undefined,
     });
-  }, [sourceType, filePath, timeColumn, timeFormat, powerColumn, loadCalculation, sourceDeviceId, startTime, endTime, playbackIntervalMs, loop, isSqlite, isLoadDevice, onSave]);
+  }, [sourceType, filePath, timeColumn, timeFormat, powerColumn, loadCalculation, sourceDeviceId, startTime, endTime, playbackIntervalMs, loop, sqlitePowerConfig, isSqlite, isLoadDevice, onSave]);
 
   const isConfigValid = filePath && (isSqlite ? sourceDeviceId : (timeColumn && (isLoadDevice ? loadCalculation?.gridMeter?.columnName : powerColumn?.columnName)));
 
@@ -233,6 +236,28 @@ export default function HistoricalConfigForm({ deviceName, deviceType, initialVa
           </div>
         )}
 
+        {/* SQLite: 功率单位与方向配置 */}
+        {isSqlite && (
+          <div className="space-y-2 p-2 bg-gray-50 rounded border border-gray-200">
+            <label className="block text-xs font-medium text-gray-600">功率单位与方向</label>
+            <div className="flex gap-2">
+              <select value={sqlitePowerConfig?.unit ?? 'kW'} onChange={(e) => setSqlitePowerConfig((prev) => ({ ...(prev ?? { unit: 'kW' }), unit: e.target.value as PowerUnit }))} className="w-20 px-2 py-1 bg-white border border-gray-300 rounded text-sm">
+                <option value="W">W</option>
+                <option value="kW">kW</option>
+                <option value="MW">MW</option>
+                <option value="custom">自定义</option>
+              </select>
+              {sqlitePowerConfig?.unit === 'custom' && (
+                <input type="number" step="any" value={sqlitePowerConfig?.scaleToStandard ?? ''} onChange={(e) => setSqlitePowerConfig((prev) => ({ ...(prev ?? { unit: 'custom' }), scaleToStandard: parseFloat(e.target.value) || undefined }))} placeholder="系数(原始×系数=kW)" className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-sm" />
+              )}
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={sqlitePowerConfig?.invertDirection ?? false} onChange={(e) => setSqlitePowerConfig((prev) => ({ ...(prev ?? { unit: 'kW' }), invertDirection: e.target.checked }))} className="w-4 h-4 text-blue-500 bg-white border-gray-300 rounded" />
+              <span className="text-xs text-gray-600">取反方向</span>
+            </label>
+          </div>
+        )}
+
         {/* CSV: 时间列和格式 */}
         {!isSqlite && (
           <div className="grid grid-cols-2 gap-3">
@@ -251,16 +276,27 @@ export default function HistoricalConfigForm({ deviceName, deviceType, initialVa
 
         {/* CSV: 功率列（非负载） */}
         {!isSqlite && !isLoadDevice && (
-          <div>
+          <div className="space-y-2">
             <label className="block text-xs font-medium text-gray-600 mb-1">功率数据列</label>
             <div className="flex gap-2">
-              <input type="text" value={powerColumn?.columnName ?? ''} onChange={(e) => setPowerColumn({ columnName: e.target.value, unit: powerColumn?.unit ?? 'kW' })} placeholder="输入列名" className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-sm" />
-              <select value={powerColumn?.unit ?? 'kW'} onChange={(e) => setPowerColumn({ columnName: powerColumn?.columnName ?? '', unit: e.target.value as PowerUnit })} className="w-16 px-2 py-1 bg-white border border-gray-300 rounded text-sm">
+              <input type="text" value={powerColumn?.columnName ?? ''} onChange={(e) => setPowerColumn((prev) => ({ ...(prev ?? {}), columnName: e.target.value, unit: prev?.unit ?? 'kW' }))} placeholder="输入列名" className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-sm" />
+              <select value={powerColumn?.unit ?? 'kW'} onChange={(e) => setPowerColumn((prev) => ({ ...(prev ?? {}), columnName: prev?.columnName ?? '', unit: e.target.value as PowerUnit }))} className="w-16 px-2 py-1 bg-white border border-gray-300 rounded text-sm">
                 <option value="W">W</option>
                 <option value="kW">kW</option>
                 <option value="MW">MW</option>
+                <option value="custom">自定义</option>
               </select>
             </div>
+            {powerColumn?.unit === 'custom' && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-0.5">换算系数（原始值 × 系数 = kW）</label>
+                <input type="number" step="any" value={powerColumn?.scaleToStandard ?? ''} onChange={(e) => setPowerColumn((prev) => { const p = prev ?? { columnName: '', unit: 'kW' as PowerUnit }; return { ...p, scaleToStandard: parseFloat(e.target.value) || undefined }; })} placeholder="如 0.001" className="w-full px-2 py-1 bg-white border border-gray-300 rounded text-sm" />
+              </div>
+            )}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={powerColumn?.invertDirection ?? false} onChange={(e) => setPowerColumn((prev) => { const p = prev ?? { columnName: '', unit: 'kW' as PowerUnit }; return { ...p, invertDirection: e.target.checked }; })} className="w-4 h-4 text-blue-500 bg-white border-gray-300 rounded" />
+              <span className="text-xs text-gray-600">取反方向</span>
+            </label>
           </div>
         )}
 
