@@ -4,38 +4,22 @@
   "identifier": "com.pvsc.microgrid-simulator",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run ensure-kernel-dir && npm run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "光储充微电网模拟器",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 1280,
-        "minHeight": 600,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
-    "security": {
-      "csp": null
-    }
+    "windows": [{"title": "光储充微电网模拟器", "width": 1280, "height": 800, "minWidth": 1280, "minHeight": 600, "resizable": true, "fullscreen": false}],
+    "security": {"csp": null}
   },
   "bundle": {
-    "active": false,
+    "active": true,
     "createUpdaterArtifacts": false,
-    "windows": {
-      "webviewInstallMode": {
-        "type": "skip"
-      }
+    "targets": ["nsis"],
+    "windows": {"webviewInstallMode": {"type": "skip"}},
+    "resources": {
+      "../dist/python-kernel/": "python-kernel"
     }
   },
-  "plugins": {
-    "shell": {
-      "open": true
-    }
-  }
+  "plugins": {"shell": {"open": true}}
 }

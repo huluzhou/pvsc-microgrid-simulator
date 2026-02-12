@@ -1,0 +1,60 @@
+# 光储充微电网模拟器 CI 构建
+# 生成可直接运行的 exe 安装包，含 Nuitka 打包的 Python 内核
+
+name: Build Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Python kernel dependencies
+        run: |
+          pip install -r python-kernel/requirements.txt
+          pip install nuitka zstandard
+
+      - name: Pack Python kernel (Nuitka)
+        env:
+          NUITKA_JOBS: 1
+          # 单文件模式便于分发；若 CI 内存不足可改为 PYTHON_KERNEL_ONEFILE=0
+          PYTHON_KERNEL_ONEFILE: 1
+        run: python pack_python_kernel.py
+        timeout-minutes: 45
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Tauri app
+        run: npm run tauri build
+        env:
+          # 静默前端构建输出（beforeBuildCommand 已执行过 build）
+          CARGO_TERM_COLOR: always
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: src-tauri/target/release/bundle/nsis/*.exe

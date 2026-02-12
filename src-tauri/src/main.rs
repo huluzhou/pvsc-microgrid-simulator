@@ -54,8 +54,8 @@ fn main() {
                 eprintln!("正在启动 Python 内核进程...");
                 let mut bridge = python_bridge_clone.lock().await;
                 
-                // 启动 Python 进程
-                match bridge.start().await {
+                // 启动 Python 进程（传入 app_handle 以便从 bundle resources 加载内核）
+                match bridge.start(Some(&app_handle)).await {
                     Ok(_) => {
                         eprintln!("Python 进程已启动，等待就绪...");
                         // 等待 Python 进程初始化

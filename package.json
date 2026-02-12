@@ -11,6 +11,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "pack:python": "python pack_python_kernel.py",
+    "ensure-kernel-dir": "node -e \"const fs=require('fs');const p='dist/python-kernel';if(!fs.existsSync(p)){fs.mkdirSync(p,{recursive:true});fs.writeFileSync(p+'/.gitkeep','');}\"",
     "build:release": "npm run pack:python && npm run build && npm run tauri:build"
   },
   "dependencies": {

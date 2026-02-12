@@ -4,6 +4,8 @@ use anyhow::{Result, Context};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tauri::path::BaseDirectory;
+use tauri::Manager;
 use tokio::sync::{Mutex, oneshot};
 use tokio::process::{Command, ChildStdin};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -48,21 +50,36 @@ impl PythonBridge {
         }
     }
 
-    pub async fn start(&mut self) -> Result<()> {
+    pub async fn start(&mut self, app_handle: Option<&tauri::AppHandle>) -> Result<()> {
         // 优先尝试使用打包后的可执行文件
         let (executable_path, args) = if cfg!(not(debug_assertions)) {
-            // 发布模式：使用打包后的可执行文件
-            match Self::find_packed_executable().await {
-                Ok(path) => {
-                    eprintln!("使用打包后的Python内核: {}", path);
-                    (path, Vec::<String>::new())
-                }
-                Err(e) => {
-                    eprintln!("未找到打包后的可执行文件: {}, 回退到Python脚本", e);
-                    // 回退到Python脚本模式
-                    let python_path = Self::find_python().await?;
-                    let script_path = Self::get_python_script_path()?;
-                    (python_path, vec![script_path])
+            // 发布模式：优先从 bundle resources 加载，其次从文件系统查找
+            let kernel_name = if cfg!(target_os = "windows") {
+                "python-kernel/python-kernel.exe"
+            } else {
+                "python-kernel/python-kernel"
+            };
+            let resource_path: Option<std::path::PathBuf> = app_handle.and_then(|h| {
+                h.path()
+                    .resolve(kernel_name, BaseDirectory::Resource)
+                    .ok()
+                    .filter(|p: &PathBuf| p.exists())
+            });
+            if let Some(path) = resource_path {
+                eprintln!("使用资源目录中的 Python 内核: {}", path.display());
+                (path.to_string_lossy().to_string(), Vec::<String>::new())
+            } else {
+                match Self::find_packed_executable().await {
+                    Ok(path) => {
+                        eprintln!("使用打包后的Python内核: {}", path);
+                        (path, Vec::<String>::new())
+                    }
+                    Err(e) => {
+                        eprintln!("未找到打包后的可执行文件: {}, 回退到Python脚本", e);
+                        let python_path = Self::find_python().await?;
+                        let script_path = Self::get_python_script_path()?;
+                        (python_path, vec![script_path])
+                    }
                 }
             }
         } else {
