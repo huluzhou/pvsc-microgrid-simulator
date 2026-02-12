@@ -354,19 +354,24 @@ export default function Dashboard() {
     [dataSource, selectedKeys, csvSeries, dbSeries]
   );
 
-  /** 构建分析请求的 series_data（仅 CSV 时传入） */
+  /** 构建分析请求的 series_data（CSV 与 local_file 均支持），应用数据项配置的单位与方向转换 */
   const buildSeriesData = useCallback(
-    (keys: string[]): Record<string, TimeSeriesPoint[]> | null => {
-      if (dataSource !== 'csv' || keys.length === 0) return null;
-      const out: Record<string, TimeSeriesPoint[]> = {};
+    (keys: string[], seriesOverride?: Record<string, TimeSeriesPoint[]>): Record<string, TimeSeriesPoint[]> | null => {
+      if (keys.length === 0) return null;
+      const series = seriesOverride ?? (dataSource === 'csv' ? csvSeries : dbSeries);
       const { start, end } = getTimeRange(keys);
+      const out: Record<string, TimeSeriesPoint[]> = {};
       for (const key of keys) {
-        const pts = (csvSeries[key] || []).filter((p) => p.timestamp >= start && p.timestamp <= end);
-        out[key] = pts;
+        const pts = series[key];
+        if (!pts) return null;
+        const cfg = dataItemConfig[key];
+        out[key] = pts
+          .filter((p) => p.timestamp >= start && p.timestamp <= end)
+          .map((p) => ({ timestamp: p.timestamp, value: transformValue(p.value, cfg) }));
       }
       return out;
     },
-    [dataSource, csvSeries, getTimeRange]
+    [dataSource, csvSeries, dbSeries, getTimeRange, dataItemConfig]
   );
 
   /** 执行分析；mappingOverride 为弹窗确认时传入的映射 */
@@ -410,6 +415,32 @@ export default function Dashboard() {
       setError(null);
       setAnalysisResults([]);
       try {
+        // local_file 时补全缺失的 dbSeries，以便应用数据项配置
+        let seriesOverride: Record<string, TimeSeriesPoint[]> | undefined;
+        if (dataSource === 'local_file' && filePath) {
+          const allKeys = [...new Set(keysForTimeRange)];
+          const missing = allKeys.filter((k) => !dbSeries[k]);
+          if (missing.length > 0) {
+            const loaded: Record<string, TimeSeriesPoint[]> = { ...dbSeries };
+            for (const key of missing) {
+              const col = dbColumns.find((c) => c.key === key);
+              if (!col) continue;
+              try {
+                const data = await invoke<TimeSeriesPoint[]>('dashboard_query_db_series', {
+                  dbPath: filePath,
+                  deviceId: col.device_id,
+                  fieldName: col.field_name,
+                  maxPoints: 5000,
+                });
+                loaded[key] = data || [];
+                setDbSeries((prev) => ({ ...prev, [key]: data || [] }));
+              } catch {
+                // 加载失败则跳过，buildSeriesData 会返回 null
+              }
+            }
+            seriesOverride = loaded;
+          }
+        }
         const results: AnalysisResult[] = [];
         for (const analysisType of selectedAnalysisTypes) {
           const isRevenue = analysisType === 'revenue';
@@ -448,7 +479,7 @@ export default function Dashboard() {
             data_item_keys: dataItemKeys,
             gateway_meter_active_power_key: gatewayKey,
             price_config: isRevenue ? priceConfig : null,
-            series_data: dataSource === 'csv' ? buildSeriesData(keysForRequest) : null,
+            series_data: buildSeriesData(keysForRequest, seriesOverride) ?? null,
             performance_standards: hasPerformance ? performanceIndicators : null,
             performance_data_mapping: hasPerformance && mapping
               ? {
@@ -481,6 +512,8 @@ export default function Dashboard() {
       performanceIndicators,
       getTimeRange,
       buildSeriesData,
+      dbColumns,
+      dbSeries,
     ]
   );
 
@@ -563,7 +596,7 @@ export default function Dashboard() {
           data_item_keys: dataItemKeys,
           gateway_meter_active_power_key: gatewayKey,
           price_config: isRevenue ? priceConfig : null,
-          series_data: dataSource === 'csv' ? buildSeriesData(keysForRequest) : null,
+          series_data: buildSeriesData(keysForRequest) ?? null,
           format: 'json',
           report_path: reportPath,
           performance_standards: hasPerf ? performanceIndicators : null,

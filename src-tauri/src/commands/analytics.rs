@@ -134,35 +134,36 @@ async fn resolve_series(
         return Err("未指定数据项 key".to_string());
     }
 
-    let mut series = match &request.data_source {
-        DataSourceKind::LocalFile => {
-            let path = request.file_path.as_ref().ok_or("本地文件数据源需提供 file_path")?;
-            dashboard::dashboard_fetch_series_batch(
-                path.clone(),
-                keys,
-                Some(start),
-                Some(end),
-                Some(5000),
-            )
-            .await?
-        }
-        DataSourceKind::Csv => {
-            let data = request
-                .series_data
-                .as_ref()
-                .ok_or("CSV 数据源需在前端传入 series_data")?;
-            let mut out = HashMap::new();
-            for key in &keys {
-                if let Some(pts) = data.get(key) {
-                    let filtered: Vec<dashboard::TimeSeriesPoint> = pts
-                        .iter()
-                        .filter(|p| p.timestamp >= start && p.timestamp <= end)
-                        .cloned()
-                        .collect();
-                    out.insert(key.clone(), filtered);
-                }
+    // 当 series_data 已由前端传入（含数据项配置的单位与方向转换）时，优先使用，适用于 CSV 与 local_file
+    let mut series = if let Some(ref data) = request.series_data {
+        let mut out = HashMap::new();
+        for key in &keys {
+            if let Some(pts) = data.get(key) {
+                let filtered: Vec<dashboard::TimeSeriesPoint> = pts
+                    .iter()
+                    .filter(|p| p.timestamp >= start && p.timestamp <= end)
+                    .cloned()
+                    .collect();
+                out.insert(key.clone(), filtered);
             }
-            out
+        }
+        out
+    } else {
+        match &request.data_source {
+            DataSourceKind::LocalFile => {
+                let path = request.file_path.as_ref().ok_or("本地文件数据源需提供 file_path")?;
+                dashboard::dashboard_fetch_series_batch(
+                    path.clone(),
+                    keys,
+                    Some(start),
+                    Some(end),
+                    Some(5000),
+                )
+                .await?
+            }
+            DataSourceKind::Csv => {
+                return Err("CSV 数据源需在前端传入 series_data".to_string());
+            }
         }
     };
 
