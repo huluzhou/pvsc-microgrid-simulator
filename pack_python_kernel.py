@@ -266,17 +266,48 @@ def build_executable(python_exe):
         
         # 检查生成的文件
         exe_ext = ".exe" if sys.platform == "win32" else ""
+        final_exe_name = f"python-kernel{exe_ext}"
         
         if use_onefile:
             # Onefile 模式：单个可执行文件
-            exe_name = f"python-kernel{exe_ext}"
-            exe_path = output_dir / exe_name
-            dist_dir = None
+            exe_path = output_dir / final_exe_name
         else:
             # Standalone 目录模式：main.dist 目录下的 main 可执行文件
-            exe_name = f"main{exe_ext}"
-            dist_dir = output_dir / "main.dist"
-            exe_path = dist_dir / exe_name
+            nuitka_dist_dir = output_dir / "main.dist"
+            nuitka_exe_path = nuitka_dist_dir / f"main{exe_ext}"
+            
+            if not nuitka_exe_path.exists():
+                print(f"\n✗ 错误: 未找到 Nuitka 生成的可执行文件 {nuitka_exe_path}")
+                if output_dir.exists():
+                    print(f"  输出目录 {output_dir} 内容:")
+                    for item in output_dir.iterdir():
+                        print(f"    - {item.name}")
+                return False
+            
+            # 重新组织目录结构，使其符合 Tauri 的期望
+            # 将 main.dist/ 下的所有内容移动到 output_dir，并重命名可执行文件
+            print("\n重新组织目录结构以适配 Tauri...")
+            
+            # 将 main.dist 内的所有文件移动到 output_dir
+            for item in nuitka_dist_dir.iterdir():
+                dest = output_dir / item.name
+                if dest.exists():
+                    if dest.is_dir():
+                        shutil.rmtree(dest)
+                    else:
+                        dest.unlink()
+                shutil.move(str(item), str(dest))
+            
+            # 删除空的 main.dist 目录
+            if nuitka_dist_dir.exists():
+                nuitka_dist_dir.rmdir()
+            
+            # 重命名可执行文件：main.exe -> python-kernel.exe
+            old_exe = output_dir / f"main{exe_ext}"
+            exe_path = output_dir / final_exe_name
+            if old_exe.exists():
+                old_exe.rename(exe_path)
+                print(f"  重命名: main{exe_ext} -> {final_exe_name}")
         
         if exe_path.exists():
             if use_onefile:
@@ -284,8 +315,8 @@ def build_executable(python_exe):
                 print(f"  文件大小: {exe_path.stat().st_size / (1024*1024):.2f} MB")
             else:
                 # 计算目录总大小
-                total_size = sum(f.stat().st_size for f in dist_dir.rglob('*') if f.is_file())
-                print(f"\n✓ 构建成功! 输出目录: {dist_dir}")
+                total_size = sum(f.stat().st_size for f in output_dir.rglob('*') if f.is_file())
+                print(f"\n✓ 构建成功! 输出目录: {output_dir}")
                 print(f"  目录总大小: {total_size / (1024*1024):.2f} MB")
                 print(f"  可执行文件: {exe_path}")
             
@@ -298,7 +329,7 @@ def build_executable(python_exe):
                     if use_onefile:
                         # Onefile 模式：复制单个文件
                         tauri_dir.mkdir(parents=True, exist_ok=True)
-                        tauri_exe = tauri_dir / "python-kernel" + exe_ext
+                        tauri_exe = tauri_dir / final_exe_name
                         if tauri_exe.exists():
                             tauri_exe.unlink()
                         shutil.copy2(exe_path, tauri_exe)
@@ -307,7 +338,7 @@ def build_executable(python_exe):
                         # Standalone 目录模式：复制整个目录
                         if tauri_dir.exists():
                             shutil.rmtree(tauri_dir)
-                        shutil.copytree(dist_dir, tauri_dir)
+                        shutil.copytree(output_dir, tauri_dir)
                         print(f"  已复制目录到: {tauri_dir}")
             
             end_time = time.time()
@@ -379,8 +410,8 @@ def main():
         print(f"  - dist/python-kernel/python-kernel{exe_ext}")
     else:
         print("输出目录位置:")
-        print(f"  - dist/python-kernel/main.dist/")
-        print(f"  - 可执行文件: dist/python-kernel/main.dist/main{exe_ext}")
+        print(f"  - dist/python-kernel/")
+        print(f"  - 可执行文件: dist/python-kernel/python-kernel{exe_ext}")
     print("=" * 60)
     print("\n提示: 在Tauri构建时，此输出将被包含在应用包中")
     print("=" * 60)
