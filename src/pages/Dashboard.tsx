@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import MultiSeriesChart, { type SeriesItem } from '../components/monitoring/MultiSeriesChart';
 import ResultCharts from '../components/analytics/ResultCharts';
+import AnalysisSummaryView from '../components/analytics/AnalysisSummaryView';
 import PerformanceDataMappingDialog, {
   type PerformanceDataMapping,
   PERFORMANCE_INDICATORS,
@@ -299,40 +300,57 @@ export default function Dashboard() {
     );
   }, []);
 
-  /** 从当前已加载数据推断时间范围 */
-  const getTimeRange = useCallback(() => {
-    let start = Date.now() / 1000 - 3600;
-    let end = Date.now() / 1000;
-    if (dataSource === 'csv') {
-      for (const key of selectedKeys) {
-        const pts = csvSeries[key] || [];
-        for (const p of pts) {
-          if (p.timestamp > 0) {
-            start = Math.min(start, p.timestamp);
-            end = Math.max(end, p.timestamp);
+  /** 从已加载数据推断时间范围；keysOverride 用于分析时使用映射配置的 key，不依赖左侧边栏勾选 */
+  const getTimeRange = useCallback(
+    (keysOverride?: string[]) => {
+      let start = 0;
+      let end = Date.now() / 1000;
+      let keysToUse = keysOverride && keysOverride.length > 0 ? keysOverride : selectedKeys;
+      if (keysToUse.length === 0 && dataSource === 'csv') {
+        keysToUse = Object.keys(csvSeries);
+      }
+      if (keysToUse.length === 0 && dataSource === 'local_file') {
+        keysToUse = Object.keys(dbSeries);
+      }
+      if (dataSource === 'csv') {
+        for (const key of keysToUse) {
+          const pts = csvSeries[key] || [];
+          for (const p of pts) {
+            if (p.timestamp > 0) {
+              start = start === 0 ? p.timestamp : Math.min(start, p.timestamp);
+              end = Math.max(end, p.timestamp);
+            }
+          }
+        }
+      } else if (dataSource === 'local_file') {
+        for (const key of keysToUse) {
+          const pts = dbSeries[key] || [];
+          for (const p of pts) {
+            if (p.timestamp > 0) {
+              start = start === 0 ? p.timestamp : Math.min(start, p.timestamp);
+              end = Math.max(end, p.timestamp);
+            }
           }
         }
       }
-    } else if (dataSource === 'local_file') {
-      for (const key of selectedKeys) {
-        const pts = dbSeries[key] || [];
-        for (const p of pts) {
-          if (p.timestamp > 0) {
-            start = Math.min(start, p.timestamp);
-            end = Math.max(end, p.timestamp);
-          }
+      if (start === 0) {
+        start = end - 3600;
+        if (keysOverride && keysOverride.length > 0) {
+          start = 0;
+          end = 2e9;
         }
       }
-    }
-    return { start, end };
-  }, [dataSource, selectedKeys, csvSeries, dbSeries]);
+      return { start, end };
+    },
+    [dataSource, selectedKeys, csvSeries, dbSeries]
+  );
 
   /** 构建分析请求的 series_data（仅 CSV 时传入） */
   const buildSeriesData = useCallback(
     (keys: string[]): Record<string, TimeSeriesPoint[]> | null => {
       if (dataSource !== 'csv' || keys.length === 0) return null;
       const out: Record<string, TimeSeriesPoint[]> = {};
-      const { start, end } = getTimeRange();
+      const { start, end } = getTimeRange(keys);
       for (const key of keys) {
         const pts = (csvSeries[key] || []).filter((p) => p.timestamp >= start && p.timestamp <= end);
         out[key] = pts;
@@ -366,7 +384,19 @@ export default function Dashboard() {
         return;
       }
 
-      const { start, end } = getTimeRange();
+      const keysForTimeRange: string[] = [];
+      for (const t of selectedAnalysisTypes) {
+        if (t === 'revenue') {
+          const gk = gatewayKeyForRevenue || selectedKeys[0];
+          if (gk) keysForTimeRange.push(gk);
+        } else if (t === 'performance' && mapping) {
+          keysForTimeRange.push(mapping.measured_power_key);
+          if (mapping.reference_power_key) keysForTimeRange.push(mapping.reference_power_key);
+        } else {
+          keysForTimeRange.push(...selectedKeys);
+        }
+      }
+      const { start, end } = getTimeRange([...new Set(keysForTimeRange)]);
       setIsAnalyzing(true);
       setError(null);
       setAnalysisResults([]);
@@ -469,7 +499,19 @@ export default function Dashboard() {
       setError('请先加载数据后再导出报告');
       return;
     }
-    const { start, end } = getTimeRange();
+    const keysForTimeRange: string[] = [];
+    for (const t of selectedAnalysisTypes) {
+      if (t === 'revenue') {
+        const gk = gatewayKeyForRevenue || selectedKeys[0];
+        if (gk) keysForTimeRange.push(gk);
+      } else if (t === 'performance' && performanceDataMapping) {
+        keysForTimeRange.push(performanceDataMapping.measured_power_key);
+        if (performanceDataMapping.reference_power_key) keysForTimeRange.push(performanceDataMapping.reference_power_key);
+      } else {
+        keysForTimeRange.push(...selectedKeys);
+      }
+    }
+    const { start, end } = getTimeRange([...new Set(keysForTimeRange)]);
     try {
       const savePath = await saveDialog({
         title: '导出分析报告',
@@ -558,7 +600,7 @@ export default function Dashboard() {
           if (!col || data.length === 0) return null;
           return {
             key: col.key,
-            label: col.short_label,
+            label: col.key,
             data,
           };
         })
@@ -572,7 +614,7 @@ export default function Dashboard() {
           if (!col || data.length === 0) return null;
           return {
             key: col.key,
-            label: col.short_label,
+            label: col.key,
             data,
           };
         })
@@ -594,7 +636,7 @@ export default function Dashboard() {
       return Object.entries(groups).map(([groupKey, cols]) => ({
         groupKey,
         label: groupKey || '未分组',
-        items: cols.map((c) => ({ key: c.key, label: c.short_label, dataItem: c.data_item })),
+        items: cols.map((c) => ({ key: c.key, label: c.key, dataItem: c.data_item })),
       }));
     }
     if (dataSource === 'local_file') {
@@ -606,7 +648,7 @@ export default function Dashboard() {
       return Object.entries(groups).map(([deviceId, cols]) => ({
         groupKey: deviceId,
         label: deviceId,
-        items: cols.map((c) => ({ key: c.key, label: c.short_label, dataItem: c.field_name })),
+        items: cols.map((c) => ({ key: c.key, label: c.key, dataItem: c.field_name })),
       }));
     }
     return [];
@@ -752,8 +794,8 @@ export default function Dashboard() {
                                   onChange={() => toggleColumn(item.key)}
                                   className="w-3 h-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                 />
-                                <span className="truncate" title={item.key}>
-                                  {item.dataItem}
+                                <span className="break-words line-clamp-2" title={item.key}>
+                                  {item.label}
                                 </span>
                               </label>
                             );
@@ -855,7 +897,7 @@ export default function Dashboard() {
                       const col = csvColumns.find((c) => c.key === k) || dbColumns.find((c) => c.key === k);
                       return (
                         <option key={k} value={k}>
-                          {col?.short_label ?? k}
+                          {col?.key ?? k}
                         </option>
                       );
                     })
@@ -952,23 +994,25 @@ export default function Dashboard() {
           {analysisResults.length > 0 && (
             <div className="space-y-4">
               {analysisResults.map((result, idx) => (
-                <div key={idx} className="bg-white rounded-lg border border-gray-200 p-4">
+                <div key={idx} className="bg-white rounded-lg border border-gray-200 p-4 overflow-hidden">
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">
                     {ANALYSIS_TYPES.find((at) => at.value === result.analysis_type)?.label || result.analysis_type} - 分析结果
                   </h3>
                   {/* 摘要 */}
                   {result.summary && Object.keys(result.summary).length > 0 && (
-                    <div className="mb-4">
+                    <div className="mb-4 max-w-full overflow-x-auto">
                       <h4 className="text-xs font-medium text-gray-500 mb-2">摘要</h4>
-                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-                        {Object.entries(result.summary).map(([key, value]) => (
-                          <div key={key} className="bg-gray-50 rounded border border-gray-200 p-2">
-                            <div className="text-xs text-gray-500 truncate" title={key}>{key}</div>
-                            <div className="text-sm font-medium text-gray-800 mt-0.5">
-                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                            </div>
-                          </div>
-                        ))}
+                      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 overflow-x-auto min-w-0">
+                        <AnalysisSummaryView data={result.summary} />
+                      </div>
+                    </div>
+                  )}
+                  {/* 详情（若有） */}
+                  {result.details && typeof result.details === 'object' && !Array.isArray(result.details) && Object.keys(result.details).length > 0 && (
+                    <div className="mb-4 max-w-full overflow-x-auto">
+                      <h4 className="text-xs font-medium text-gray-500 mb-2">详情</h4>
+                      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 overflow-x-auto min-w-0">
+                        <AnalysisSummaryView data={result.details} />
                       </div>
                     </div>
                   )}

@@ -152,14 +152,14 @@ async fn resolve_series(
                 .as_ref()
                 .ok_or("CSV 数据源需在前端传入 series_data")?;
             let mut out = HashMap::new();
-            for key in keys {
-                if let Some(pts) = data.get(&key) {
+            for key in &keys {
+                if let Some(pts) = data.get(key) {
                     let filtered: Vec<dashboard::TimeSeriesPoint> = pts
                         .iter()
                         .filter(|p| p.timestamp >= start && p.timestamp <= end)
                         .cloned()
                         .collect();
-                    out.insert(key, filtered);
+                    out.insert(key.clone(), filtered);
                 }
             }
             out
@@ -255,10 +255,11 @@ fn align_series(
 }
 
 /// 性能分析：功率相关指标，标注国标/行标/国际标准
+/// selected_indicators: 用户选择的指标 id 列表，为空则返回全部
 fn run_performance_analysis(
     series: HashMap<String, Vec<dashboard::TimeSeriesPoint>>,
     mapping: Option<&PerformanceDataMapping>,
-    _standards: Option<&[String]>,
+    selected_indicators: Option<&[String]>,
     start_time: f64,
     end_time: f64,
 ) -> AnalysisResult {
@@ -492,7 +493,7 @@ fn run_performance_analysis(
             (f64::NAN, f64::NAN, f64::NAN, f64::NAN)
         };
 
-    let key_summary = serde_json::json!({
+    let mut key_summary = serde_json::json!({
         "mean_kw": mean,
         "max_kw": max,
         "min_kw": min,
@@ -551,6 +552,17 @@ fn run_performance_analysis(
             }
         }
     });
+
+    if let Some(sel) = selected_indicators {
+        if !sel.is_empty() {
+            let set: std::collections::HashSet<&str> = sel.iter().map(|s| s.as_str()).collect();
+            if let Some(obj) = key_summary.as_object_mut() {
+                obj.retain(|k, _| set.contains(k.as_str()) || k == "points");
+                obj.remove("indicators_by_standard");
+            }
+        }
+    }
+
     summary.insert(meas_key.clone(), key_summary);
     let timestamps: Vec<f64> = valid_pts.iter().map(|(t, _, _)| *t).collect();
     details.insert(
