@@ -224,11 +224,10 @@ impl PythonBridge {
         }
 
         // 等待响应（带超时）
-        // Nuitka 打包后首次启动需要加载大量库，需要更长的超时时间
         let timeout_duration = if method == "simulation.set_topology" {
-            Duration::from_secs(180)  // 设置拓扑可能需要更长时间（首次加载库）
+            Duration::from_secs(60)  // 设置拓扑可能需要更长时间（首次加载库）
         } else {
-            Duration::from_secs(60)  // 其他操作使用较长超时
+            Duration::from_secs(10)  // 普通操作 10 秒超时
         };
         
         match timeout(timeout_duration, rx).await {

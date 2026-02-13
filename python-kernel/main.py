@@ -1,360 +1,239 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Python 内核服务入口（优化版）
-- 延迟加载：仅在需要时加载重型库
-- 后台预热：启动后异步预加载库
-- 提供 JSON-RPC over stdio 接口，供 Rust 调用
+Python 内核服务入口
+提供 JSON-RPC over stdio 接口，供 Rust 调用
+
+注意：为了与 PyInstaller 兼容，所有导入都在顶部完成
 """
 
 import sys
 import json
-import threading
-from typing import Dict, Any, Optional
+import os
+
+# 确保 PyInstaller 打包后能找到模块
+if getattr(sys, 'frozen', False):
+    # PyInstaller 打包后的路径
+    base_path = sys._MEIPASS
+    sys.path.insert(0, base_path)
+else:
+    # 开发模式
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, base_path)
+
+# 在顶部导入所有需要的模块（PyInstaller 兼容）
+from typing import Dict, Any
+
+# 延迟导入重型模块的标志
+_simulation_engine = None
+_power_calculator = None
 
 
-class LazyLoader:
-    """延迟加载器 - 仅在首次访问时加载模块"""
-    
-    _preload_complete = threading.Event()
-    _preload_thread: Optional[threading.Thread] = None
-    
-    # 缓存已加载的模块
-    _simulation_engine_class = None
-    _power_factory_class = None
-    _ai_factory_class = None
-    
-    @classmethod
-    def start_preload(cls):
-        """启动后台预加载线程"""
-        if cls._preload_thread is None:
-            cls._preload_thread = threading.Thread(target=cls._preload_modules, daemon=True)
-            cls._preload_thread.start()
-    
-    @classmethod
-    def _preload_modules(cls):
-        """后台预加载重型模块"""
-        try:
-            # 按优先级顺序加载
-            # 1. 先加载 numpy（被其他库依赖）
-            import numpy
-            # 2. 加载 pandas
-            import pandas
-            # 3. 加载 scipy（pandapower 依赖）
-            import scipy
-            # 4. 加载 pandapower
-            import pandapower
-            # 5. 加载仿真引擎
-            from simulation.engine import SimulationEngine
-            cls._simulation_engine_class = SimulationEngine
-            # 6. 加载功率计算工厂
-            from simulation.power_calculation.factory import PowerKernelFactory
-            cls._power_factory_class = PowerKernelFactory
-        except Exception as e:
-            print(json.dumps({
-                "jsonrpc": "2.0",
-                "id": None,
-                "method": "preload.error",
-                "params": {"error": str(e)}
-            }), file=sys.stderr)
-        finally:
-            cls._preload_complete.set()
-    
-    @classmethod
-    def get_simulation_engine(cls):
-        """获取仿真引擎类（如果预加载完成则直接返回，否则同步加载）"""
-        if cls._simulation_engine_class is not None:
-            return cls._simulation_engine_class
-        
-        # 等待预加载完成（最多等 5 秒）
-        if cls._preload_thread is not None:
-            cls._preload_complete.wait(timeout=5.0)
-            if cls._simulation_engine_class is not None:
-                return cls._simulation_engine_class
-        
-        # 同步加载
+def get_simulation_engine():
+    """获取仿真引擎实例（延迟初始化）"""
+    global _simulation_engine
+    if _simulation_engine is None:
         from simulation.engine import SimulationEngine
-        cls._simulation_engine_class = SimulationEngine
-        return SimulationEngine
-    
-    @classmethod
-    def get_power_factory(cls):
-        """获取功率计算工厂类"""
-        if cls._power_factory_class is not None:
-            return cls._power_factory_class
-        
+        _simulation_engine = SimulationEngine()
+    return _simulation_engine
+
+
+def get_power_calculator():
+    """获取功率计算器实例（延迟初始化）"""
+    global _power_calculator
+    if _power_calculator is None:
         from simulation.power_calculation.factory import PowerKernelFactory
-        cls._power_factory_class = PowerKernelFactory
-        return PowerKernelFactory
-    
-    @classmethod
-    def is_preload_complete(cls) -> bool:
-        """检查预加载是否完成"""
-        return cls._preload_complete.is_set()
+        _power_calculator = PowerKernelFactory.create("pandapower")
+    return _power_calculator
 
 
-class PythonKernel:
-    """Python 内核主类（优化版 - 延迟初始化）"""
+def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
+    """处理 JSON-RPC 请求"""
+    method = request.get("method")
+    params = request.get("params", {})
+    request_id = request.get("id")
     
-    def __init__(self):
-        # 不在初始化时加载重型模块
-        self._simulation_engine = None
-        self._power_calculator = None
-        self._ai_kernel = None
-        
-        # 启动后台预加载
-        LazyLoader.start_preload()
-    
-    @property
-    def simulation_engine(self):
-        """延迟获取仿真引擎实例"""
-        if self._simulation_engine is None:
-            SimulationEngine = LazyLoader.get_simulation_engine()
-            self._simulation_engine = SimulationEngine()
-        return self._simulation_engine
-    
-    def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """处理 JSON-RPC 请求"""
-        method = request.get("method")
-        params = request.get("params", {})
-        request_id = request.get("id")
-        
-        try:
-            if method == "ping":
-                result = {"status": "ok"}
-            elif method == "kernel.preload_status":
-                # 新增：查询预加载状态
-                result = {
-                    "complete": LazyLoader.is_preload_complete(),
-                    "status": "ready" if LazyLoader.is_preload_complete() else "loading"
-                }
-            elif method == "kernel.wait_ready":
-                # 新增：等待预加载完成
-                timeout = params.get("timeout", 60)
-                LazyLoader._preload_complete.wait(timeout=timeout)
-                result = {
-                    "ready": LazyLoader.is_preload_complete()
-                }
-            elif method.startswith("simulation."):
-                result = self.handle_simulation(method, params)
-            elif method.startswith("power."):
-                result = self.handle_power_calculation(method, params)
-            elif method.startswith("ai."):
-                result = self.handle_ai(method, params)
-            elif method.startswith("analytics."):
-                result = self.handle_analytics(method, params)
-            else:
-                raise ValueError(f"Unknown method: {method}")
-            
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": result
-            }
-        except Exception as e:
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "error": {
-                    "code": -32000,
-                    "message": str(e)
-                }
-            }
-    
-    def handle_simulation(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理仿真相关请求"""
-        # 使用 property 延迟获取 simulation_engine
-        engine = self.simulation_engine
-        
-        if method == "simulation.start":
-            calculation_interval_ms = params.get("calculation_interval_ms", 1000)
-            try:
-                engine.start(calculation_interval_ms=calculation_interval_ms)
-                return {"status": "started"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.stop":
-            try:
-                engine.stop()
-                return {"status": "stopped"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.pause":
-            try:
-                engine.pause()
-                return {"status": "paused"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.resume":
-            try:
-                engine.resume()
-                return {"status": "resumed"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.set_topology":
-            topology_data = params.get("topology_data")
-            if not topology_data:
-                return {"status": "error", "message": "拓扑数据未提供"}
-            try:
-                engine.set_topology(topology_data)
-                return {"status": "ok"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.set_device_mode":
-            device_id = params.get("device_id")
-            mode = params.get("mode")
-            try:
-                engine.set_device_mode(device_id, mode)
-                return {"status": "ok"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.set_device_random_config":
-            device_id = params.get("device_id")
-            min_power = params.get("min_power")
-            max_power = params.get("max_power")
-            try:
-                engine.set_device_random_config(device_id, min_power, max_power)
-                return {"status": "ok"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.set_device_manual_setpoint":
-            device_id = params.get("device_id")
-            active_power = params.get("active_power")
-            reactive_power = params.get("reactive_power", 0)
-            try:
-                engine.set_device_manual_setpoint(device_id, active_power, reactive_power)
-                return {"status": "ok"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.set_device_historical_config":
-            device_id = params.get("device_id")
-            config = params.get("config") or {}
-            try:
-                engine.set_device_historical_config(device_id, config)
-                return {"status": "ok"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.set_device_sim_params":
-            device_id = params.get("device_id")
-            sim_params = params.get("params") or {}
-            try:
-                engine.set_device_sim_params(device_id, sim_params)
-                return {"status": "ok"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.update_switch_state":
-            device_id = params.get("device_id")
-            is_closed = params.get("is_closed", True)
-            try:
-                engine.update_switch_state(device_id, is_closed)
-                return {"status": "ok"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.update_device_properties":
-            device_id = params.get("device_id")
-            properties = params.get("properties") or {}
-            try:
-                engine.update_device_properties(device_id, properties)
-                return {"status": "ok"}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.get_device_data":
-            device_id = params.get("device_id")
-            try:
-                data = engine.get_device_data(device_id)
-                return data
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.get_calculation_status":
-            try:
-                status = engine.get_calculation_status()
-                return status
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.get_errors":
-            try:
-                errors = engine.get_errors()
-                return {"errors": errors}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.get_last_result":
-            try:
-                result = engine.get_last_result()
-                return {"result": result}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
-        elif method == "simulation.perform_calculation":
-            try:
-                result = engine.perform_calculation()
-                return {"result": result}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
+    try:
+        if method == "ping":
+            result = {"status": "ok"}
+        elif method.startswith("simulation."):
+            result = handle_simulation(method, params)
+        elif method.startswith("power."):
+            result = handle_power_calculation(method, params)
         else:
-            return {"status": "not_implemented"}
-    
-    def handle_power_calculation(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理功率计算相关请求"""
-        if not self._power_calculator:
-            PowerKernelFactory = LazyLoader.get_power_factory()
-            self._power_calculator = PowerKernelFactory.create("pandapower")
-            if not self._power_calculator:
-                return {"error": "Power calculation kernel not available"}
+            raise ValueError(f"Unknown method: {method}")
         
-        if method == "power.calculate":
-            topology_data = params.get("topology_data", {})
-            result = self._power_calculator.calculate_power_flow(topology_data)
-            return result
-        else:
-            return {"status": "not_implemented"}
-    
-    def handle_ai(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理 AI 相关请求"""
-        if not self._ai_kernel:
-            from ai.factory import AIKernelFactory
-            self._ai_kernel = AIKernelFactory.create("pytorch")
-            if not self._ai_kernel:
-                return {"error": "No AI kernel available"}
-        
-        if method == "ai.predict":
-            device_ids = params.get("device_ids", [])
-            prediction_horizon = params.get("prediction_horizon", 3600)
-            prediction_type = params.get("prediction_type", "power")
-            result = self._ai_kernel.predict(device_ids, prediction_horizon, prediction_type)
-            return result
-        elif method == "ai.optimize":
-            objective = params.get("objective", "minimize_cost")
-            constraints = params.get("constraints", [])
-            time_horizon = params.get("time_horizon", 3600)
-            result = self._ai_kernel.optimize(objective, constraints, time_horizon)
-            return result
-        elif method == "ai.get_recommendations":
-            device_ids = params.get("device_ids", [])
-            recommendations = self._ai_kernel.get_recommendations(device_ids)
-            return {"recommendations": recommendations}
-        else:
-            return {"status": "not_implemented"}
-    
-    def handle_analytics(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """处理数据分析相关请求"""
         return {
-            "status": "not_implemented",
-            "message": "数据分析功能已移除，应在前端或Rust端实现"
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": result
         }
+    except Exception as e:
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {
+                "code": -32000,
+                "message": str(e)
+            }
+        }
+
+
+def handle_simulation(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """处理仿真相关请求"""
+    engine = get_simulation_engine()
+    
+    if method == "simulation.start":
+        calculation_interval_ms = params.get("calculation_interval_ms", 1000)
+        try:
+            engine.start(calculation_interval_ms=calculation_interval_ms)
+            return {"status": "started"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.stop":
+        try:
+            engine.stop()
+            return {"status": "stopped"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.pause":
+        try:
+            engine.pause()
+            return {"status": "paused"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.resume":
+        try:
+            engine.resume()
+            return {"status": "resumed"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.set_topology":
+        topology_data = params.get("topology_data")
+        if not topology_data:
+            return {"status": "error", "message": "拓扑数据未提供"}
+        try:
+            engine.set_topology(topology_data)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.set_device_mode":
+        device_id = params.get("device_id")
+        mode = params.get("mode")
+        try:
+            engine.set_device_mode(device_id, mode)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.set_device_random_config":
+        device_id = params.get("device_id")
+        min_power = params.get("min_power")
+        max_power = params.get("max_power")
+        try:
+            engine.set_device_random_config(device_id, min_power, max_power)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.set_device_manual_setpoint":
+        device_id = params.get("device_id")
+        active_power = params.get("active_power")
+        reactive_power = params.get("reactive_power", 0)
+        try:
+            engine.set_device_manual_setpoint(device_id, active_power, reactive_power)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.set_device_historical_config":
+        device_id = params.get("device_id")
+        config = params.get("config") or {}
+        try:
+            engine.set_device_historical_config(device_id, config)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.set_device_sim_params":
+        device_id = params.get("device_id")
+        sim_params = params.get("params") or {}
+        try:
+            engine.set_device_sim_params(device_id, sim_params)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.update_switch_state":
+        device_id = params.get("device_id")
+        is_closed = params.get("is_closed", True)
+        try:
+            engine.update_switch_state(device_id, is_closed)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.update_device_properties":
+        device_id = params.get("device_id")
+        properties = params.get("properties") or {}
+        try:
+            engine.update_device_properties(device_id, properties)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.get_device_data":
+        device_id = params.get("device_id")
+        try:
+            data = engine.get_device_data(device_id)
+            return data
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.get_calculation_status":
+        try:
+            status = engine.get_calculation_status()
+            return status
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.get_errors":
+        try:
+            errors = engine.get_errors()
+            return {"errors": errors}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.get_last_result":
+        try:
+            result = engine.get_last_result()
+            return {"result": result}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif method == "simulation.perform_calculation":
+        try:
+            result = engine.perform_calculation()
+            return {"result": result}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    else:
+        return {"status": "not_implemented"}
+
+
+def handle_power_calculation(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """处理功率计算相关请求"""
+    calculator = get_power_calculator()
+    if not calculator:
+        return {"error": "Power calculation kernel not available"}
+    
+    if method == "power.calculate":
+        topology_data = params.get("topology_data", {})
+        result = calculator.calculate_power_flow(topology_data)
+        return result
+    else:
+        return {"status": "not_implemented"}
 
 
 def main():
     """主函数"""
-    kernel = PythonKernel()
-    
-    # 发送就绪信号（内核启动完成，但库可能还在后台加载）
-    ready_msg = {
-        "jsonrpc": "2.0",
-        "id": None,
-        "method": "kernel.started",
-        "params": {"status": "started", "preloading": True}
-    }
-    print(json.dumps(ready_msg))
-    sys.stdout.flush()
+    # 输出启动信息到 stderr（会写入日志文件）
+    print(f"Python kernel starting...", file=sys.stderr)
+    print(f"Python version: {sys.version}", file=sys.stderr)
+    print(f"Base path: {base_path}", file=sys.stderr)
+    print(f"Frozen: {getattr(sys, 'frozen', False)}", file=sys.stderr)
+    sys.stderr.flush()
     
     # 从 stdin 读取 JSON-RPC 请求
     for line in sys.stdin:
@@ -364,7 +243,8 @@ def main():
         
         try:
             request = json.loads(line)
-            response = kernel.handle_request(request)
+            response = handle_request(request)
+            # 输出响应到 stdout
             print(json.dumps(response))
             sys.stdout.flush()
         except json.JSONDecodeError as e:
@@ -379,6 +259,8 @@ def main():
             print(json.dumps(error_response))
             sys.stdout.flush()
         except Exception as e:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
             error_response = {
                 "jsonrpc": "2.0",
                 "id": None,

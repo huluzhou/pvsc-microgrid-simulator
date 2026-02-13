@@ -139,6 +139,7 @@ def build_executable(python_exe):
     
     # 隐藏导入（PyInstaller 可能检测不到的模块）
     hidden_imports = [
+        # 本地模块
         "simulation",
         "simulation.engine",
         "simulation.adapters",
@@ -149,26 +150,62 @@ def build_executable(python_exe):
         "simulation.power_calculation.interface",
         "simulation.power_calculation.implementations",
         "simulation.power_calculation.implementations.pandapower_impl",
+        "simulation.power_calculation.implementations.pypsa_impl",
+        "simulation.power_calculation.implementations.gridcal_impl",
         "simulation.historical_data",
         "ai",
         "ai.factory",
         "ai.interface",
         "ai.implementations",
+        "ai.implementations.pytorch_impl",
+        "ai.implementations.tensorflow_impl",
+        "ai.implementations.gym_impl",
+        # 第三方库
         "pandapower",
+        "pandapower.auxiliary",
+        "pandapower.build_branch",
+        "pandapower.build_bus",
+        "pandapower.build_gen",
+        "pandapower.create",
+        "pandapower.diagnostic",
+        "pandapower.file_io",
         "pandapower.networks",
-        "pandapower.plotting",
+        "pandapower.pf",
+        "pandapower.pf.runpp",
+        "pandapower.powerflow",
+        "pandapower.results",
+        "pandapower.run",
+        "pandapower.runpp",
+        "pandapower.toolbox",
+        "pandapower.topology",
         "numpy",
+        "numpy.core",
+        "numpy.linalg",
         "pandas",
+        "pandas.core",
         "scipy",
         "scipy.sparse",
         "scipy.sparse.linalg",
+        "scipy.sparse.csgraph",
         "scipy.optimize",
+        "scipy.linalg",
+        "networkx",
     ]
     
     for module in hidden_imports:
         cmd.extend(["--hidden-import", module])
     
-    # 添加数据文件（Python 内核的模块）
+    # 收集子模块
+    collect_submodules = [
+        "simulation",
+        "ai", 
+        "pandapower",
+    ]
+    
+    for module in collect_submodules:
+        cmd.extend(["--collect-submodules", module])
+    
+    # 添加数据文件（Python 内核的模块作为包）
     cmd.extend(["--add-data", f"python-kernel/simulation{os.pathsep}simulation"])
     cmd.extend(["--add-data", f"python-kernel/ai{os.pathsep}ai"])
     
