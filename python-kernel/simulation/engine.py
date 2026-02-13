@@ -173,7 +173,8 @@ class SimulationEngine:
     def _calculate_topology_hash(self, topology_structure: Dict[str, Any]) -> str:
         """计算拓扑结构的哈希值"""
         # 将拓扑结构序列化为JSON字符串（排序以确保一致性）
-        structure_str = json.dumps(topology_structure, sort_keys=True, ensure_ascii=False)
+        # 使用 ensure_ascii=True 避免代理字符编码问题
+        structure_str = json.dumps(topology_structure, sort_keys=True, ensure_ascii=True)
         return hashlib.md5(structure_str.encode('utf-8')).hexdigest()
     
     def set_device_mode(self, device_id: str, mode: str) -> None:
@@ -648,7 +649,7 @@ class SimulationEngine:
                     err.get("severity"),
                     err.get("message"),
                     err.get("device_id"),
-                    json.dumps(err.get("details", {}), sort_keys=True, ensure_ascii=False),
+                    json.dumps(err.get("details", {}), sort_keys=True, ensure_ascii=True),
                 )
                 if key in seen_keys:
                     continue
