@@ -39,23 +39,19 @@ jobs:
       - name: Install Python kernel dependencies
         run: |
           pip install -r python-kernel/requirements.txt
-          pip install nuitka zstandard
+          pip install pyinstaller>=6.0
 
       # 重要：必须先构建前端，因为 Vite 会清空 dist/ 目录
       - name: Build frontend
         run: npm run build
 
       # 前端构建完成后再打包 Python 内核，避免被 Vite 清空
-      - name: Pack Python kernel (Nuitka)
+      - name: Pack Python kernel (PyInstaller)
         env:
-          # 使用 4 个并行任务加速编译
-          NUITKA_JOBS: 4
-          # 使用目录模式（非单文件），加快打包速度
-          PYTHON_KERNEL_ONEFILE: 0
           # 确保 Python 在 Windows 上使用 UTF-8 编码输出中文
           PYTHONIOENCODING: utf-8
         run: python pack_python_kernel.py
-        timeout-minutes: 90
+        timeout-minutes: 30
 
       - name: Build Tauri app
         run: npm run tauri build
