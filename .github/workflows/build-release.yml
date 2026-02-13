@@ -69,22 +69,42 @@ jobs:
           $portableDir = "portable-release"
           New-Item -ItemType Directory -Force -Path $portableDir
           
-          # 复制主程序
-          Copy-Item "src-tauri/target/release/光储充微电网模拟器.exe" -Destination "$portableDir/"
+          # 列出 release 目录内容以便调试
+          Write-Host "Release directory contents:"
+          Get-ChildItem "src-tauri/target/release/" -Filter "*.exe" | Select-Object Name
+          
+          # 复制主程序（可执行文件名来自 Cargo.toml 的 package name）
+          $exePath = "src-tauri/target/release/pvsc-microgrid-simulator.exe"
+          if (Test-Path $exePath) {
+            # 重命名为中文名
+            Copy-Item $exePath -Destination "$portableDir/光储充微电网模拟器.exe"
+            Write-Host "Copied main executable"
+          } else {
+            Write-Error "Main executable not found at $exePath"
+            exit 1
+          }
           
           # 复制 Python 内核
-          Copy-Item -Recurse "dist/python-kernel" -Destination "$portableDir/"
+          if (Test-Path "dist/python-kernel") {
+            Copy-Item -Recurse "dist/python-kernel" -Destination "$portableDir/"
+            Write-Host "Copied Python kernel"
+          } else {
+            Write-Error "Python kernel not found"
+            exit 1
+          }
           
           # 复制 WebView2 加载器（如果存在）
           if (Test-Path "src-tauri/target/release/WebView2Loader.dll") {
             Copy-Item "src-tauri/target/release/WebView2Loader.dll" -Destination "$portableDir/"
+            Write-Host "Copied WebView2Loader.dll"
           }
           
           # 创建 ZIP 压缩包
           Compress-Archive -Path "$portableDir/*" -DestinationPath "光储充微电网模拟器-portable-windows.zip" -Force
           
           Write-Host "Portable package created successfully"
-          Get-ChildItem $portableDir
+          Write-Host "Contents:"
+          Get-ChildItem $portableDir -Recurse | Select-Object FullName
 
       - name: Upload portable package
         uses: actions/upload-artifact@v4
