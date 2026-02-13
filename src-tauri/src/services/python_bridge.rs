@@ -104,9 +104,43 @@ impl PythonBridge {
             .ok_or_else(|| anyhow::anyhow!("Failed to get stdout"))?;
         let stdin = child.stdin.take()
             .ok_or_else(|| anyhow::anyhow!("Failed to get stdin"))?;
+        let stderr = child.stderr.take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get stderr"))?;
 
         let stdin_arc = Arc::new(Mutex::new(stdin));
         self.stdin = Some(stdin_arc.clone());
+
+        // 启动后台任务读取 stderr 并记录日志
+        tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            
+            // 尝试写入日志文件
+            let log_path = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|p| p.join("python-kernel.log")))
+                .unwrap_or_else(|| std::path::PathBuf::from("python-kernel.log"));
+            
+            let mut log_file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+                .ok();
+            
+            if let Some(ref mut f) = log_file {
+                use std::io::Write;
+                let _ = writeln!(f, "\n=== Python Kernel Started at {:?} ===", std::time::SystemTime::now());
+            }
+            
+            while let Ok(Some(line)) = lines.next_line().await {
+                eprintln!("[Python stderr] {}", line);
+                if let Some(ref mut f) = log_file {
+                    use std::io::Write;
+                    let _ = writeln!(f, "{}", line);
+                    let _ = f.flush();
+                }
+            }
+        });
 
         // 启动后台任务读取 stdout
         let pending = self.pending_requests.clone();

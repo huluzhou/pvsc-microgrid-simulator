@@ -84,13 +84,23 @@ fn main() {
                         }
                         
                         if !ready {
-                            eprintln!("警告: Python 内核在多次重试后仍未就绪");
-                            let _ = app_handle.emit("python-kernel-error", "Python 内核启动失败");
+                            let log_path = std::env::current_exe()
+                                .ok()
+                                .and_then(|p| p.parent().map(|p| p.join("python-kernel.log")))
+                                .map(|p| p.display().to_string())
+                                .unwrap_or_else(|| "python-kernel.log".to_string());
+                            eprintln!("警告: Python 内核在多次重试后仍未就绪，日志: {}", log_path);
+                            let _ = app_handle.emit("python-kernel-error", format!("Python 内核启动失败，请查看日志: {}", log_path));
                         }
                     }
                     Err(e) => {
-                        eprintln!("启动 Python 内核失败: {}", e);
-                        let _ = app_handle.emit("python-kernel-error", format!("启动失败: {}", e));
+                        let log_path = std::env::current_exe()
+                            .ok()
+                            .and_then(|p| p.parent().map(|p| p.join("python-kernel.log")))
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|| "python-kernel.log".to_string());
+                        eprintln!("启动 Python 内核失败: {}，日志: {}", e, log_path);
+                        let _ = app_handle.emit("python-kernel-error", format!("启动失败: {}，日志: {}", e, log_path));
                     }
                 }
             });
