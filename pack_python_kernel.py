@@ -233,6 +233,7 @@ def build_executable(python_exe):
     ])
     
     # 排除不必要的模块以减小体积和加快编译速度
+    # 注意：不要排除 scipy 的核心子模块，pandapower 可能需要
     excludes = [
         # GUI 相关
         "tkinter",
@@ -256,19 +257,11 @@ def build_executable(python_exe):
         "pandas.tests",
         "numpy.testing",
         "scipy.testing",
-        # 不常用的 scipy 子模块
+        # 不常用的 scipy I/O 模块
         "scipy.io.matlab",
         "scipy.io.arff",
         "scipy.io.wavfile",
-        "scipy.signal",
-        "scipy.ndimage",
-        "scipy.interpolate",
-        "scipy.integrate",
-        "scipy.fft",
-        # 其他
-        "xml.etree.ElementTree",
-        "email",
-        "html.parser",
+        # 不需要的网络模块
         "http.server",
         "xmlrpc",
     ]
