@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <!-- 母线 - 粗黑线 -->
-  <line x1="8" y1="32" x2="56" y2="32" stroke="#000000" stroke-width="4" />
-  <!-- 连接点 -->
-  <circle cx="16" cy="32" r="2" fill="#000000" />
-  <circle cx="32" cy="32" r="2" fill="#000000" />
-  <circle cx="48" cy="32" r="2" fill="#000000" />
-</svg>

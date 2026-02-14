@@ -259,7 +259,7 @@ def build_executable(python_exe):
             # 计算目录大小
             total_size = sum(f.stat().st_size for f in output_dir.rglob('*') if f.is_file())
             
-            print(f"\n✓ 构建成功!")
+            print(f"\n[成功] 构建成功!")
             print(f"  输出目录: {output_dir}")
             print(f"  可执行文件: {final_exe}")
             print(f"  目录总大小: {total_size / (1024*1024):.2f} MB")
@@ -268,7 +268,7 @@ def build_executable(python_exe):
             print(f"\n构建耗时: {end_time - start_time:.2f} 秒")
             return True
         else:
-            print(f"\n✗ 错误: 未找到生成的可执行文件")
+            print(f"\n[错误] 未找到生成的可执行文件")
             print(f"  期望位置: {final_exe}")
             if output_dir.exists():
                 print(f"  输出目录内容:")
@@ -277,10 +277,10 @@ def build_executable(python_exe):
             return False
             
     except subprocess.CalledProcessError as e:
-        print(f"\n✗ 构建失败: {e}")
+        print(f"\n[错误] 构建失败: {e}")
         return False
     except Exception as e:
-        print(f"\n✗ 构建过程中发生异常: {e}")
+        print(f"\n[错误] 构建过程中发生异常: {e}")
         import traceback
         traceback.print_exc()
         return False

@@ -21,6 +21,7 @@ else:
     base_path = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, base_path)
 
+
 # 在顶部导入所有需要的模块（PyInstaller 兼容）
 from typing import Dict, Any
 
@@ -243,9 +244,12 @@ def main():
         
         try:
             request = json.loads(line)
+            method = request.get("method", "unknown")
+            req_id = request.get("id")
             response = handle_request(request)
-            # 输出响应到 stdout
-            print(json.dumps(response))
+            # 输出响应到 stdout（使用 ensure_ascii=False 避免 \uXXXX 转义产生 lone surrogate）
+            resp_json = json.dumps(response, ensure_ascii=False)
+            print(resp_json)
             sys.stdout.flush()
         except json.JSONDecodeError as e:
             error_response = {
@@ -256,7 +260,7 @@ def main():
                     "message": f"Parse error: {e}"
                 }
             }
-            print(json.dumps(error_response))
+            print(json.dumps(error_response, ensure_ascii=False))
             sys.stdout.flush()
         except Exception as e:
             import traceback
@@ -269,7 +273,7 @@ def main():
                     "message": str(e)
                 }
             }
-            print(json.dumps(error_response))
+            print(json.dumps(error_response, ensure_ascii=False))
             sys.stdout.flush()
 
 

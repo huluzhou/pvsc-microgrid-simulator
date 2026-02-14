@@ -46,3 +46,5 @@ ENV/
 # IDE
 .cursor/
 venv-build/
+venv-dev/
+build/

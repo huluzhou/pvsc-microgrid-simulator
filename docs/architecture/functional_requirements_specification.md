@@ -441,4 +441,3 @@
 - SQLite数据库：用于数据存储
 - PyQt/PySide：用于图形用户界面
 - pymodbus：用于Modbus通信实现
-

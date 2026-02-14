@@ -124,9 +124,8 @@ def activate_instructions(venv_name):
 def main():
     """主函数"""
     print("=== venv环境管理工具 ===")
-    print("此工具将创建两个venv环境:")
-    print("  1. venv-dev    - 开发环境")
-    print("  2. venv-build  - 打包环境")
+    print("此工具将创建开发环境:")
+    print("  venv-dev - 开发环境")
     
     # 检查Python版本
     if not check_python_version():
@@ -140,21 +139,12 @@ def main():
         return False
     activate_instructions("venv-dev")
     
-    # 创建打包环境
     print("\n" + "="*60)
-    print("创建打包环境 (venv-build)")
-    print("="*60)
-    if not create_venv("venv-build", "requirements-build.txt"):
-        return False
-    activate_instructions("venv-build")
-    
-    print("\n" + "="*60)
-    print("所有venv环境创建完成!")
+    print("venv环境创建完成!")
     print("="*60)
     print("\n使用说明:")
     print("1. 开发时激活 venv-dev 环境")
-    print("2. 打包时激活 venv-build 环境")
-    print("3. 两个环境相互独立，互不干扰")
+    print("2. Python内核打包使用 python-kernel/requirements.txt")
     print("="*60)
     
     return True

@@ -53,7 +53,7 @@
 
 4. **部署复杂度**
    - 需要安装更多Python依赖（pandas, scipy等）
-   - Nuitka打包体积增大
+   - PyInstaller打包体积增大
    - 依赖管理更复杂
 
 ### 方案B：Rust后端实现

@@ -31,8 +31,8 @@
 
 ### 入站适配器
 
-- **UI适配器**：`src/adapters/inbound/ui/pyside/`
-  - PySide6 UI适配器，调用应用层用例（通过应用层端口）
+- **UI适配器**：`src/adapters/inbound/ui/`
+  - React + TypeScript UI适配器，通过 Tauri 调用 Rust 后端
 
 ### 出站适配器
 

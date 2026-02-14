@@ -126,7 +126,7 @@ src/
 │   │       ├── entities/             # 实体
 │   │       ├── value_objects/        # 值对象
 │   │       ├── services/             # 领域服务
-│   │       ├── events/               # 领域事件
+│   │       ├── events/             # 领域事件
 │   │       └── ports/                # 领域端口（仅仓储端口）
 │   │           └── topology_repository_port.py
 │   └── common/                       # 通用领域组件
@@ -251,7 +251,7 @@ class MicrogridTopology(AggregateRoot):
 
 4. **文档更新**
    - 更新了 `PORTS_README.md`
-   - 更新了 `ARCHITECTURE.md`
+   - 更新了架构文档（`docs/architecture/architecture.md`）
    - 更新了架构审查文档
 
 ### 📊 重构后的目录结构
@@ -285,4 +285,3 @@ src/
 - ✅ 应用层端口依赖应用层的Commands和DTOs（正确）
 - ✅ 领域层端口只依赖领域层的实体和值对象（正确）
 - ✅ 适配器层调用应用层端口（正确）
-
