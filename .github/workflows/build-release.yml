@@ -103,137 +103,136 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          # 创建测试脚本
-          $testScript = @'
-import sys
-import json
-import subprocess
-import time
-import os
-
-# 设置环境变量确保 UTF-8 编码
-os.environ['PYTHONIOENCODING'] = 'utf-8'
-
-# 启动 Python 内核进程
-kernel_path = os.path.join('python-kernel', 'main.py')
-proc = subprocess.Popen(
-    [sys.executable, kernel_path],
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    text=True,
-    encoding='utf-8',
-    bufsize=1,
-    env=os.environ.copy()
-)
-
-try:
-    # 发送 ping 请求
-    ping_request = {
-        'jsonrpc': '2.0',
-        'id': 1,
-        'method': 'ping',
-        'params': {}
-    }
-    request_json = json.dumps(ping_request) + '\n'
-    proc.stdin.write(request_json)
-    proc.stdin.flush()
-    
-    # 等待响应（最多 5 秒）
-    start_time = time.time()
-    response = None
-    while time.time() - start_time < 5:
-        line = proc.stdout.readline()
-        if line:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                response = json.loads(line)
-                if response.get('id') == 1:
-                    break
-            except json.JSONDecodeError as e:
-                # 输出错误信息以便调试
-                print(f'JSON decode error: {e}', file=sys.stderr)
-                print(f'Line content: {line[:200]}', file=sys.stderr)
-                continue
-    
-    if not response or response.get('id') != 1:
-        print(f'ERROR: Invalid ping response: {response}', file=sys.stderr)
-        # 输出 stderr 以便调试
-        stderr_output = proc.stderr.read()
-        if stderr_output:
-            print(f'Python kernel stderr: {stderr_output}', file=sys.stderr)
-        sys.exit(1)
-    
-    # 验证响应格式
-    if 'result' not in response and 'error' not in response:
-        print(f'ERROR: Invalid response format: {response}', file=sys.stderr)
-        sys.exit(1)
-    
-    # 测试包含中文的响应（验证 ensure_ascii=False）
-    # 注意：ping 方法可能不支持参数，我们测试错误响应中的中文
-    test_request = {
-        'jsonrpc': '2.0',
-        'id': 2,
-        'method': 'ping',
-        'params': {}
-    }
-    proc.stdin.write(json.dumps(test_request) + '\n')
-    proc.stdin.flush()
-    
-    start_time = time.time()
-    response2 = None
-    while time.time() - start_time < 5:
-        line = proc.stdout.readline()
-        if line:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                response2 = json.loads(line)
-                if response2.get('id') == 2:
-                    break
-            except json.JSONDecodeError as e:
-                print(f'ERROR: JSON decode error on second request: {e}', file=sys.stderr)
-                print(f'Response line: {line[:200]}', file=sys.stderr)
-                # 检查是否是 lone surrogate 错误
-                if 'lone' in str(e).lower() or 'surrogate' in str(e).lower():
-                    print('ERROR: Detected lone surrogate error - ensure_ascii=False may not be working!', file=sys.stderr)
-                    sys.exit(1)
-                continue
-    
-    if not response2:
-        print('ERROR: No response for second ping request', file=sys.stderr)
-        sys.exit(1)
-    
-    # 验证 JSON 序列化不会产生 lone surrogate
-    # 创建一个包含中文的测试响应
-    test_response = {
-        'jsonrpc': '2.0',
-        'id': 3,
-        'result': {'message': '测试中文', 'device_name': '光伏设备'}
-    }
-    test_json = json.dumps(test_response, ensure_ascii=False)
-    # 尝试解析，如果失败说明有问题
-    try:
-        parsed = json.loads(test_json)
-        if '测试中文' not in test_json:
-            print('WARNING: Chinese characters may be escaped', file=sys.stderr)
-    except json.JSONDecodeError as e:
-        print(f'ERROR: Cannot parse test JSON with Chinese: {e}', file=sys.stderr)
-        sys.exit(1)
-    
-    print('SUCCESS: Python kernel JSON-RPC communication test passed')
-    print(f'Ping response: {json.dumps(response, ensure_ascii=False)}')
-    
-finally:
-    try:
-        proc.terminate()
-        proc.wait(timeout=2)
-    except:
-        proc.kill()
-'@
+          # 创建测试脚本（使用 PowerShell here-string，但需要正确转义）
+          $testScript = @"
+          import sys
+          import json
+          import subprocess
+          import time
+          import os
+          
+          # 设置环境变量确保 UTF-8 编码
+          os.environ['PYTHONIOENCODING'] = 'utf-8'
+          
+          # 启动 Python 内核进程
+          kernel_path = os.path.join('python-kernel', 'main.py')
+          proc = subprocess.Popen(
+              [sys.executable, kernel_path],
+              stdin=subprocess.PIPE,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+              encoding='utf-8',
+              bufsize=1,
+              env=os.environ.copy()
+          )
+          
+          try:
+              # 发送 ping 请求
+              ping_request = {
+                  'jsonrpc': '2.0',
+                  'id': 1,
+                  'method': 'ping',
+                  'params': {}
+              }
+              request_json = json.dumps(ping_request) + '\n'
+              proc.stdin.write(request_json)
+              proc.stdin.flush()
+              
+              # 等待响应（最多 5 秒）
+              start_time = time.time()
+              response = None
+              while time.time() - start_time < 5:
+                  line = proc.stdout.readline()
+                  if line:
+                      line = line.strip()
+                      if not line:
+                          continue
+                      try:
+                          response = json.loads(line)
+                          if response.get('id') == 1:
+                              break
+                      except json.JSONDecodeError as e:
+                          # 输出错误信息以便调试
+                          print(f'JSON decode error: {e}', file=sys.stderr)
+                          print(f'Line content: {line[:200]}', file=sys.stderr)
+                          continue
+              
+              if not response or response.get('id') != 1:
+                  print(f'ERROR: Invalid ping response: {response}', file=sys.stderr)
+                  # 输出 stderr 以便调试
+                  stderr_output = proc.stderr.read()
+                  if stderr_output:
+                      print(f'Python kernel stderr: {stderr_output}', file=sys.stderr)
+                  sys.exit(1)
+              
+              # 验证响应格式
+              if 'result' not in response and 'error' not in response:
+                  print(f'ERROR: Invalid response format: {response}', file=sys.stderr)
+                  sys.exit(1)
+              
+              # 测试包含中文的响应（验证 ensure_ascii=False）
+              test_request = {
+                  'jsonrpc': '2.0',
+                  'id': 2,
+                  'method': 'ping',
+                  'params': {}
+              }
+              proc.stdin.write(json.dumps(test_request) + '\n')
+              proc.stdin.flush()
+              
+              start_time = time.time()
+              response2 = None
+              while time.time() - start_time < 5:
+                  line = proc.stdout.readline()
+                  if line:
+                      line = line.strip()
+                      if not line:
+                          continue
+                      try:
+                          response2 = json.loads(line)
+                          if response2.get('id') == 2:
+                              break
+                      except json.JSONDecodeError as e:
+                          print(f'ERROR: JSON decode error on second request: {e}', file=sys.stderr)
+                          print(f'Response line: {line[:200]}', file=sys.stderr)
+                          # 检查是否是 lone surrogate 错误
+                          if 'lone' in str(e).lower() or 'surrogate' in str(e).lower():
+                              print('ERROR: Detected lone surrogate error - ensure_ascii=False may not be working!', file=sys.stderr)
+                              sys.exit(1)
+                          continue
+              
+              if not response2:
+                  print('ERROR: No response for second ping request', file=sys.stderr)
+                  sys.exit(1)
+              
+              # 验证 JSON 序列化不会产生 lone surrogate
+              # 创建一个包含中文的测试响应
+              test_response = {
+                  'jsonrpc': '2.0',
+                  'id': 3,
+                  'result': {'message': '测试中文', 'device_name': '光伏设备'}
+              }
+              test_json = json.dumps(test_response, ensure_ascii=False)
+              # 尝试解析，如果失败说明有问题
+              try:
+                  parsed = json.loads(test_json)
+                  if '测试中文' not in test_json:
+                      print('WARNING: Chinese characters may be escaped', file=sys.stderr)
+              except json.JSONDecodeError as e:
+                  print(f'ERROR: Cannot parse test JSON with Chinese: {e}', file=sys.stderr)
+                  sys.exit(1)
+              
+              print('SUCCESS: Python kernel JSON-RPC communication test passed')
+              print(f'Ping response: {json.dumps(response, ensure_ascii=False)}')
+              
+          finally:
+              try:
+                  proc.terminate()
+                  proc.wait(timeout=2)
+              except:
+                  proc.kill()
+          "@
           
           # 写入临时测试脚本
           $testScript | Out-File -FilePath "test_kernel.py" -Encoding utf8 -NoNewline
