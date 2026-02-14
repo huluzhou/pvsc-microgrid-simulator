@@ -48,7 +48,7 @@ impl Database {
                 eprintln!("   - voltage, current, power (old schema)");
                 eprintln!("");
                 eprintln!("   Expected columns:");
-                eprintln!("   - p_active, p_reactive (new schema)");
+                eprintln!("   - p_mw, q_mvar (pandapower standard schema)");
                 eprintln!("");
                 eprintln!("   Action: Dropping old table and recreating with new schema.");
                 eprintln!("   Note: All existing data will be lost (test data).");
@@ -57,17 +57,75 @@ impl Database {
                 // 删除旧表
                 self.conn.execute("DROP TABLE device_data", [])?;
                 eprintln!("✓ Old table dropped successfully");
+            } else {
+                // 检查是否有旧列名（p_active, p_reactive），需要迁移到 p_mw, q_mvar
+                let has_old_power_columns = self.conn.query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('device_data') WHERE name IN ('p_active', 'p_reactive')",
+                    [],
+                    |row| row.get::<_, i32>(0)
+                ).unwrap_or(0) > 0;
+                
+                if has_old_power_columns {
+                    eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                    eprintln!("⚠️  DATABASE SCHEMA MIGRATION");
+                    eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                    eprintln!("   Migrating from p_active/p_reactive (kW) to p_mw/q_mvar (MW)");
+                    eprintln!("   Converting values: MW = kW / 1000.0");
+                    eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                    
+                    // 添加新列
+                    let _ = self.conn.execute("ALTER TABLE device_data ADD COLUMN p_mw REAL", []);
+                    let _ = self.conn.execute("ALTER TABLE device_data ADD COLUMN q_mvar REAL", []);
+                    
+                    // 迁移数据：将 kW 转换为 MW
+                    self.conn.execute(
+                        "UPDATE device_data SET p_mw = p_active / 1000.0 WHERE p_active IS NOT NULL",
+                        [],
+                    )?;
+                    self.conn.execute(
+                        "UPDATE device_data SET q_mvar = p_reactive / 1000.0 WHERE p_reactive IS NOT NULL",
+                        [],
+                    )?;
+                    
+                    // 删除旧列（SQLite 不支持直接删除列，需要重建表）
+                    // 创建临时表
+                    self.conn.execute(
+                        "CREATE TABLE device_data_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            device_id TEXT NOT NULL,
+                            timestamp REAL NOT NULL,
+                            p_mw REAL,
+                            q_mvar REAL,
+                            data_json TEXT,
+                            device_type TEXT
+                        )",
+                        [],
+                    )?;
+                    
+                    // 复制数据
+                    self.conn.execute(
+                        "INSERT INTO device_data_new (id, device_id, timestamp, p_mw, q_mvar, data_json, device_type)
+                         SELECT id, device_id, timestamp, p_mw, q_mvar, data_json, device_type FROM device_data",
+                        [],
+                    )?;
+                    
+                    // 删除旧表并重命名
+                    self.conn.execute("DROP TABLE device_data", [])?;
+                    self.conn.execute("ALTER TABLE device_data_new RENAME TO device_data", [])?;
+                    
+                    eprintln!("✓ Migration completed successfully");
+                }
             }
         }
 
-        // 创建设备数据表（新结构）
+        // 创建设备数据表（使用 pandapower 标准字段名：p_mw, q_mvar）
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS device_data (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 device_id TEXT NOT NULL,
                 timestamp REAL NOT NULL,
-                p_active REAL,
-                p_reactive REAL,
+                p_mw REAL,
+                q_mvar REAL,
                 data_json TEXT,
                 device_type TEXT
             )",
@@ -126,20 +184,20 @@ impl Database {
         &self,
         device_id: &str,
         timestamp: f64,
-        p_active: Option<f64>,
-        p_reactive: Option<f64>,
+        p_mw: Option<f64>,
+        q_mvar: Option<f64>,
         data_json: Option<&str>,
         device_type: Option<&str>,
     ) -> SqlResult<()> {
         self.conn.execute(
-            "INSERT INTO device_data (device_id, timestamp, p_active, p_reactive, data_json, device_type)
+            "INSERT INTO device_data (device_id, timestamp, p_mw, q_mvar, data_json, device_type)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![device_id, timestamp, p_active, p_reactive, data_json, device_type],
+            rusqlite::params![device_id, timestamp, p_mw, q_mvar, data_json, device_type],
         )?;
         Ok(())
     }
 
-    /// 单行结果：timestamp, p_active, p_reactive, data_json。max_points 为 Some(n) 时若结果超过 n 条则按时间等分桶降采样
+    /// 单行结果：timestamp, p_mw, q_mvar, data_json。max_points 为 Some(n) 时若结果超过 n 条则按时间等分桶降采样
     pub fn query_device_data(
         &self,
         device_id: &str,
@@ -147,7 +205,7 @@ impl Database {
         end_time: Option<f64>,
         max_points: Option<usize>,
     ) -> SqlResult<Vec<(f64, Option<f64>, Option<f64>, Option<String>)>> {
-        let mut query = "SELECT timestamp, p_active, p_reactive, data_json FROM device_data WHERE device_id = ?1".to_string();
+        let mut query = "SELECT timestamp, p_mw, q_mvar, data_json FROM device_data WHERE device_id = ?1".to_string();
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(device_id)];
 
         if let Some(start) = start_time {
@@ -244,7 +302,7 @@ impl Database {
         device_id: &str,
     ) -> SqlResult<Option<(f64, Option<f64>, Option<f64>, Option<String>)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT timestamp, p_active, p_reactive, data_json FROM device_data WHERE device_id = ?1 ORDER BY timestamp DESC LIMIT 1",
+            "SELECT timestamp, p_mw, q_mvar, data_json FROM device_data WHERE device_id = ?1 ORDER BY timestamp DESC LIMIT 1",
         )?;
         let mut rows = stmt.query(rusqlite::params![device_id])?;
         if let Some(row) = rows.next()? {

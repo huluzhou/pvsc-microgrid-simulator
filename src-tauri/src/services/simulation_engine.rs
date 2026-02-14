@@ -592,10 +592,11 @@ impl SimulationEngine {
         // 处理母线结果：res_bus 含 vm_pu、va_degree、p_mw、q_mvar，落库并通知前端
         if let Some(buses) = results.get("buses").and_then(|v| v.as_object()) {
             for (_bus_idx_str, bus_data) in buses {
-                let p_active_mw = bus_data.get("p_mw").and_then(|v| v.as_f64());
-                let p_active_kw = p_active_mw.map(|p| p * 1000.0);
-                let p_reactive_mvar = bus_data.get("q_mvar").and_then(|v| v.as_f64());
-                let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0);
+                let p_mw = bus_data.get("p_mw").and_then(|v| v.as_f64());
+                let q_mvar = bus_data.get("q_mvar").and_then(|v| v.as_f64());
+                // 缓存中仍使用 kW/kVar 单位（用于前端显示）
+                let p_active_kw = p_mw.map(|p| p * 1000.0);
+                let p_reactive_kvar = q_mvar.map(|q| q * 1000.0);
                 if let Some(bus_name) = bus_data.get("name").and_then(|v| v.as_str()) {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::Node
@@ -603,11 +604,12 @@ impl SimulationEngine {
                         {
                             if let Some(ref db) = *database.lock().unwrap() {
                                 let data_json = serde_json::to_string(bus_data).ok();
+                                // 直接存储 MW 值（pandapower 标准）
                                 let _ = db.insert_device_data(
                                     device_id,
                                     timestamp,
-                                    p_active_kw,
-                                    p_reactive_kvar,
+                                    p_mw,
+                                    q_mvar,
                                     data_json.as_deref(),
                                     Some(device.device_type.as_str()),
                                 );
@@ -615,8 +617,8 @@ impl SimulationEngine {
                                     let _ = db.insert_device_data(
                                         meter_id,
                                         timestamp,
-                                        p_active_kw,
-                                        p_reactive_kvar,
+                                        p_mw,
+                                        q_mvar,
                                         data_json.as_deref(),
                                         devices.get(meter_id).map(|d| d.device_type.as_str()),
                                     );
@@ -649,8 +651,9 @@ impl SimulationEngine {
         if let Some(lines) = results.get("lines").and_then(|v| v.as_object()) {
             for (_line_idx_str, line_data) in lines {
                 let p_from_mw = line_data.get("p_from_mw").and_then(|v| v.as_f64());
-                let p_active_kw = p_from_mw.map(|p| p * 1000.0);
                 let q_from_mvar = line_data.get("q_from_mvar").and_then(|v| v.as_f64());
+                // 缓存中仍使用 kW/kVar 单位（用于前端显示）
+                let p_active_kw = p_from_mw.map(|p| p * 1000.0);
                 let p_reactive_kvar = q_from_mvar.map(|q| q * 1000.0);
                 if let Some(line_name) = line_data.get("name").and_then(|v| v.as_str()) {
                     for (device_id, device) in devices {
@@ -659,11 +662,12 @@ impl SimulationEngine {
                         {
                             if let Some(ref db) = *database.lock().unwrap() {
                                 let data_json = serde_json::to_string(line_data).ok();
+                                // 直接存储 MW 值（pandapower 标准）
                                 let _ = db.insert_device_data(
                                     device_id,
                                     timestamp,
-                                    p_active_kw,
-                                    p_reactive_kvar,
+                                    p_from_mw,
+                                    q_from_mvar,
                                     data_json.as_deref(),
                                     Some(device.device_type.as_str()),
                                 );
@@ -671,8 +675,8 @@ impl SimulationEngine {
                                     let _ = db.insert_device_data(
                                         meter_id,
                                         timestamp,
-                                        p_active_kw,
-                                        p_reactive_kvar,
+                                        p_from_mw,
+                                        q_from_mvar,
                                         data_json.as_deref(),
                                         devices.get(meter_id).map(|d| d.device_type.as_str()),
                                     );
@@ -705,8 +709,9 @@ impl SimulationEngine {
         if let Some(switches) = results.get("switches").and_then(|v| v.as_object()) {
             for (_sw_idx_str, sw_data) in switches {
                 let p_from_mw = sw_data.get("p_from_mw").and_then(|v| v.as_f64());
-                let p_active_kw = p_from_mw.map(|p| p * 1000.0);
                 let q_from_mvar = sw_data.get("q_from_mvar").and_then(|v| v.as_f64());
+                // 缓存中仍使用 kW/kVar 单位（用于前端显示）
+                let p_active_kw = p_from_mw.map(|p| p * 1000.0);
                 let p_reactive_kvar = q_from_mvar.map(|q| q * 1000.0);
                 if let Some(sw_name) = sw_data.get("name").and_then(|v| v.as_str()) {
                     for (device_id, device) in devices {
@@ -715,11 +720,12 @@ impl SimulationEngine {
                         {
                             if let Some(ref db) = *database.lock().unwrap() {
                                 let data_json = serde_json::to_string(sw_data).ok();
+                                // 直接存储 MW 值（pandapower 标准）
                                 let _ = db.insert_device_data(
                                     device_id,
                                     timestamp,
-                                    p_active_kw,
-                                    p_reactive_kvar,
+                                    p_from_mw,
+                                    q_from_mvar,
                                     data_json.as_deref(),
                                     Some(device.device_type.as_str()),
                                 );
@@ -727,8 +733,8 @@ impl SimulationEngine {
                                     let _ = db.insert_device_data(
                                         meter_id,
                                         timestamp,
-                                        p_active_kw,
-                                        p_reactive_kvar,
+                                        p_from_mw,
+                                        q_from_mvar,
                                         data_json.as_deref(),
                                         devices.get(meter_id).map(|d| d.device_type.as_str()),
                                     );
@@ -760,12 +766,12 @@ impl SimulationEngine {
         // 处理负载结果
         if let Some(loads) = results.get("loads").and_then(|v| v.as_object()) {
             for (_load_idx_str, load_data) in loads {
-                // 提取有功功率和无功功率
-                let p_active_mw = load_data.get("p_mw").and_then(|v| v.as_f64());
-                let p_active_kw = p_active_mw.map(|p| p * 1000.0); // 转换为kW
-                
-                let p_reactive_mvar = load_data.get("q_mvar").and_then(|v| v.as_f64());
-                let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0); // 转换为kVar
+                // 提取有功功率和无功功率（pandapower 标准：p_mw, q_mvar）
+                let p_mw = load_data.get("p_mw").and_then(|v| v.as_f64());
+                let q_mvar = load_data.get("q_mvar").and_then(|v| v.as_f64());
+                // 缓存中仍使用 kW/kVar 单位（用于前端显示）
+                let p_active_kw = p_mw.map(|p| p * 1000.0);
+                let p_reactive_kvar = q_mvar.map(|q| q * 1000.0);
                 
                 // 尝试找到对应的 Load/Charger 设备（Python 端 Charger 也建为 load；仅功率设备落库；电表落库其指向节点的数据）
                 if let Some(load_name) = load_data.get("name").and_then(|v| v.as_str()) {
@@ -776,11 +782,12 @@ impl SimulationEngine {
                         {
                             if let Some(ref db) = *database.lock().unwrap() {
                                 let data_json = serde_json::to_string(load_data).ok();
+                                // 直接存储 MW 值（pandapower 标准）
                                 let _ = db.insert_device_data(
                                     device_id,
                                     timestamp,
-                                    p_active_kw,
-                                    p_reactive_kvar,
+                                    p_mw,
+                                    q_mvar,
                                     data_json.as_deref(),
                                     Some(device.device_type.as_str()),
                                 );
@@ -788,8 +795,8 @@ impl SimulationEngine {
                                     let _ = db.insert_device_data(
                                         meter_id,
                                         timestamp,
-                                        p_active_kw,
-                                        p_reactive_kvar,
+                                        p_mw,
+                                        q_mvar,
                                         data_json.as_deref(),
                                         devices.get(meter_id).map(|d| d.device_type.as_str()),
                                     );
@@ -828,12 +835,12 @@ impl SimulationEngine {
         // 处理发电机结果
         if let Some(generators) = results.get("generators").and_then(|v| v.as_object()) {
             for (_gen_idx_str, gen_data) in generators {
-                // 提取有功功率和无功功率
-                let p_active_mw = gen_data.get("p_mw").and_then(|v| v.as_f64());
-                let p_active_kw = p_active_mw.map(|p| p * 1000.0); // 转换为kW
-                
-                let p_reactive_mvar = gen_data.get("q_mvar").and_then(|v| v.as_f64());
-                let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0); // 转换为kVar
+                // 提取有功功率和无功功率（pandapower 标准：p_mw, q_mvar）
+                let p_mw = gen_data.get("p_mw").and_then(|v| v.as_f64());
+                let q_mvar = gen_data.get("q_mvar").and_then(|v| v.as_f64());
+                // 缓存中仍使用 kW/kVar 单位（用于前端显示）
+                let p_active_kw = p_mw.map(|p| p * 1000.0);
+                let p_reactive_kvar = q_mvar.map(|q| q * 1000.0);
                 
                 // 尝试找到对应的Pv设备（功率设备落库；电表落库其指向节点的数据）
                 if let Some(gen_name) = gen_data.get("name").and_then(|v| v.as_str()) {
@@ -842,11 +849,12 @@ impl SimulationEngine {
                             && device.name == gen_name {
                             if let Some(ref db) = *database.lock().unwrap() {
                                 let data_json = serde_json::to_string(gen_data).ok();
+                                // 直接存储 MW 值（pandapower 标准）
                                 let _ = db.insert_device_data(
                                     device_id,
                                     timestamp,
-                                    p_active_kw,
-                                    p_reactive_kvar,
+                                    p_mw,
+                                    q_mvar,
                                     data_json.as_deref(),
                                     Some(device.device_type.as_str()),
                                 );
@@ -854,8 +862,8 @@ impl SimulationEngine {
                                     let _ = db.insert_device_data(
                                         meter_id,
                                         timestamp,
-                                        p_active_kw,
-                                        p_reactive_kvar,
+                                        p_mw,
+                                        q_mvar,
                                         data_json.as_deref(),
                                         devices.get(meter_id).map(|d| d.device_type.as_str()),
                                     );
@@ -894,12 +902,12 @@ impl SimulationEngine {
         // 处理储能结果
         if let Some(storages) = results.get("storages").and_then(|v| v.as_object()) {
             for (_storage_idx_str, storage_data) in storages {
-                // 提取有功功率和无功功率
-                let p_active_mw = storage_data.get("p_mw").and_then(|v| v.as_f64());
-                let p_active_kw = p_active_mw.map(|p| p * 1000.0); // 转换为kW
-                
-                let p_reactive_mvar = storage_data.get("q_mvar").and_then(|v| v.as_f64());
-                let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0); // 转换为kVar
+                // 提取有功功率和无功功率（pandapower 标准：p_mw, q_mvar）
+                let p_mw = storage_data.get("p_mw").and_then(|v| v.as_f64());
+                let q_mvar = storage_data.get("q_mvar").and_then(|v| v.as_f64());
+                // 缓存中仍使用 kW/kVar 单位（用于前端显示）
+                let p_active_kw = p_mw.map(|p| p * 1000.0);
+                let p_reactive_kvar = q_mvar.map(|q| q * 1000.0);
                 
                 // 尝试找到对应的Storage设备（功率设备落库；电表落库其指向节点的数据）
                 if let Some(storage_name) = storage_data.get("name").and_then(|v| v.as_str()) {
@@ -951,11 +959,12 @@ impl SimulationEngine {
                             }
                             if let Some(ref db) = *database.lock().unwrap() {
                                 let data_json = serde_json::to_string(storage_data).ok();
+                                // 直接存储 MW 值（pandapower 标准）
                                 let _ = db.insert_device_data(
                                     device_id,
                                     timestamp,
-                                    p_active_kw,
-                                    p_reactive_kvar,
+                                    p_mw,
+                                    q_mvar,
                                     data_json.as_deref(),
                                     Some(device.device_type.as_str()),
                                 );
@@ -963,8 +972,8 @@ impl SimulationEngine {
                                     let _ = db.insert_device_data(
                                         meter_id,
                                         timestamp,
-                                        p_active_kw,
-                                        p_reactive_kvar,
+                                        p_mw,
+                                        q_mvar,
                                         data_json.as_deref(),
                                         devices.get(meter_id).map(|d| d.device_type.as_str()),
                                     );
@@ -997,10 +1006,11 @@ impl SimulationEngine {
         // 处理外部电网结果（供监控界面与指向外部电网的电表显示功率）
         if let Some(ext_grids) = results.get("ext_grids").and_then(|v| v.as_object()) {
             for (_ext_idx_str, ext_data) in ext_grids {
-                let p_active_mw = ext_data.get("p_mw").and_then(|v| v.as_f64());
-                let p_active_kw = p_active_mw.map(|p| p * 1000.0);
-                let p_reactive_mvar = ext_data.get("q_mvar").and_then(|v| v.as_f64());
-                let p_reactive_kvar = p_reactive_mvar.map(|q| q * 1000.0);
+                let p_mw = ext_data.get("p_mw").and_then(|v| v.as_f64());
+                let q_mvar = ext_data.get("q_mvar").and_then(|v| v.as_f64());
+                // 缓存中仍使用 kW/kVar 单位（用于前端显示）
+                let p_active_kw = p_mw.map(|p| p * 1000.0);
+                let p_reactive_kvar = q_mvar.map(|q| q * 1000.0);
                 if let Some(ext_name) = ext_data.get("name").and_then(|v| v.as_str()) {
                     for (device_id, device) in devices {
                         if device.device_type == crate::domain::topology::DeviceType::ExternalGrid
@@ -1008,11 +1018,12 @@ impl SimulationEngine {
                         {
                             if let Some(ref db) = *database.lock().unwrap() {
                                 let data_json = serde_json::to_string(ext_data).ok();
+                                // 直接存储 MW 值（pandapower 标准）
                                 let _ = db.insert_device_data(
                                     device_id,
                                     timestamp,
-                                    p_active_kw,
-                                    p_reactive_kvar,
+                                    p_mw,
+                                    q_mvar,
                                     data_json.as_deref(),
                                     Some(device.device_type.as_str()),
                                 );
@@ -1020,8 +1031,8 @@ impl SimulationEngine {
                                     let _ = db.insert_device_data(
                                         meter_id,
                                         timestamp,
-                                        p_active_kw,
-                                        p_reactive_kvar,
+                                        p_mw,
+                                        q_mvar,
                                         data_json.as_deref(),
                                         devices.get(meter_id).map(|d| d.device_type.as_str()),
                                     );
@@ -1053,8 +1064,9 @@ impl SimulationEngine {
         if let Some(transformers) = results.get("transformers").and_then(|v| v.as_object()) {
             for (_trafo_idx_str, trafo_data) in transformers {
                 let p_hv_mw = trafo_data.get("p_hv_mw").and_then(|v| v.as_f64());
-                let p_active_kw = p_hv_mw.map(|p| p * 1000.0);
                 let q_hv_mvar = trafo_data.get("q_hv_mvar").and_then(|v| v.as_f64());
+                // 缓存中仍使用 kW/kVar 单位（用于前端显示）
+                let p_active_kw = p_hv_mw.map(|p| p * 1000.0);
                 let p_reactive_kvar = q_hv_mvar.map(|q| q * 1000.0);
                 if let Some(trafo_name) = trafo_data.get("name").and_then(|v| v.as_str()) {
                     for (device_id, device) in devices {
@@ -1063,11 +1075,12 @@ impl SimulationEngine {
                         {
                             if let Some(ref db) = *database.lock().unwrap() {
                                 let data_json = serde_json::to_string(trafo_data).ok();
+                                // 直接存储 MW 值（pandapower 标准）
                                 let _ = db.insert_device_data(
                                     device_id,
                                     timestamp,
-                                    p_active_kw,
-                                    p_reactive_kvar,
+                                    p_hv_mw,
+                                    q_hv_mvar,
                                     data_json.as_deref(),
                                     Some(device.device_type.as_str()),
                                 );
@@ -1075,8 +1088,8 @@ impl SimulationEngine {
                                     let _ = db.insert_device_data(
                                         meter_id,
                                         timestamp,
-                                        p_active_kw,
-                                        p_reactive_kvar,
+                                        p_hv_mw,
+                                        q_hv_mvar,
                                         data_json.as_deref(),
                                         devices.get(meter_id).map(|d| d.device_type.as_str()),
                                     );

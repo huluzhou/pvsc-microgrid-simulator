@@ -50,7 +50,7 @@ pub async fn query_device_data_from_path(
     max_points: Option<usize>,
 ) -> Result<Vec<DeviceDataPoint>, String> {
     let conn = rusqlite::Connection::open(&db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
-    let mut query = "SELECT timestamp, p_active, p_reactive, data_json FROM device_data WHERE device_id = ?1".to_string();
+    let mut query = "SELECT timestamp, p_mw, q_mvar, data_json FROM device_data WHERE device_id = ?1".to_string();
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(device_id.clone())];
     if let Some(start) = start_time {
         query.push_str(" AND timestamp >= ?2");
@@ -111,13 +111,14 @@ pub async fn query_device_data_from_path(
 
     let points: Vec<DeviceDataPoint> = results
         .into_iter()
-        .map(|(ts, p_a, p_r, json_str)| {
+        .map(|(ts, p_mw, q_mvar, json_str)| {
             let data_json = json_str.as_ref().and_then(|s| serde_json::from_str(s).ok());
+            // 数据库存储的是 MW，转换为 kW 供前端显示
             DeviceDataPoint {
                 device_id: device_id.clone(),
                 timestamp: ts,
-                p_active: p_a,
-                p_reactive: p_r,
+                p_active: p_mw.map(|p| p * 1000.0),  // MW -> kW
+                p_reactive: q_mvar.map(|q| q * 1000.0),  // MVar -> kVar
                 data_json,
             }
         })
@@ -131,7 +132,8 @@ pub struct DashboardCsvData {
     pub points_by_device: HashMap<String, Vec<DeviceDataPoint>>,
 }
 
-/// 解析长表 CSV，支持列名：device_id, timestamp 或 local_timestamp, p_active 或 p_mw, p_reactive 或 q_mvar, data_json（可选）。
+/// 解析长表 CSV，支持列名：device_id, timestamp 或 local_timestamp, p_mw 或 p_active, q_mvar 或 p_reactive, data_json（可选）。
+/// 注意：数据库使用 p_mw/q_mvar（MW 单位），如果 CSV 使用 p_active/p_reactive（kW 单位），会自动转换。
 /// 与本地 device_data 表同构的 CSV 或 remote-tool 导出的长表格式。
 #[tauri::command]
 pub async fn dashboard_parse_csv(file_path: String) -> Result<DashboardCsvData, String> {
@@ -164,21 +166,22 @@ pub async fn dashboard_parse_csv(file_path: String) -> Result<DashboardCsvData, 
         }
         let ts_str = record.get(idx_timestamp).unwrap().trim();
         let timestamp = parse_timestamp(ts_str).unwrap_or(0.0);
-        let p_active = idx_p_active
+        // 优先使用 p_mw/q_mvar（pandapower 标准），如果使用 p_active/p_reactive（kW），则转换为 MW
+        let p_mw = idx_p_mw
             .and_then(|i| record.get(i))
             .and_then(|s| s.trim().parse::<f64>().ok())
             .or_else(|| {
-                idx_p_mw.and_then(|i| record.get(i))
+                idx_p_active.and_then(|i| record.get(i))
                     .and_then(|s| s.trim().parse::<f64>().ok())
-                    .map(|mw| mw * 1000.0)
+                    .map(|kw| kw / 1000.0)  // kW -> MW
             });
-        let p_reactive = idx_p_reactive
+        let q_mvar = idx_q_mvar
             .and_then(|i| record.get(i))
             .and_then(|s| s.trim().parse::<f64>().ok())
             .or_else(|| {
-                idx_q_mvar.and_then(|i| record.get(i))
+                idx_p_reactive.and_then(|i| record.get(i))
                     .and_then(|s| s.trim().parse::<f64>().ok())
-                    .map(|mvar| mvar * 1000.0)
+                    .map(|kvar| kvar / 1000.0)  // kVar -> MVar
             });
         let data_json = idx_data_json
             .and_then(|i| record.get(i))
@@ -187,11 +190,12 @@ pub async fn dashboard_parse_csv(file_path: String) -> Result<DashboardCsvData, 
             .and_then(|s| serde_json::from_str(s).ok());
 
         device_ids_set.insert(device_id.clone());
+        // DeviceDataPoint 使用 kW/kVar（前端显示），但数据库存储 MW/MVar
         let point = DeviceDataPoint {
             device_id: device_id.clone(),
             timestamp,
-            p_active,
-            p_reactive,
+            p_active: p_mw.map(|p| p * 1000.0),  // MW -> kW（供前端显示）
+            p_reactive: q_mvar.map(|q| q * 1000.0),  // MVar -> kVar（供前端显示）
             data_json,
         };
         points_by_device.entry(device_id).or_default().push(point);
@@ -509,6 +513,13 @@ fn dashboard_query_db_series_impl(
 ) -> Result<Vec<TimeSeriesPoint>, String> {
     let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
 
+    // 将前端字段名映射到数据库字段名，并标记是否需要单位转换
+    let (db_field_name, needs_conversion) = match field_name.as_str() {
+        "p_active" => ("p_mw", true),      // 需要 MW -> kW 转换
+        "p_reactive" => ("q_mvar", true),    // 需要 MVar -> kVar 转换
+        _ => (&field_name, false),           // 其他字段从 data_json 读取
+    };
+
     let is_basic_field = field_name == "p_active" || field_name == "p_reactive";
 
     let mut results: Vec<TimeSeriesPoint> = Vec::new();
@@ -516,7 +527,7 @@ fn dashboard_query_db_series_impl(
     if is_basic_field {
         let mut query = format!(
             "SELECT timestamp, {} FROM device_data WHERE device_id = ?1 AND {} IS NOT NULL",
-            field_name, field_name
+            db_field_name, db_field_name
         );
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(device_id.clone())];
         if let Some(st) = start_time {
@@ -535,9 +546,15 @@ fn dashboard_query_db_series_impl(
             })
             .map_err(|e| format!("查询失败: {}", e))?;
         for row in rows.flatten() {
+            // 数据库存储的是 MW/MVar，转换为 kW/kVar 供前端显示
+            let value = if needs_conversion {
+                row.1 * 1000.0  // MW -> kW 或 MVar -> kVar
+            } else {
+                row.1
+            };
             results.push(TimeSeriesPoint {
                 timestamp: row.0,
-                value: row.1,
+                value,
             });
         }
     } else {

@@ -74,11 +74,12 @@ pub async fn record_device_data(
     let db = guard.as_ref().ok_or("尚未开始仿真，无数据库")?;
     let json_str = data.data_json.as_ref()
         .and_then(|v| serde_json::to_string(v).ok());
+    // DeviceDataPoint 使用 kW/kVar，但数据库存储 MW/MVar（pandapower 标准）
     db.insert_device_data(
         &data.device_id,
         data.timestamp,
-        data.p_active,
-        data.p_reactive,
+        data.p_active.map(|p| p / 1000.0),  // kW -> MW
+        data.p_reactive.map(|q| q / 1000.0),  // kVar -> MVar
         json_str.as_deref(),
         None,
     )
@@ -113,15 +114,16 @@ pub async fn query_device_data(
     };
     let points: Vec<DeviceDataPoint> = rows
         .into_iter()
-        .map(|(ts, p_a, p_r, json_str)| {
+        .map(|(ts, p_mw, q_mvar, json_str)| {
             let data_json = json_str
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
+            // 数据库存储的是 MW/MVar，转换为 kW/kVar 供前端显示
             DeviceDataPoint {
                 device_id: device_id.clone(),
                 timestamp: ts,
-                p_active: p_a,
-                p_reactive: p_r,
+                p_active: p_mw.map(|p| p * 1000.0),  // MW -> kW
+                p_reactive: q_mvar.map(|q| q * 1000.0),  // MVar -> kVar
                 data_json,
             }
         })
@@ -187,8 +189,9 @@ pub async fn get_all_devices_status(
                     let guard = db.lock().unwrap();
                     guard.as_ref().and_then(|db| db.query_device_data_latest(target_id).ok().flatten())
                 };
-                if let Some((t, p_a, p_r, _)) = recent {
-                    (p_a, p_r, Some(t))
+                if let Some((t, p_mw, q_mvar, _)) = recent {
+                    // 数据库返回的是 MW/MVar，转换为 kW/kVar 以匹配 get_last_device_power 的单位
+                    (p_mw.map(|p| p * 1000.0), q_mvar.map(|q| q * 1000.0), Some(t))
                 } else {
                     (None, None, None)
                 }
@@ -200,8 +203,9 @@ pub async fn get_all_devices_status(
                 let guard = db.lock().unwrap();
                 guard.as_ref().and_then(|db| db.query_device_data_latest(&device.id).ok().flatten())
             };
-            if let Some((t, p_a, p_r, _)) = recent {
-                (p_a, p_r, Some(t))
+            if let Some((t, p_mw, q_mvar, _)) = recent {
+                // 数据库返回的是 MW/MVar，转换为 kW/kVar 以匹配 get_last_device_power 的单位
+                (p_mw.map(|p| p * 1000.0), q_mvar.map(|q| q * 1000.0), Some(t))
             } else {
                 (None, None, None)
             }
@@ -307,8 +311,9 @@ pub async fn get_device_status(
                 let guard = db.lock().unwrap();
                 guard.as_ref().and_then(|db| db.query_device_data_latest(&tid).ok().flatten())
             };
-            if let Some((t, p_a, p_r, _)) = recent {
-                (p_a, p_r, Some(t))
+            if let Some((t, p_mw, q_mvar, _)) = recent {
+                // 数据库返回的是 MW/MVar，转换为 kW/kVar 以匹配 get_last_device_power 的单位
+                (p_mw.map(|p| p * 1000.0), q_mvar.map(|q| q * 1000.0), Some(t))
             } else {
                 (None, None, None)
             }
@@ -320,8 +325,9 @@ pub async fn get_device_status(
             let guard = db.lock().unwrap();
             guard.as_ref().and_then(|db| db.query_device_data_latest(&device_id).ok().flatten())
         };
-        if let Some((t, p_a, p_r, _)) = recent {
-            (p_a, p_r, Some(t))
+        if let Some((t, p_mw, q_mvar, _)) = recent {
+            // 数据库返回的是 MW/MVar，转换为 kW/kVar 以匹配 get_last_device_power 的单位
+            (p_mw.map(|p| p * 1000.0), q_mvar.map(|q| q * 1000.0), Some(t))
         } else {
             (None, None, None)
         }
