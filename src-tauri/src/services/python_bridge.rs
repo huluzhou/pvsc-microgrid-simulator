@@ -1,4 +1,6 @@
 // Python 通信桥接
+// 注意：stdout/stderr/stdin 使用标准同步 I/O（std::thread），
+// 因为 tokio 的异步管道读取在 Windows 匿名管道上存在延迟问题。
 use serde::{Deserialize, Serialize};
 use anyhow::{Result, Context};
 use std::collections::HashMap;
@@ -6,9 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::path::BaseDirectory;
 use tauri::Manager;
-use tokio::sync::{Mutex, oneshot};
-use tokio::process::{Command, ChildStdin};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use std::sync::Mutex as StdMutex;
+use tokio::sync::oneshot;
 use tokio::time::{timeout, Duration};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,10 +35,11 @@ struct JsonRpcError {
 }
 
 pub struct PythonBridge {
-    stdin: Option<Arc<Mutex<ChildStdin>>>,
+    stdin: Option<Arc<StdMutex<std::process::ChildStdin>>>,
     request_id: Arc<std::sync::atomic::AtomicU64>,
-    pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<serde_json::Value>>>>>,
-    process_handle: Option<tokio::task::JoinHandle<()>>,
+    pending_requests: Arc<StdMutex<HashMap<u64, oneshot::Sender<Result<serde_json::Value>>>>>,
+    _stdout_thread: Option<std::thread::JoinHandle<()>>,
+    _stderr_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl PythonBridge {
@@ -45,8 +47,9 @@ impl PythonBridge {
         Self {
             stdin: None,
             request_id: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            pending_requests: Arc::new(Mutex::new(HashMap::new())),
-            process_handle: None,
+            pending_requests: Arc::new(StdMutex::new(HashMap::new())),
+            _stdout_thread: None,
+            _stderr_thread: None,
         }
     }
 
@@ -88,11 +91,22 @@ impl PythonBridge {
             let script_path = Self::get_python_script_path()?;
             (python_path, vec![script_path])
         };
-        let mut cmd = Command::new(&executable_path);
-        for arg in args {
+
+        // 使用标准库 Command（而非 tokio::process::Command），
+        // 配合同步线程读取 stdout/stderr，避免 tokio 异步管道在 Windows 上的延迟问题
+        let mut cmd = std::process::Command::new(&executable_path);
+        for arg in &args {
             cmd.arg(arg);
         }
-        
+
+        // Windows 上禁止弹出控制台窗口
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
         let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -104,57 +118,103 @@ impl PythonBridge {
             .ok_or_else(|| anyhow::anyhow!("Failed to get stdout"))?;
         let stdin = child.stdin.take()
             .ok_or_else(|| anyhow::anyhow!("Failed to get stdin"))?;
+        let stderr = child.stderr.take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get stderr"))?;
 
-        let stdin_arc = Arc::new(Mutex::new(stdin));
-        self.stdin = Some(stdin_arc.clone());
+        let stdin_arc = Arc::new(StdMutex::new(stdin));
+        self.stdin = Some(stdin_arc);
 
-        // 启动后台任务读取 stdout
-        let pending = self.pending_requests.clone();
-        
-        let handle = tokio::spawn(async move {
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
-            
-            while let Ok(Some(line)) = lines.next_line().await {
-                if line.trim().is_empty() {
-                    continue;
+        // 启动同步线程读取 stderr 并记录日志
+        let stderr_thread = std::thread::Builder::new()
+            .name("python-stderr-reader".into())
+            .spawn(move || {
+                use std::io::{BufRead, Write};
+                let reader = std::io::BufReader::new(stderr);
+
+                let log_path = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.join("python-kernel.log")))
+                    .unwrap_or_else(|| std::path::PathBuf::from("python-kernel.log"));
+
+                let mut log_file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+                    .ok();
+
+                if let Some(ref mut f) = log_file {
+                    let _ = writeln!(f, "\n=== Python Kernel Started at {:?} ===", std::time::SystemTime::now());
                 }
-                
-                // 解析 JSON-RPC 响应
-                match serde_json::from_str::<JsonRpcResponse>(&line) {
-                    Ok(response) => {
-                        if let Some(id) = response.id {
-                            let mut pending = pending.lock().await;
-                            if let Some(sender) = pending.remove(&id) {
-                                if let Some(error) = response.error {
-                                    let _ = sender.send(Err(anyhow::anyhow!(
-                                        "JSON-RPC error {}: {}", error.code, error.message
-                                    )));
-                                } else if let Some(result) = response.result {
-                                    let _ = sender.send(Ok(result));
-                                } else {
-                                    let _ = sender.send(Err(anyhow::anyhow!("Empty response")));
+
+                for line in reader.lines() {
+                    match line {
+                        Ok(line) => {
+                            eprintln!("[Python stderr] {}", line);
+                            if let Some(ref mut f) = log_file {
+                                let _ = writeln!(f, "{}", line);
+                                let _ = f.flush();
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            })
+            .context("Failed to spawn stderr reader thread")?;
+        self._stderr_thread = Some(stderr_thread);
+
+        // 启动同步线程读取 stdout（解决 tokio 在 Windows 管道上的异步读取延迟问题）
+        let pending = self.pending_requests.clone();
+
+        let stdout_thread = std::thread::Builder::new()
+            .name("python-stdout-reader".into())
+            .spawn(move || {
+                use std::io::BufRead;
+                let reader = std::io::BufReader::new(stdout);
+
+                for line in reader.lines() {
+                    match line {
+                        Ok(line) => {
+                            if line.trim().is_empty() {
+                                continue;
+                            }
+
+                            // 解析 JSON-RPC 响应
+                            match serde_json::from_str::<JsonRpcResponse>(&line) {
+                                Ok(response) => {
+                                    if let Some(id) = response.id {
+                                        let mut pending = pending.lock().unwrap();
+                                        if let Some(sender) = pending.remove(&id) {
+                                            let _ = if let Some(error) = response.error {
+                                                sender.send(Err(anyhow::anyhow!(
+                                                    "JSON-RPC error {}: {}", error.code, error.message
+                                                )))
+                                            } else if let Some(result) = response.result {
+                                                sender.send(Ok(result))
+                                            } else {
+                                                sender.send(Err(anyhow::anyhow!("Empty response")))
+                                            };
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to parse JSON-RPC response: {} - {}", e, line);
                                 }
                             }
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to parse JSON-RPC response: {} - {}", e, line);
+                        Err(_) => break,
                     }
                 }
-            }
-        });
-
-        self.process_handle = Some(handle);
+            })
+            .context("Failed to spawn stdout reader thread")?;
+        self._stdout_thread = Some(stdout_thread);
         self.request_id.store(0, std::sync::atomic::Ordering::Relaxed);
 
         Ok(())
     }
 
     pub async fn stop(&mut self) -> Result<()> {
-        if let Some(handle) = self.process_handle.take() {
-            handle.abort();
-        }
+        // 释放 stdin 会导致 Python 进程收到 EOF 并退出，
+        // 进而 stdout/stderr 关闭，读取线程自然结束
         self.stdin = None;
         Ok(())
     }
@@ -174,27 +234,26 @@ impl PythonBridge {
         // 创建响应通道
         let (tx, rx) = oneshot::channel();
         {
-            let mut pending = self.pending_requests.lock().await;
+            let mut pending = self.pending_requests.lock().unwrap();
             pending.insert(request_id, tx);
         }
 
-        // 发送请求
+        // 发送请求（同步写入管道，写入量小且管道缓冲区足够，不会阻塞）
         if let Some(ref stdin) = self.stdin {
-            let mut stdin = stdin.lock().await;
-
-            stdin.write_all(request_json.as_bytes()).await?;
-            stdin.write_all(b"\n").await?;
-            stdin.flush().await?;
+            use std::io::Write;
+            let mut stdin = stdin.lock().unwrap();
+            stdin.write_all(request_json.as_bytes())?;
+            stdin.write_all(b"\n")?;
+            stdin.flush()?;
         } else {
             return Err(anyhow::anyhow!("Python process not started"));
         }
 
         // 等待响应（带超时）
-        // 对于设置拓扑等可能耗时较长的操作，使用更长的超时时间
         let timeout_duration = if method == "simulation.set_topology" {
-            Duration::from_secs(60)  // 设置拓扑可能需要更长时间
+            Duration::from_secs(60)  // 设置拓扑可能需要更长时间（首次加载库）
         } else {
-            Duration::from_secs(30)  // 其他操作使用默认超时
+            Duration::from_secs(10)  // 普通操作 10 秒超时
         };
         
         match timeout(timeout_duration, rx).await {
@@ -202,7 +261,7 @@ impl PythonBridge {
             Ok(Err(_)) => Err(anyhow::anyhow!("Response channel closed")),
             Err(_) => {
                 // 超时，移除 pending 请求
-                let mut pending = self.pending_requests.lock().await;
+                let mut pending = self.pending_requests.lock().unwrap();
                 pending.remove(&request_id);
                 Err(anyhow::anyhow!("Request timeout after {} seconds", timeout_duration.as_secs()))
             }
@@ -219,7 +278,7 @@ impl PythonBridge {
                 venv_path.join("bin").join("python")
             };
             if python.exists() {
-                if let Ok(out) = Command::new(&python).arg("--version").output().await {
+                if let Ok(out) = std::process::Command::new(&python).arg("--version").output() {
                     if out.status.success() {
                         eprintln!("使用虚拟环境 Python: {}", python.display());
                         return Ok(python.to_string_lossy().to_string());
@@ -245,7 +304,7 @@ impl PythonBridge {
                     root.join(name).join("bin").join("python")
                 };
                 if python.exists() {
-                    if let Ok(out) = Command::new(&python).arg("--version").output().await {
+                    if let Ok(out) = std::process::Command::new(&python).arg("--version").output() {
                         if out.status.success() {
                             eprintln!("使用项目虚拟环境 Python: {}", python.display());
                             return Ok(python.to_string_lossy().to_string());
@@ -257,7 +316,7 @@ impl PythonBridge {
         // 3. 回退到 PATH 中的 python3 / python
         let candidates = ["python3", "python"];
         for cmd in candidates {
-            if let Ok(out) = Command::new(cmd).arg("--version").output().await {
+            if let Ok(out) = std::process::Command::new(cmd).arg("--version").output() {
                 if out.status.success() {
                     return Ok(cmd.to_string());
                 }

@@ -1,6 +1,6 @@
 # 微电网拓扑设计工具
 
-基于PySide6和领域驱动设计（DDD）的微电网拓扑设计工具，采用六边形架构（Hexagonal Architecture）设计，支持通过拖拽方式构建和编辑微电网拓扑图。
+基于 Tauri + React 的微电网拓扑设计与仿真工具，支持通过拖拽方式构建和编辑微电网拓扑图，并进行实时仿真计算。
 
 ## 功能特点
 
@@ -13,14 +13,39 @@
 
 ## 架构设计
 
-本项目采用**六边形架构（Hexagonal Architecture）**和**领域驱动设计（DDD）**：
+本项目采用**Tauri + React**架构，前端使用 React + TypeScript，后端使用 Rust，计算内核使用 Python：
 
-- **领域层** (`src/domain/`): 核心业务逻辑，包含拓扑聚合、实体、值对象、领域服务和业务规则
-- **应用层** (`src/application/`): 用例编排，包含用例、DTO和命令
-- **适配器层** (`src/adapters/`): 入站适配器（UI）和出站适配器（存储、协议等）
-- **基础设施层** (`src/infrastructure/`): 跨层技术能力（日志、配置、DI、事件总线等）
+- **前端** (`src/`): React + TypeScript 前端代码（页面、组件、工具等）
+- **后端** (`src-tauri/`): Rust 后端服务（领域层、服务层、命令层）
+- **计算内核** (`python-kernel/`): Python 计算内核（仿真、AI 等）
 
-详细架构说明请参考 [ARCHITECTURE.md](ARCHITECTURE.md)
+详细架构说明请参考 [架构文档](docs/architecture/architecture.md)
+
+## 文档导航
+
+项目文档已统一整理到 `docs/` 目录，按类型分类：
+
+### 架构设计文档
+- [项目架构](docs/architecture/architecture.md) - 项目整体架构与目录结构说明
+- [架构审查](docs/architecture/architecture_review.md) - 六边形架构最佳实践与重构记录
+- [领域事件最佳实践](docs/architecture/domain_events_best_practices.md) - 领域事件的设计与实现
+- [功能需求规格](docs/architecture/functional_requirements_specification.md) - 系统功能需求详细说明
+
+### UI 设计文档
+- [拓扑 UI 设计说明](docs/ui/topology_ui_spec.md) - 拓扑设计模块的 UI 组件与交互规范
+- [拓扑 UI 示意图](docs/ui/topology_design.svg) - 拓扑设计界面示意图
+
+### 规则文档
+- [拓扑连接规则](docs/rules/topology_rule.md) - 基于 pandapower 的拓扑连接规则与约束
+
+### 构建文档
+- [构建与发布指南](docs/build/BUILD.md) - 本地构建、打包和发布流程
+
+### 端口文档
+- [端口索引](docs/ports/PORTS_README.md) - 应用层和领域层端口定义与使用说明
+
+### 分析文档
+- [数据分析实现评估](docs/analytics/ANALYTICS_IMPLEMENTATION_EVALUATION.md) - 数据分析功能的实现位置评估与方案对比
 
 ## 环境要求
 
@@ -63,32 +88,30 @@ python src/main.py
 
 ```
 .
-├── src/                          # 源代码目录
-│   ├── domain/                   # 领域层
-│   │   ├── aggregates/          # 聚合根
-│   │   │   └── topology/        # 拓扑聚合（实体、值对象、服务、事件）
-│   │   └── common/              # 通用领域组件
-│   ├── application/             # 应用层
-│   │   ├── use_cases/           # 用例
-│   │   │   └── topology/        # 拓扑相关用例
-│   │   ├── commands/            # 命令
-│   │   └── dtos/                # 数据传输对象
-│   ├── adapters/                # 适配器层
-│   │   └── inbound/             # 入站适配器
-│   │       └── ui/             # UI适配器
-│   │           └── pyside/    # PySide6 UI实现
-│   └── infrastructure/          # 基础设施层
-│       ├── config/              # 配置管理
-│       ├── events/              # 事件总线
-│       ├── logging/             # 日志
-│       └── third_party/         # 第三方集成
+├── src/                          # 前端代码（React + TypeScript）
+│   ├── pages/                    # 页面组件
+│   ├── components/               # UI 组件
+│   ├── stores/                   # 状态管理
+│   └── utils/                    # 工具函数
+├── src-tauri/                    # Rust 后端
+│   ├── src/
+│   │   ├── domain/              # 领域层
+│   │   ├── services/            # 服务层
+│   │   └── commands/            # Tauri 命令
+│   └── tauri.conf.json          # Tauri 配置
+├── python-kernel/                # Python 计算内核
+│   ├── main.py                  # JSON-RPC 入口
+│   ├── simulation/              # 仿真模块
+│   └── ai/                      # AI 模块
 ├── tests/                        # 测试
 │   └── unit/                    # 单元测试
-├── doc/                          # 文档
-│   ├── architecture_design/    # 架构设计文档
-│   └── ui_design/              # UI设计文档
-├── config/                       # 配置文件
-├── ARCHITECTURE.md              # 架构说明文档
+├── docs/                        # 文档目录
+│   ├── architecture/           # 架构设计文档
+│   ├── ui/                     # UI设计文档
+│   ├── rules/                  # 规则文档
+│   ├── build/                  # 构建文档
+│   ├── ports/                  # 端口文档
+│   └── analytics/              # 分析文档
 ├── README.md                    # 本文件
 └── requirements.txt             # Python依赖
 ```
@@ -112,16 +135,20 @@ pytest
 
 ### 代码结构说明
 
-- **拓扑聚合** (`src/domain/aggregates/topology/`): 包含微电网拓扑的核心业务逻辑
-  - `entities/`: 实体（设备、连接、节点等）
-  - `value_objects/`: 值对象（设备类型、位置、状态等）
-  - `services/`: 领域服务（验证、连通性、优化等）
-  - `events/`: 领域事件
-  - `ports/`: 端口接口定义
+- **前端** (`src/`): React + TypeScript 前端代码
+  - `pages/`: 页面组件（拓扑设计、仿真、数据看板等）
+  - `components/`: UI 组件（拓扑画布、设备面板等）
+  - `stores/`: 状态管理
+  - `utils/`: 工具函数
 
-- **用例** (`src/application/use_cases/topology/`): 应用层用例，编排领域服务完成业务功能
+- **Rust 后端** (`src-tauri/src/`): Rust 后端服务
+  - `domain/`: 领域层（拓扑、设备、仿真等）
+  - `services/`: 服务层（仿真引擎、数据库、Modbus 等）
+  - `commands/`: Tauri 命令接口
 
-- **UI适配器** (`src/adapters/inbound/ui/pyside/`): PySide6 UI实现，调用应用层用例
+- **Python 内核** (`python-kernel/`): Python 计算内核
+  - `simulation/`: 仿真模块（pandapower 集成）
+  - `ai/`: AI 模块
 
 ## 许可证
 

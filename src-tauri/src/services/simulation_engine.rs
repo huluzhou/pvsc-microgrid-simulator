@@ -111,7 +111,13 @@ impl SimulationEngine {
             }
             
             if !bridge_ready {
-                return Err("Python 内核未就绪，请检查启动日志".to_string());
+                // 获取日志文件路径提示用户
+                let log_path = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.join("python-kernel.log")))
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "python-kernel.log".to_string());
+                return Err(format!("Python 内核未就绪。请检查日志文件: {}", log_path));
             }
         }
         
